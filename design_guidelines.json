@@ -1,0 +1,106 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) - Dark Mode Variant",
+  "design_philosophy": "A functional, mobile-first command center. High contrast ensures readability in any environment. Layered grays replace flat black to establish depth without clutter. Neon status accents (emerald/red) are used sparingly but purposefully to indicate container health.",
+  "typography": {
+    "headings": {
+      "family": "Outfit",
+      "weights": ["400", "600", "700"],
+      "usage": "Use for all page titles, section headers, and category labels. Never use Inter. Must apply tracking-tight for sizes above 24px."
+    },
+    "body": {
+      "family": "Manrope",
+      "weights": ["400", "500", "600"],
+      "usage": "Use for all descriptive text, tile names, URLs, and metadata."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-xl font-semibold",
+      "tile_title": "text-base font-semibold",
+      "body": "text-sm sm:text-base text-zinc-400",
+      "small": "text-xs font-medium uppercase tracking-[0.1em]"
+    }
+  },
+  "colors": {
+    "background": "bg-zinc-950 (Tailwind #09090b)",
+    "surface": "bg-zinc-900 (Tailwind #18181b)",
+    "surface_elevated": "bg-zinc-800/50 (Tailwind #27272a with opacity)",
+    "primary_text": "text-zinc-50 (Tailwind #fafafa)",
+    "secondary_text": "text-zinc-400 (Tailwind #a1a1aa)",
+    "primary_action": "bg-zinc-50 text-zinc-950 hover:bg-zinc-200 (High contrast CTA)",
+    "secondary_action": "bg-zinc-800 text-zinc-50 hover:bg-zinc-700",
+    "status": {
+      "running": "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 (Neon green glow effect)",
+      "stopped": "text-red-500 bg-red-500/10 border-red-500/20",
+      "pending": "text-amber-500 bg-amber-500/10 border-amber-500/20"
+    },
+    "borders": "border-white/5 or border-zinc-800"
+  },
+  "layout_and_spacing": {
+    "philosophy": "Mobile-first, generous spacing for touch targets.",
+    "grid": {
+      "mobile": "grid-cols-2 gap-4",
+      "tablet": "grid-cols-3 or grid-cols-4 gap-6",
+      "desktop": "grid-cols-6 or grid-cols-8 gap-6"
+    },
+    "containers": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "surface_treatment": {
+      "tiles": "rounded-2xl border border-white/5 bg-zinc-900 shadow-sm transition-all duration-200 hover:bg-zinc-800 hover:border-white/10",
+      "header": "sticky top-0 z-50 backdrop-blur-xl bg-zinc-950/70 border-b border-white/5",
+      "modals": "rounded-3xl border border-white/10 bg-zinc-950 shadow-2xl"
+    }
+  },
+  "components_strategy": {
+    "tiles": {
+      "structure": "Square or slightly vertical aspect ratio. Icon at top-left, Status dot at top-right, Name and URL at bottom.",
+      "interaction": "Entire tile is clickable. Use framer-motion whileTap={{ scale: 0.95 }} for tactile feedback."
+    },
+    "forms_and_inputs": {
+      "library": "Shadcn UI heavily customized to match the dark theme.",
+      "styling": "Inputs should have bg-zinc-900/50 border-white/10 focus:border-zinc-50 focus:ring-1 focus:ring-zinc-50.",
+      "checkboxes": "Large, accessible touch targets for selecting containers in the setup wizard."
+    },
+    "navigation": {
+      "tabs": "Horizontal scrollable pill-shaped tabs for categories (Server, Smart Home, Cloud, etc.). Active state: bg-zinc-50 text-zinc-950. Inactive: text-zinc-400 hover:text-zinc-50."
+    }
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "weight=\"duotone\" for primary illustrations, weight=\"regular\" for UI actions.",
+    "installation": "yarn add @phosphor-icons/react"
+  },
+  "motion": {
+    "library": "framer-motion",
+    "page_transitions": "initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}",
+    "staggered_lists": "Use container variants to stagger the entrance of dashboard tiles.",
+    "micro_interactions": "Smooth hover states on all interactive elements (duration-200 ease-out)."
+  },
+  "media": {
+    "login_background": {
+      "url": "https://images.unsplash.com/photo-1676068646516-5eda1745a641?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBmdXR1cmlzdGljJTIwdGV4dHVyZXxlbnwwfHx8fDE3NzU2NDI4MTl8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract dark futuristic texture, use as an atmospheric backdrop for the Setup Wizard and Login screen with a heavy overlay (bg-black/80)."
+    }
+  },
+  "views": {
+    "dashboard": {
+      "description": "Main screen. Header with logo and admin/logout dropdown. Category filter tabs below header. Grid of tiles representing services. Mobile responsive.",
+      "features": ["Container status polling", "Dynamic category grouping", "Launch URL in new tab"]
+    },
+    "setup_wizard": {
+      "description": "First-time run experience.",
+      "steps": [
+        "1. Welcome & Admin Account Creation (JWT setup)",
+        "2. Unraid/Docker Detection (Scanning loading state)",
+        "3. Container Selection (List of detected containers with checkboxes to add to dashboard)"
+      ]
+    },
+    "admin_panel": {
+      "description": "Settings area to manage tiles manually.",
+      "features": ["Add new tile manually (Name, URL, Icon, Category)", "Toggle visibility of existing auto-detected containers", "Edit categories"]
+    }
+  },
+  "testing_rules": {
+    "data_testid": "MANDATORY on all interactive elements. Use kebab-case and role-based naming (e.g., data-testid=\"login-submit-button\", data-testid=\"tile-plex-link\", data-testid=\"setup-wizard-next-button\")."
+  }
+}
