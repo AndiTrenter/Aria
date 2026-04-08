@@ -1,0 +1,54 @@
+# Aria Dashboard - Docker Compose für lokale Entwicklung und Unraid
+# 
+# Verwendung:
+# docker-compose up -d
+#
+# Für Unraid: Kopiere die Werte aus diesem File in dein Docker Template
+
+version: '3.8'
+
+services:
+  aria:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: ""  # Leer lassen für relative URLs
+    image: aria-dashboard:latest
+    container_name: aria
+    restart: unless-stopped
+    ports:
+      - "8080:80"  # Web-Interface auf Port 8080
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=aria_dashboard
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - FRONTEND_URL=http://localhost:8080
+      - CORS_ORIGINS=*
+    volumes:
+      # Optional: Docker Socket für Container-Erkennung (nur lesend)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Optional: Persistente Daten
+      - aria_data:/app/data
+    depends_on:
+      - mongo
+    networks:
+      - aria-network
+
+  mongo:
+    image: mongo:7
+    container_name: aria-mongo
+    restart: unless-stopped
+    volumes:
+      - aria_mongo_data:/data/db
+    networks:
+      - aria-network
+    # Kein externer Port - nur intern erreichbar
+
+volumes:
+  aria_data:
+  aria_mongo_data:
+
+networks:
+  aria-network:
+    driver: bridge

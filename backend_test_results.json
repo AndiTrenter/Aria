@@ -1,0 +1,270 @@
+{
+  "total_tests": 13,
+  "passed_tests": 13,
+  "failed_tests": 0,
+  "success_rate": 100.0,
+  "test_results": [
+    {
+      "name": "Health Check",
+      "success": true,
+      "details": "",
+      "response_data": {
+        "status": "healthy",
+        "app": "Aria Dashboard"
+      }
+    },
+    {
+      "name": "Setup Status Check",
+      "success": true,
+      "details": "Setup completed: True",
+      "response_data": {
+        "setup_completed": true,
+        "has_admin": true
+      }
+    },
+    {
+      "name": "Admin Login",
+      "success": true,
+      "details": "Logged in as: andi.trenter@gmail.com",
+      "response_data": {
+        "id": "69d62a8f3bcb2d4cd2e45b1b",
+        "email": "andi.trenter@gmail.com",
+        "name": "Andreas",
+        "role": "admin"
+      }
+    },
+    {
+      "name": "Get Current User",
+      "success": true,
+      "details": "User: andi.trenter@gmail.com",
+      "response_data": {
+        "id": "69d62a8f3bcb2d4cd2e45b1b",
+        "email": "andi.trenter@gmail.com",
+        "name": "Andreas",
+        "role": "admin"
+      }
+    },
+    {
+      "name": "Get Categories",
+      "success": true,
+      "details": "Found 6 categories",
+      "response_data": [
+        {
+          "name": "Server",
+          "icon": "hard-drives",
+          "order": 0
+        },
+        {
+          "name": "Smart Home",
+          "icon": "house-line",
+          "order": 1
+        },
+        {
+          "name": "Cloud",
+          "icon": "cloud",
+          "order": 2
+        },
+        {
+          "name": "Medien",
+          "icon": "play-circle",
+          "order": 3
+        },
+        {
+          "name": "Tools",
+          "icon": "wrench",
+          "order": 4
+        },
+        {
+          "name": "Sonstige",
+          "icon": "folder",
+          "order": 5
+        }
+      ]
+    },
+    {
+      "name": "Get All Tiles",
+      "success": true,
+      "details": "Found 1 tiles",
+      "response_data": [
+        {
+          "id": "69d62ae63bcb2d4cd2e45b1e",
+          "name": "Unraid",
+          "url": "http://192.168.1.140:80",
+          "icon": "hard-drives",
+          "category": "Server",
+          "description": "Container: unraid:latest",
+          "visible": true,
+          "is_manual": false,
+          "container_id": "demo_unraid",
+          "status": "running",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "name": "Get Visible Tiles",
+      "success": true,
+      "details": "Found 1 visible tiles",
+      "response_data": [
+        {
+          "id": "69d62ae63bcb2d4cd2e45b1e",
+          "name": "Unraid",
+          "url": "http://192.168.1.140:80",
+          "icon": "hard-drives",
+          "category": "Server",
+          "description": "Container: unraid:latest",
+          "visible": true,
+          "is_manual": false,
+          "container_id": "demo_unraid",
+          "status": "running",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "name": "Create Tile",
+      "success": true,
+      "details": "Created tile: Test Service",
+      "response_data": {
+        "id": "69d62af9e2af33f3b6a94e8a",
+        "name": "Test Service",
+        "url": "http://192.168.1.100:8080",
+        "icon": "cube",
+        "category": "Tools",
+        "description": "Test tile for API testing",
+        "visible": true,
+        "is_manual": true,
+        "container_id": null,
+        "status": "unknown",
+        "order": 1
+      }
+    },
+    {
+      "name": "Update Tile",
+      "success": true,
+      "details": "Updated tile: Updated Test Service",
+      "response_data": {
+        "name": "Updated Test Service",
+        "url": "http://192.168.1.100:8080",
+        "icon": "cube",
+        "category": "Tools",
+        "description": "Updated description for testing",
+        "visible": true,
+        "is_manual": true,
+        "container_id": null,
+        "id": "69d62af9e2af33f3b6a94e8a",
+        "status": "unknown",
+        "order": 1,
+        "created_at": "2026-04-08T10:16:25.417281+00:00"
+      }
+    },
+    {
+      "name": "Delete Tile",
+      "success": true,
+      "details": "Tile deleted successfully",
+      "response_data": {
+        "message": "Tile deleted"
+      }
+    },
+    {
+      "name": "Get Docker Containers",
+      "success": true,
+      "details": "Found 5 containers (mock data)",
+      "response_data": [
+        {
+          "id": "demo_unraid",
+          "name": "unraid",
+          "status": "running",
+          "image": "unraid:latest",
+          "ports": {
+            "80/tcp": [
+              {
+                "HostPort": "80"
+              }
+            ]
+          },
+          "web_port": "80",
+          "added_to_dashboard": false
+        },
+        {
+          "id": "demo_nextcloud",
+          "name": "nextcloud",
+          "status": "running",
+          "image": "nextcloud:latest",
+          "ports": {
+            "443/tcp": [
+              {
+                "HostPort": "443"
+              }
+            ]
+          },
+          "web_port": "443",
+          "added_to_dashboard": false
+        },
+        {
+          "id": "demo_homeassistant",
+          "name": "homeassistant",
+          "status": "running",
+          "image": "homeassistant/home-assistant:latest",
+          "ports": {
+            "8123/tcp": [
+              {
+                "HostPort": "8123"
+              }
+            ]
+          },
+          "web_port": "8123",
+          "added_to_dashboard": false
+        },
+        {
+          "id": "demo_plex",
+          "name": "plex",
+          "status": "running",
+          "image": "plexinc/pms-docker:latest",
+          "ports": {
+            "32400/tcp": [
+              {
+                "HostPort": "32400"
+              }
+            ]
+          },
+          "web_port": "32400",
+          "added_to_dashboard": false
+        },
+        {
+          "id": "demo_paperless",
+          "name": "paperless-ngx",
+          "status": "stopped",
+          "image": "paperlessngx/paperless-ngx:latest",
+          "ports": {
+            "8000/tcp": [
+              {
+                "HostPort": "8000"
+              }
+            ]
+          },
+          "web_port": "8000",
+          "added_to_dashboard": false
+        }
+      ]
+    },
+    {
+      "name": "Add Docker Containers",
+      "success": true,
+      "details": "Added 0 containers",
+      "response_data": {
+        "added": 0,
+        "tiles": []
+      }
+    },
+    {
+      "name": "Logout",
+      "success": true,
+      "details": "Logged out successfully",
+      "response_data": {
+        "message": "Logged out"
+      }
+    }
+  ],
+  "timestamp": "2026-04-08T10:16:25.752580"
+}
