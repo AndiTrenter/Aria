@@ -11,7 +11,8 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Admin from "@/pages/Admin";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Use relative URL if REACT_APP_BACKEND_URL is empty (for Docker deployment)
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
 
 // Configure axios defaults
