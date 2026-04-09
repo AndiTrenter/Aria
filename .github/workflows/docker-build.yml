@@ -1,25 +1,10 @@
-# Aria Dashboard - GitHub Actions Workflow
-# Automatischer Build und Push zu GitHub Container Registry
-#
-# Dieses Workflow wird ausgelöst bei:
-# - Push auf main/master Branch
-# - Manueller Auslösung
-# - Release-Erstellung
-#
-# Das Image wird gepusht zu: ghcr.io/<dein-username>/aria-dashboard
-
 name: Build and Push Docker Image
 
 on:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - 'v*'
-  workflow_dispatch:  # Manuelle Auslösung
-  release:
-    types: [published]
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -28,7 +13,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: read
       packages: write
@@ -53,28 +37,14 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            REACT_APP_BACKEND_URL=
-
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
