@@ -1,49 +1,49 @@
 import { useEffect, useState, createContext, useContext } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import axios from "axios";
 import { Toaster } from "@/components/ui/sonner";
-import { toast } from "sonner";
 
-// Pages
 import SetupWizard from "@/pages/SetupWizard";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Admin from "@/pages/Admin";
+import Health from "@/pages/Health";
+import Logs from "@/pages/Logs";
+import Account from "@/pages/Account";
 
-// Use relative URL if REACT_APP_BACKEND_URL is empty (for Docker deployment)
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
 
-// Configure axios defaults
 axios.defaults.withCredentials = true;
 
-// Auth Context
 export const AuthContext = createContext(null);
+export const ThemeContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
 };
 
-// Helper to format API errors
+export const useTheme = () => {
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error("useTheme must be used within ThemeProvider");
+  return context;
+};
+
 export const formatApiError = (detail) => {
-  if (detail == null) return "Something went wrong. Please try again.";
+  if (detail == null) return "Etwas ist schiefgelaufen.";
   if (typeof detail === "string") return detail;
-  if (Array.isArray(detail))
-    return detail.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e))).filter(Boolean).join(" ");
-  if (detail && typeof detail.msg === "string") return detail.msg;
+  if (Array.isArray(detail)) return detail.map((e) => e?.msg || JSON.stringify(e)).join(" ");
   return String(detail);
 };
 
-// Auth Provider
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [setupRequired, setSetupRequired] = useState(null);
+  const [theme, setThemeState] = useState("startrek");
 
   const checkSetupStatus = async () => {
     try {
@@ -60,6 +60,7 @@ const AuthProvider = ({ children }) => {
     try {
       const { data } = await axios.get(`${API}/auth/me`);
       setUser(data);
+      setThemeState(data.theme || "startrek");
       return data;
     } catch (e) {
       setUser(null);
@@ -70,15 +71,12 @@ const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/auth/login`, { email, password });
     setUser(data);
+    setThemeState(data.theme || "startrek");
     return data;
   };
 
   const logout = async () => {
-    try {
-      await axios.post(`${API}/auth/logout`);
-    } catch (e) {
-      // Ignore logout errors
-    }
+    try { await axios.post(`${API}/auth/logout`); } catch (e) {}
     setUser(null);
   };
 
@@ -89,12 +87,19 @@ const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const setTheme = async (newTheme) => {
+    try {
+      await axios.put(`${API}/auth/theme`, { theme: newTheme });
+      setThemeState(newTheme);
+    } catch (e) {
+      console.error("Failed to update theme:", e);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       const needsSetup = await checkSetupStatus();
-      if (!needsSetup) {
-        await checkAuth();
-      }
+      if (!needsSetup) await checkAuth();
       setLoading(false);
     };
     init();
@@ -102,92 +107,50 @@ const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{ user, loading, setupRequired, login, logout, completeSetup, checkAuth }}>
-      {children}
+      <ThemeContext.Provider value={{ theme, setTheme }}>
+        {children}
+      </ThemeContext.Provider>
     </AuthContext.Provider>
   );
 };
 
-// Protected Route
 const ProtectedRoute = ({ children }) => {
   const { user, loading, setupRequired } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="animate-pulse text-zinc-400">Loading...</div>
-      </div>
-    );
-  }
-
-  if (setupRequired) {
-    return <Navigate to="/setup" replace />;
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse">Loading...</div></div>;
+  if (setupRequired) return <Navigate to="/setup" replace />;
+  if (!user) return <Navigate to="/login" replace />;
   return children;
 };
 
-// App Router
 const AppRouter = () => {
   const { user, loading, setupRequired } = useAuth();
+  const { theme } = useTheme();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="animate-pulse text-zinc-400">Loading Aria...</div>
-      </div>
-    );
-  }
+  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
 
   return (
-    <Routes>
-      <Route
-        path="/setup"
-        element={setupRequired ? <SetupWizard /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/login"
-        element={
-          setupRequired ? (
-            <Navigate to="/setup" replace />
-          ) : user ? (
-            <Navigate to="/" replace />
-          ) : (
-            <Login />
-          )
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute>
-            <Admin />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <div className={theme === 'startrek' ? 'theme-startrek' : 'theme-disney'}>
+      <Routes>
+        <Route path="/setup" element={setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
+        <Route path="/login" element={setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
+        <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+        <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
   );
 };
 
 function App() {
   return (
-    <div className="App min-h-screen bg-zinc-950">
+    <div className="App min-h-screen">
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
-          <Toaster position="top-right" theme="dark" />
+          <Toaster position="top-right" />
         </AuthProvider>
       </BrowserRouter>
     </div>

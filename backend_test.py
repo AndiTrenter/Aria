@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aria Dashboard Backend API Testing
+Aria Dashboard v2.0 Backend API Testing
 Tests all backend endpoints for the Aria Dashboard application.
 """
 
@@ -21,10 +21,10 @@ class AriaAPITester:
         self.tests_passed = 0
         self.test_results = []
         
-        # Test data
+        # Test credentials from review request
         self.admin_email = "andi.trenter@gmail.com"
         self.admin_password = "Speedy@181279"
-        self.test_tile_id = None
+        self.test_user_id = None
 
     def log_test(self, name: str, success: bool, details: str = "", response_data: Any = None):
         """Log test result"""
@@ -52,7 +52,7 @@ class AriaAPITester:
             self.log_test(
                 "Health Check", 
                 success, 
-                f"Status: {response.status_code}" if not success else "",
+                f"Status: {response.status_code}" if not success else f"App: {data.get('app', 'unknown')}",
                 data
             )
             return success
@@ -93,7 +93,7 @@ class AriaAPITester:
             self.log_test(
                 "Admin Login", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Logged in as: {data.get('email', 'unknown')}",
+                f"Status: {response.status_code}" if not success else f"Logged in as: {data.get('email', 'unknown')} ({data.get('role', 'unknown')})",
                 data
             )
             return success
@@ -111,7 +111,7 @@ class AriaAPITester:
             self.log_test(
                 "Get Current User", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"User: {data.get('email', 'unknown')}",
+                f"Status: {response.status_code}" if not success else f"User: {data.get('email', 'unknown')} (Theme: {data.get('theme', 'unknown')})",
                 data
             )
             return success
@@ -119,187 +119,231 @@ class AriaAPITester:
             self.log_test("Get Current User", False, f"Exception: {str(e)}")
             return False
 
-    def test_get_categories(self) -> bool:
-        """Test getting categories"""
+    def test_get_services(self) -> bool:
+        """Test getting services"""
         try:
-            response = self.session.get(f"{self.api_url}/categories", timeout=10)
+            response = self.session.get(f"{self.api_url}/services", timeout=10)
             success = response.status_code == 200
             data = response.json() if success else []
             
             self.log_test(
-                "Get Categories", 
+                "Get Services", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Found {len(data)} categories",
+                f"Status: {response.status_code}" if not success else f"Found {len(data)} services",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Get Categories", False, f"Exception: {str(e)}")
+            self.log_test("Get Services", False, f"Exception: {str(e)}")
             return False
 
-    def test_get_tiles(self) -> bool:
-        """Test getting tiles"""
+    def test_dashboard_stats(self) -> bool:
+        """Test getting dashboard stats"""
         try:
-            response = self.session.get(f"{self.api_url}/tiles", timeout=10)
+            response = self.session.get(f"{self.api_url}/dashboard/stats", timeout=10)
+            success = response.status_code == 200
+            data = response.json() if success else {}
+            
+            self.log_test(
+                "Get Dashboard Stats", 
+                success, 
+                f"Status: {response.status_code}" if not success else f"Services: {data.get('services', 0)}, Users: {data.get('users', 0)}",
+                data
+            )
+            return success
+        except Exception as e:
+            self.log_test("Get Dashboard Stats", False, f"Exception: {str(e)}")
+            return False
+
+    def test_health_services(self) -> bool:
+        """Test getting services health"""
+        try:
+            response = self.session.get(f"{self.api_url}/health/services", timeout=10)
             success = response.status_code == 200
             data = response.json() if success else []
             
             self.log_test(
-                "Get All Tiles", 
+                "Get Services Health", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Found {len(data)} tiles",
+                f"Status: {response.status_code}" if not success else f"Health checked for {len(data)} services",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Get All Tiles", False, f"Exception: {str(e)}")
+            self.log_test("Get Services Health", False, f"Exception: {str(e)}")
             return False
 
-    def test_get_visible_tiles(self) -> bool:
-        """Test getting visible tiles only"""
+    def test_system_health(self) -> bool:
+        """Test getting system health"""
         try:
-            response = self.session.get(f"{self.api_url}/tiles?visible_only=true", timeout=10)
+            response = self.session.get(f"{self.api_url}/health/system", timeout=10)
+            success = response.status_code == 200
+            data = response.json() if success else {}
+            
+            self.log_test(
+                "Get System Health", 
+                success, 
+                f"Status: {response.status_code}" if not success else f"CPU: {data.get('cpu_percent', 0)}%, Memory: {data.get('memory_percent', 0)}%",
+                data
+            )
+            return success
+        except Exception as e:
+            self.log_test("Get System Health", False, f"Exception: {str(e)}")
+            return False
+
+    def test_get_logs(self) -> bool:
+        """Test getting logs"""
+        try:
+            response = self.session.get(f"{self.api_url}/logs?limit=10", timeout=10)
             success = response.status_code == 200
             data = response.json() if success else []
             
             self.log_test(
-                "Get Visible Tiles", 
+                "Get Logs", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Found {len(data)} visible tiles",
+                f"Status: {response.status_code}" if not success else f"Retrieved {len(data)} log entries",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Get Visible Tiles", False, f"Exception: {str(e)}")
+            self.log_test("Get Logs", False, f"Exception: {str(e)}")
             return False
 
-    def test_create_tile(self) -> bool:
-        """Test creating a new tile"""
+    def test_chat(self) -> bool:
+        """Test chat functionality"""
         try:
-            tile_data = {
-                "name": "Test Service",
-                "url": "http://192.168.1.100:8080",
-                "icon": "cube",
-                "category": "Tools",
-                "description": "Test tile for API testing",
-                "visible": True,
-                "is_manual": True
+            chat_data = {
+                "message": "Test message for API testing"
             }
             
-            response = self.session.post(f"{self.api_url}/tiles", json=tile_data, timeout=10)
+            response = self.session.post(f"{self.api_url}/chat", json=chat_data, timeout=10)
+            success = response.status_code == 200
+            data = response.json() if success else {}
+            
+            self.log_test(
+                "Chat Message", 
+                success, 
+                f"Status: {response.status_code}" if not success else f"Routed to: {data.get('routed_to', 'Aria')}",
+                data
+            )
+            return success
+        except Exception as e:
+            self.log_test("Chat Message", False, f"Exception: {str(e)}")
+            return False
+
+    def test_admin_users(self) -> bool:
+        """Test getting admin users list"""
+        try:
+            response = self.session.get(f"{self.api_url}/admin/users", timeout=10)
+            success = response.status_code == 200
+            data = response.json() if success else []
+            
+            self.log_test(
+                "Get Admin Users", 
+                success, 
+                f"Status: {response.status_code}" if not success else f"Found {len(data)} users",
+                data
+            )
+            return success
+        except Exception as e:
+            self.log_test("Get Admin Users", False, f"Exception: {str(e)}")
+            return False
+
+    def test_create_user(self) -> bool:
+        """Test creating a new user"""
+        try:
+            user_data = {
+                "email": f"test.user.{datetime.now().strftime('%H%M%S')}@test.com",
+                "password": "TestPassword123!",
+                "name": "Test User",
+                "role": "user",
+                "theme": "startrek"
+            }
+            
+            response = self.session.post(f"{self.api_url}/admin/users", json=user_data, timeout=10)
             success = response.status_code == 200
             data = response.json() if success else {}
             
             if success and 'id' in data:
-                self.test_tile_id = data['id']
+                self.test_user_id = data['id']
             
             self.log_test(
-                "Create Tile", 
+                "Create User", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Created tile: {data.get('name', 'unknown')}",
+                f"Status: {response.status_code}" if not success else f"Created user: {data.get('email', 'unknown')}",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Create Tile", False, f"Exception: {str(e)}")
+            self.log_test("Create User", False, f"Exception: {str(e)}")
             return False
 
-    def test_update_tile(self) -> bool:
-        """Test updating a tile"""
-        if not self.test_tile_id:
-            self.log_test("Update Tile", False, "No test tile ID available")
+    def test_update_user_services(self) -> bool:
+        """Test updating user services"""
+        if not self.test_user_id:
+            self.log_test("Update User Services", False, "No test user ID available")
             return False
             
         try:
-            update_data = {
-                "name": "Updated Test Service",
-                "description": "Updated description for testing"
+            services_data = {
+                "services": ["casedesk", "forgepilot"]
             }
             
-            response = self.session.put(f"{self.api_url}/tiles/{self.test_tile_id}", json=update_data, timeout=10)
+            response = self.session.put(f"{self.api_url}/admin/users/{self.test_user_id}/services", json=services_data, timeout=10)
             success = response.status_code == 200
             data = response.json() if success else {}
             
             self.log_test(
-                "Update Tile", 
+                "Update User Services", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Updated tile: {data.get('name', 'unknown')}",
+                f"Status: {response.status_code}" if not success else "Services updated successfully",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Update Tile", False, f"Exception: {str(e)}")
+            self.log_test("Update User Services", False, f"Exception: {str(e)}")
             return False
 
-    def test_delete_tile(self) -> bool:
-        """Test deleting a tile"""
-        if not self.test_tile_id:
-            self.log_test("Delete Tile", False, "No test tile ID available")
+    def test_delete_user(self) -> bool:
+        """Test deleting a user"""
+        if not self.test_user_id:
+            self.log_test("Delete User", False, "No test user ID available")
             return False
             
         try:
-            response = self.session.delete(f"{self.api_url}/tiles/{self.test_tile_id}", timeout=10)
+            response = self.session.delete(f"{self.api_url}/admin/users/{self.test_user_id}", timeout=10)
             success = response.status_code == 200
             data = response.json() if success else {}
             
             self.log_test(
-                "Delete Tile", 
+                "Delete User", 
                 success, 
-                f"Status: {response.status_code}" if not success else "Tile deleted successfully",
+                f"Status: {response.status_code}" if not success else "User deleted successfully",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Delete Tile", False, f"Exception: {str(e)}")
+            self.log_test("Delete User", False, f"Exception: {str(e)}")
             return False
 
-    def test_docker_containers(self) -> bool:
-        """Test getting Docker containers (should return mock data)"""
+    def test_theme_update(self) -> bool:
+        """Test updating user theme"""
         try:
-            response = self.session.get(f"{self.api_url}/docker/containers", timeout=10)
-            success = response.status_code == 200
-            data = response.json() if success else []
+            theme_data = {"theme": "disney"}
             
-            self.log_test(
-                "Get Docker Containers", 
-                success, 
-                f"Status: {response.status_code}" if not success else f"Found {len(data)} containers (mock data)",
-                data
-            )
-            return success
-        except Exception as e:
-            self.log_test("Get Docker Containers", False, f"Exception: {str(e)}")
-            return False
-
-    def test_add_docker_containers(self) -> bool:
-        """Test adding Docker containers as tiles"""
-        try:
-            # First get containers
-            containers_response = self.session.get(f"{self.api_url}/docker/containers", timeout=10)
-            if containers_response.status_code != 200:
-                self.log_test("Add Docker Containers", False, "Could not fetch containers first")
-                return False
-                
-            containers = containers_response.json()
-            if not containers:
-                self.log_test("Add Docker Containers", False, "No containers available to add")
-                return False
-            
-            # Try to add first container
-            container_to_add = [containers[0]]
-            response = self.session.post(f"{self.api_url}/docker/containers/add", json=container_to_add, timeout=10)
+            response = self.session.put(f"{self.api_url}/auth/theme", json=theme_data, timeout=10)
             success = response.status_code == 200
             data = response.json() if success else {}
             
             self.log_test(
-                "Add Docker Containers", 
+                "Update Theme", 
                 success, 
-                f"Status: {response.status_code}" if not success else f"Added {data.get('added', 0)} containers",
+                f"Status: {response.status_code}" if not success else f"Theme updated to: {data.get('theme', 'unknown')}",
                 data
             )
             return success
         except Exception as e:
-            self.log_test("Add Docker Containers", False, f"Exception: {str(e)}")
+            self.log_test("Update Theme", False, f"Exception: {str(e)}")
             return False
 
     def test_logout(self) -> bool:
@@ -322,7 +366,7 @@ class AriaAPITester:
 
     def run_all_tests(self) -> Dict[str, Any]:
         """Run all backend tests"""
-        print("🚀 Starting Aria Dashboard Backend API Tests")
+        print("🚀 Starting Aria Dashboard v2.0 Backend API Tests")
         print(f"📡 Testing against: {self.base_url}")
         print("=" * 60)
         
@@ -341,19 +385,22 @@ class AriaAPITester:
         
         self.test_auth_me()
         
-        # Data retrieval
-        self.test_get_categories()
-        self.test_get_tiles()
-        self.test_get_visible_tiles()
+        # Core functionality
+        self.test_get_services()
+        self.test_dashboard_stats()
+        self.test_health_services()
+        self.test_system_health()
+        self.test_get_logs()
+        self.test_chat()
         
-        # Tile CRUD operations
-        self.test_create_tile()
-        self.test_update_tile()
-        self.test_delete_tile()
+        # Admin functionality
+        self.test_admin_users()
+        self.test_create_user()
+        self.test_update_user_services()
+        self.test_delete_user()
         
-        # Docker integration
-        self.test_docker_containers()
-        self.test_add_docker_containers()
+        # Theme functionality
+        self.test_theme_update()
         
         # Cleanup
         self.test_logout()

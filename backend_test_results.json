@@ -1,16 +1,17 @@
 {
-  "total_tests": 13,
-  "passed_tests": 13,
-  "failed_tests": 0,
-  "success_rate": 100.0,
+  "total_tests": 16,
+  "passed_tests": 15,
+  "failed_tests": 1,
+  "success_rate": 93.75,
   "test_results": [
     {
       "name": "Health Check",
       "success": true,
-      "details": "",
+      "details": "App: Aria Dashboard",
       "response_data": {
         "status": "healthy",
-        "app": "Aria Dashboard"
+        "app": "Aria Dashboard",
+        "version": "2.0"
       }
     },
     {
@@ -25,236 +26,244 @@
     {
       "name": "Admin Login",
       "success": true,
-      "details": "Logged in as: andi.trenter@gmail.com",
+      "details": "Logged in as: andi.trenter@gmail.com (superadmin)",
       "response_data": {
-        "id": "69d62a8f3bcb2d4cd2e45b1b",
+        "id": "69d8c2321c855cb3243d88b3",
         "email": "andi.trenter@gmail.com",
-        "name": "Andreas",
-        "role": "admin"
+        "name": "Andreas Trenter",
+        "role": "superadmin",
+        "theme": "startrek",
+        "allowed_services": [
+          "casedesk",
+          "forgepilot",
+          "unraid"
+        ],
+        "permissions": {
+          "chat": true,
+          "logs": true,
+          "health": true,
+          "admin": true
+        }
       }
     },
     {
       "name": "Get Current User",
       "success": true,
-      "details": "User: andi.trenter@gmail.com",
+      "details": "User: andi.trenter@gmail.com (Theme: startrek)",
       "response_data": {
-        "id": "69d62a8f3bcb2d4cd2e45b1b",
+        "id": "69d8c2321c855cb3243d88b3",
         "email": "andi.trenter@gmail.com",
-        "name": "Andreas",
-        "role": "admin"
+        "name": "Andreas Trenter",
+        "role": "superadmin",
+        "theme": "startrek",
+        "allowed_services": [
+          "casedesk",
+          "forgepilot",
+          "unraid"
+        ],
+        "service_accounts": {},
+        "permissions": {
+          "chat": true,
+          "logs": true,
+          "health": true,
+          "admin": true
+        }
       }
     },
     {
-      "name": "Get Categories",
+      "name": "Get Services",
       "success": true,
-      "details": "Found 6 categories",
+      "details": "Found 4 services",
       "response_data": [
         {
-          "name": "Server",
-          "icon": "hard-drives",
-          "order": 0
+          "id": "casedesk",
+          "api_base": "/api",
+          "auth_type": "jwt",
+          "category": "Dokumente",
+          "description": "Dokumenten- und Fallverwaltung mit KI",
+          "enabled": true,
+          "health_endpoint": "/api/health",
+          "icon": "files",
+          "name": "CaseDesk AI",
+          "url": "http://192.168.1.140:3001",
+          "linked": false,
+          "linked_username": null
         },
         {
-          "name": "Smart Home",
-          "icon": "house-line",
-          "order": 1
+          "id": "forgepilot",
+          "api_base": "/api",
+          "auth_type": "jwt",
+          "category": "Entwicklung",
+          "description": "Projekt- und Code-Verwaltung mit Agenten",
+          "enabled": true,
+          "health_endpoint": "/api/health",
+          "icon": "code",
+          "name": "ForgePilot",
+          "url": "http://192.168.1.140:3002",
+          "linked": false,
+          "linked_username": null
         },
         {
-          "name": "Cloud",
+          "id": "nextcloud",
+          "api_base": "/ocs/v2.php",
+          "auth_type": "basic",
+          "category": "Storage",
+          "description": "Dateien und Cloud Storage",
+          "enabled": true,
+          "health_endpoint": "/status.php",
           "icon": "cloud",
-          "order": 2
+          "name": "Nextcloud",
+          "url": "http://192.168.1.140:8081",
+          "linked": false,
+          "linked_username": null
         },
         {
-          "name": "Medien",
-          "icon": "play-circle",
-          "order": 3
-        },
-        {
-          "name": "Tools",
-          "icon": "wrench",
-          "order": 4
-        },
-        {
-          "name": "Sonstige",
-          "icon": "folder",
-          "order": 5
-        }
-      ]
-    },
-    {
-      "name": "Get All Tiles",
-      "success": true,
-      "details": "Found 1 tiles",
-      "response_data": [
-        {
-          "id": "69d62ae63bcb2d4cd2e45b1e",
-          "name": "Unraid",
-          "url": "http://192.168.1.140:80",
-          "icon": "hard-drives",
+          "id": "unraid",
           "category": "Server",
-          "description": "Container: unraid:latest",
-          "visible": true,
-          "is_manual": false,
-          "container_id": "demo_unraid",
-          "status": "running",
-          "order": 0
-        }
-      ]
-    },
-    {
-      "name": "Get Visible Tiles",
-      "success": true,
-      "details": "Found 1 visible tiles",
-      "response_data": [
-        {
-          "id": "69d62ae63bcb2d4cd2e45b1e",
-          "name": "Unraid",
-          "url": "http://192.168.1.140:80",
+          "description": "Unraid Server Dashboard",
+          "enabled": true,
+          "health_endpoint": "/",
           "icon": "hard-drives",
-          "category": "Server",
-          "description": "Container: unraid:latest",
-          "visible": true,
-          "is_manual": false,
-          "container_id": "demo_unraid",
-          "status": "running",
-          "order": 0
+          "name": "Unraid",
+          "url": "http://192.168.1.140",
+          "linked": false,
+          "linked_username": null
         }
       ]
     },
     {
-      "name": "Create Tile",
+      "name": "Get Dashboard Stats",
       "success": true,
-      "details": "Created tile: Test Service",
+      "details": "Services: 4, Users: 1",
       "response_data": {
-        "id": "69d62af9e2af33f3b6a94e8a",
-        "name": "Test Service",
-        "url": "http://192.168.1.100:8080",
-        "icon": "cube",
-        "category": "Tools",
-        "description": "Test tile for API testing",
-        "visible": true,
-        "is_manual": true,
-        "container_id": null,
-        "status": "unknown",
-        "order": 1
+        "services": 4,
+        "users": 1,
+        "logs_today": 4
       }
     },
     {
-      "name": "Update Tile",
+      "name": "Get Services Health",
+      "success": false,
+      "details": "Exception: HTTPSConnectionPool(host='github-docker-deploy.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)",
+      "response_data": null
+    },
+    {
+      "name": "Get System Health",
       "success": true,
-      "details": "Updated tile: Updated Test Service",
+      "details": "CPU: 49.5%, Memory: 62.1%",
       "response_data": {
-        "name": "Updated Test Service",
-        "url": "http://192.168.1.100:8080",
-        "icon": "cube",
-        "category": "Tools",
-        "description": "Updated description for testing",
-        "visible": true,
-        "is_manual": true,
-        "container_id": null,
-        "id": "69d62af9e2af33f3b6a94e8a",
-        "status": "unknown",
-        "order": 1,
-        "created_at": "2026-04-08T10:16:25.417281+00:00"
+        "cpu_percent": 49.5,
+        "memory_percent": 62.1,
+        "memory_total_mb": 32043,
+        "memory_used_mb": 19892
       }
     },
     {
-      "name": "Delete Tile",
+      "name": "Get Logs",
       "success": true,
-      "details": "Tile deleted successfully",
-      "response_data": {
-        "message": "Tile deleted"
-      }
-    },
-    {
-      "name": "Get Docker Containers",
-      "success": true,
-      "details": "Found 5 containers (mock data)",
+      "details": "Retrieved 4 log entries",
       "response_data": [
         {
-          "id": "demo_unraid",
-          "name": "unraid",
-          "status": "running",
-          "image": "unraid:latest",
-          "ports": {
-            "80/tcp": [
-              {
-                "HostPort": "80"
-              }
-            ]
-          },
-          "web_port": "80",
-          "added_to_dashboard": false
+          "type": "user_login",
+          "user_id": "69d8c2321c855cb3243d88b3",
+          "email": "andi.trenter@gmail.com",
+          "timestamp": "2026-04-10T09:29:12.230427+00:00"
         },
         {
-          "id": "demo_nextcloud",
-          "name": "nextcloud",
-          "status": "running",
-          "image": "nextcloud:latest",
-          "ports": {
-            "443/tcp": [
-              {
-                "HostPort": "443"
-              }
-            ]
-          },
-          "web_port": "443",
-          "added_to_dashboard": false
+          "type": "user_login",
+          "user_id": "69d8c2321c855cb3243d88b3",
+          "email": "andi.trenter@gmail.com",
+          "timestamp": "2026-04-10T09:28:26.783349+00:00"
         },
         {
-          "id": "demo_homeassistant",
-          "name": "homeassistant",
-          "status": "running",
-          "image": "homeassistant/home-assistant:latest",
-          "ports": {
-            "8123/tcp": [
-              {
-                "HostPort": "8123"
-              }
-            ]
-          },
-          "web_port": "8123",
-          "added_to_dashboard": false
+          "type": "user_login",
+          "user_id": "69d8c2321c855cb3243d88b3",
+          "email": "andi.trenter@gmail.com",
+          "timestamp": "2026-04-10T09:27:05.027929+00:00"
         },
         {
-          "id": "demo_plex",
-          "name": "plex",
-          "status": "running",
-          "image": "plexinc/pms-docker:latest",
-          "ports": {
-            "32400/tcp": [
-              {
-                "HostPort": "32400"
-              }
-            ]
-          },
-          "web_port": "32400",
-          "added_to_dashboard": false
-        },
-        {
-          "id": "demo_paperless",
-          "name": "paperless-ngx",
-          "status": "stopped",
-          "image": "paperlessngx/paperless-ngx:latest",
-          "ports": {
-            "8000/tcp": [
-              {
-                "HostPort": "8000"
-              }
-            ]
-          },
-          "web_port": "8000",
-          "added_to_dashboard": false
+          "type": "user_login",
+          "user_id": "69d8c2321c855cb3243d88b3",
+          "email": "andi.trenter@gmail.com",
+          "timestamp": "2026-04-10T09:26:40.425945+00:00"
         }
       ]
     },
     {
-      "name": "Add Docker Containers",
+      "name": "Chat Message",
       "success": true,
-      "details": "Added 0 containers",
+      "details": "Routed to: None",
       "response_data": {
-        "added": 0,
-        "tiles": []
+        "message": "Test message for API testing",
+        "routed_to": null,
+        "response": "Wie kann ich dir helfen?"
+      }
+    },
+    {
+      "name": "Get Admin Users",
+      "success": true,
+      "details": "Found 1 users",
+      "response_data": [
+        {
+          "email": "andi.trenter@gmail.com",
+          "name": "Andreas Trenter",
+          "role": "superadmin",
+          "theme": "startrek",
+          "is_active": true,
+          "allowed_services": [
+            "casedesk",
+            "forgepilot",
+            "unraid"
+          ],
+          "service_accounts": {},
+          "permissions": {
+            "chat": true,
+            "logs": true,
+            "health": true,
+            "admin": true
+          },
+          "created_at": "2026-04-10T09:26:10.859Z",
+          "id": "69d8c2321c855cb3243d88b3"
+        }
+      ]
+    },
+    {
+      "name": "Create User",
+      "success": true,
+      "details": "Created user: test.user.092922@test.com",
+      "response_data": {
+        "id": "69d8c2f2dc21f0cf0c1bf592",
+        "email": "test.user.092922@test.com",
+        "name": "Test User",
+        "role": "user"
+      }
+    },
+    {
+      "name": "Update User Services",
+      "success": true,
+      "details": "Services updated successfully",
+      "response_data": {
+        "message": "Services updated",
+        "allowed_services": [
+          "casedesk",
+          "forgepilot"
+        ]
+      }
+    },
+    {
+      "name": "Delete User",
+      "success": true,
+      "details": "User deleted successfully",
+      "response_data": {
+        "message": "User deleted"
+      }
+    },
+    {
+      "name": "Update Theme",
+      "success": true,
+      "details": "Theme updated to: disney",
+      "response_data": {
+        "theme": "disney"
       }
     },
     {
@@ -266,5 +275,5 @@
       }
     }
   ],
-  "timestamp": "2026-04-08T10:16:25.752580"
+  "timestamp": "2026-04-10T09:29:23.187179"
 }

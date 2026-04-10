@@ -1,59 +1,29 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { useAuth, API } from "@/App";
 import { Link } from "react-router-dom";
+import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  HardDrives,
-  User,
-  SignOut,
-  Gear,
-  ArrowSquareOut,
-  Circle,
-  Cube,
-  Cloud,
-  HouseLine,
-  PlayCircle,
-  Wrench,
-  Files,
-  Folder,
-  CaretDown,
-  MagnifyingGlass,
-  Plus
+import { 
+  HardDrives, Files, Code, Cloud, SignOut, Gear, User, 
+  Heart, ClockClockwise, ChatsCircle, House, CaretDown,
+  ArrowSquareOut, Circle, MagnifyingGlass
 } from "@phosphor-icons/react";
 
-// Icon mapping
 const iconMap = {
   "hard-drives": HardDrives,
-  "cube": Cube,
-  "cloud": Cloud,
-  "house-line": HouseLine,
-  "play-circle": PlayCircle,
-  "wrench": Wrench,
   "files": Files,
-  "folder": Folder,
-};
-
-const getIcon = (iconName) => {
-  return iconMap[iconName] || Cube;
+  "code": Code,
+  "cloud": Cloud,
 };
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
-  const [tiles, setTiles] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [activeCategory, setActiveCategory] = useState("all");
+  const { theme, setTheme } = useTheme();
+  const [services, setServices] = useState([]);
+  const [stats, setStats] = useState({});
+  const [healthData, setHealthData] = useState([]);
+  const [chatMessage, setChatMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -61,15 +31,16 @@ const Dashboard = () => {
 
   const fetchData = async () => {
     try {
-      const [tilesRes, categoriesRes] = await Promise.all([
-        axios.get(`${API}/tiles?visible_only=true`),
-        axios.get(`${API}/categories`)
+      const [servicesRes, statsRes, healthRes] = await Promise.all([
+        axios.get(`${API}/services`),
+        axios.get(`${API}/dashboard/stats`),
+        axios.get(`${API}/health/services`).catch(() => ({ data: [] }))
       ]);
-      setTiles(tilesRes.data);
-      setCategories(categoriesRes.data);
+      setServices(servicesRes.data);
+      setStats(statsRes.data);
+      setHealthData(healthRes.data);
     } catch (e) {
       console.error("Failed to fetch data:", e);
-      toast.error("Daten konnten nicht geladen werden");
     } finally {
       setLoading(false);
     }
@@ -80,233 +51,271 @@ const Dashboard = () => {
     toast.success("Abgemeldet");
   };
 
-  const filteredTiles = tiles.filter(tile => {
-    const matchesCategory = activeCategory === "all" || tile.category === activeCategory;
-    const matchesSearch = !searchQuery || 
-      tile.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tile.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.05
-      }
+  const handleChat = async (e) => {
+    e.preventDefault();
+    if (!chatMessage.trim()) return;
+    try {
+      const { data } = await axios.post(`${API}/chat`, { message: chatMessage });
+      toast.success(data.response);
+      setChatMessage("");
+    } catch (e) {
+      toast.error("Chat-Fehler");
     }
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0 }
+  const getServiceHealth = (serviceId) => {
+    const health = healthData.find(h => h.id === serviceId);
+    return health?.status || "unknown";
   };
 
+  // LCARS Star Trek Theme
+  if (theme === "startrek") {
+    return (
+      <div className="min-h-screen flex">
+        {/* LCARS Sidebar */}
+        <div className="lcars-sidebar flex-shrink-0">
+          <div className="h-16 bg-gradient-to-b from-orange-500 to-orange-600 rounded-br-3xl mb-4" />
+          
+          <Link to="/" className="lcars-sidebar-item active">Dashboard</Link>
+          <Link to="/health" className="lcars-sidebar-item">Health</Link>
+          <Link to="/account" className="lcars-sidebar-item">Konto</Link>
+          <Link to="/logs" className="lcars-sidebar-item">Logs</Link>
+          {user?.role === "superadmin" || user?.role === "admin" ? (
+            <Link to="/admin" className="lcars-sidebar-item">Admin</Link>
+          ) : null}
+          
+          <div className="flex-1" />
+          
+          <div className="lcars-sidebar-item" onClick={() => setTheme("disney")}>Theme</div>
+          <div className="lcars-sidebar-item text-red-900" onClick={handleLogout}>Logout</div>
+          
+          <div className="h-20 bg-gradient-to-t from-purple-500 to-purple-600 rounded-tr-3xl mt-4" />
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 p-6">
+          {/* Header Bar */}
+          <div className="lcars-header mb-6 flex items-center px-6">
+            <div className="flex items-center gap-4">
+              <HardDrives size={32} weight="bold" className="text-black" />
+              <span className="text-black font-bold text-xl tracking-widest">ARIA DASHBOARD</span>
+            </div>
+            <div className="flex-1" />
+            <div className="text-black font-bold text-sm">
+              {new Date().toLocaleDateString('de-DE')} | STARDATE {Math.floor(Date.now() / 86400000)}
+            </div>
+          </div>
+
+          {/* Stats Row */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="lcars-card">
+              <div className="text-xs text-orange-400 mb-1">DIENSTE</div>
+              <div className="text-3xl font-bold">{stats.services || 0}</div>
+            </div>
+            <div className="lcars-card">
+              <div className="text-xs text-orange-400 mb-1">BENUTZER</div>
+              <div className="text-3xl font-bold">{stats.users || 0}</div>
+            </div>
+            <div className="lcars-card">
+              <div className="text-xs text-orange-400 mb-1">LOGS HEUTE</div>
+              <div className="text-3xl font-bold">{stats.logs_today || 0}</div>
+            </div>
+          </div>
+
+          {/* Services Grid */}
+          <div className="mb-6">
+            <div className="text-sm text-orange-400 mb-3 tracking-widest">AKTIVE DIENSTE</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {services.map((service) => {
+                const Icon = iconMap[service.icon] || HardDrives;
+                const health = getServiceHealth(service.id);
+                return (
+                  <a
+                    key={service.id}
+                    href={service.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="lcars-card hover:border-yellow-500 transition-all cursor-pointer group"
+                    data-testid={`service-${service.id}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Icon size={28} weight="duotone" className="text-orange-500" />
+                        <div>
+                          <div className="font-bold tracking-wide">{service.name}</div>
+                          <div className="text-xs text-gray-400">{service.category}</div>
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-1 text-xs ${health === 'healthy' ? 'status-online' : health === 'offline' ? 'status-offline' : 'text-yellow-500'}`}>
+                        <Circle size={8} weight="fill" />
+                        {health === 'healthy' ? 'ONLINE' : health === 'offline' ? 'OFFLINE' : 'UNKNOWN'}
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">{service.description}</div>
+                    <div className="flex items-center gap-1 text-xs text-orange-400 mt-3 group-hover:text-yellow-400">
+                      <ArrowSquareOut size={14} />
+                      <span>ZUGRIFF</span>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Chat Input */}
+          <div className="lcars-card">
+            <div className="text-sm text-orange-400 mb-3 tracking-widest">COMPUTER EINGABE</div>
+            <form onSubmit={handleChat} className="flex gap-3">
+              <input
+                type="text"
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                placeholder="Befehl eingeben..."
+                className="lcars-input flex-1"
+                data-testid="chat-input"
+              />
+              <button type="submit" className="lcars-button">SENDEN</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Disney Magical Theme
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen relative z-10">
       {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-zinc-950/70 border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-zinc-900 border border-white/10">
-                <HardDrives size={24} weight="duotone" className="text-zinc-50" />
-              </div>
-              <span className="text-xl font-bold text-zinc-50 font-['Outfit']">Aria</span>
-            </div>
+      <header className="disney-header py-4 px-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="text-3xl">🏰</div>
+            <h1 className="disney-title text-2xl font-bold">Aria</h1>
+          </div>
+          
+          <nav className="flex items-center gap-6">
+            <Link to="/" className="text-purple-200 hover:text-white transition-colors flex items-center gap-2">
+              <House size={18} /> Dashboard
+            </Link>
+            <Link to="/health" className="text-purple-200 hover:text-white transition-colors flex items-center gap-2">
+              <Heart size={18} /> Health
+            </Link>
+            <Link to="/account" className="text-purple-200 hover:text-white transition-colors flex items-center gap-2">
+              <User size={18} /> Konto
+            </Link>
+            <Link to="/logs" className="text-purple-200 hover:text-white transition-colors flex items-center gap-2">
+              <ClockClockwise size={18} /> Logs
+            </Link>
+            {(user?.role === "superadmin" || user?.role === "admin") && (
+              <Link to="/admin" className="text-purple-200 hover:text-white transition-colors flex items-center gap-2">
+                <Gear size={18} /> Admin
+              </Link>
+            )}
+          </nav>
 
-            {/* Search (Desktop) */}
-            <div className="hidden md:flex flex-1 max-w-md mx-8">
-              <div className="relative w-full">
-                <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Dienste suchen..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-10 pl-10 pr-4 rounded-xl bg-zinc-900/50 border border-white/5 text-zinc-50 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-50/20"
-                  data-testid="dashboard-search-input"
-                />
-              </div>
-            </div>
-
-            {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  className="flex items-center gap-2 text-zinc-300 hover:text-zinc-50 hover:bg-zinc-800"
-                  data-testid="user-menu-button"
-                >
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center">
-                    <User size={16} weight="bold" />
-                  </div>
-                  <span className="hidden sm:inline">{user?.name}</span>
-                  <CaretDown size={14} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48 bg-zinc-900 border-white/10">
-                <DropdownMenuItem asChild className="text-zinc-300 focus:bg-zinc-800 focus:text-zinc-50 cursor-pointer">
-                  <Link to="/admin" data-testid="admin-link">
-                    <Gear size={16} className="mr-2" />
-                    Admin-Bereich
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-white/10" />
-                <DropdownMenuItem 
-                  onClick={handleLogout}
-                  className="text-red-400 focus:bg-red-500/10 focus:text-red-400 cursor-pointer"
-                  data-testid="logout-button"
-                >
-                  <SignOut size={16} className="mr-2" />
-                  Abmelden
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setTheme("startrek")}
+              className="text-sm text-purple-300 hover:text-white"
+            >
+              🚀 Theme
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="disney-button text-sm"
+              data-testid="logout-button"
+            >
+              <SignOut size={16} className="inline mr-1" /> Logout
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Category Tabs */}
-      <div className="border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2 py-4 overflow-x-auto category-tabs">
-            <button
-              onClick={() => setActiveCategory("all")}
-              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                activeCategory === "all"
-                  ? "bg-zinc-50 text-zinc-950"
-                  : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
-              }`}
-              data-testid="category-all"
-            >
-              Alle
-            </button>
-            {categories.map((category) => {
-              const Icon = getIcon(category.icon);
-              return (
-                <button
-                  key={category.name}
-                  onClick={() => setActiveCategory(category.name)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                    activeCategory === category.name
-                      ? "bg-zinc-50 text-zinc-950"
-                      : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
-                  }`}
-                  data-testid={`category-${category.name.toLowerCase()}`}
-                >
-                  <Icon size={16} weight="duotone" />
-                  {category.name}
-                </button>
-              );
-            })}
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Welcome */}
+        <div className="text-center mb-10">
+          <h2 className="disney-title text-4xl font-bold mb-2 disney-glow">
+            Willkommen, {user?.name}! ✨
+          </h2>
+          <p className="text-purple-300">Dein magisches Dashboard wartet auf dich</p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-6 mb-10">
+          <div className="disney-card text-center">
+            <div className="text-4xl mb-2">🌟</div>
+            <div className="text-3xl font-bold disney-glow">{stats.services || 0}</div>
+            <div className="text-purple-300 text-sm">Dienste</div>
+          </div>
+          <div className="disney-card text-center">
+            <div className="text-4xl mb-2">👑</div>
+            <div className="text-3xl font-bold disney-glow">{stats.users || 0}</div>
+            <div className="text-purple-300 text-sm">Benutzer</div>
+          </div>
+          <div className="disney-card text-center">
+            <div className="text-4xl mb-2">📜</div>
+            <div className="text-3xl font-bold disney-glow">{stats.logs_today || 0}</div>
+            <div className="text-purple-300 text-sm">Logs heute</div>
           </div>
         </div>
-      </div>
 
-      {/* Mobile Search */}
-      <div className="md:hidden px-4 py-4">
-        <div className="relative">
-          <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Dienste suchen..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-zinc-900/50 border border-white/5 text-zinc-50 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-50/20"
-            data-testid="dashboard-search-input-mobile"
-          />
-        </div>
-      </div>
-
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6">
-            {[...Array(6)].map((_, i) => (
-              <div
-                key={i}
-                className="aspect-square rounded-2xl bg-zinc-900 border border-white/5 animate-pulse"
-              />
-            ))}
-          </div>
-        ) : filteredTiles.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-900 border border-white/10 mb-4">
-              <Cube size={32} weight="duotone" className="text-zinc-500" />
-            </div>
-            <h3 className="text-lg font-medium text-zinc-300 mb-2">Keine Kacheln gefunden</h3>
-            <p className="text-zinc-500 mb-6">
-              {searchQuery 
-                ? "Keine Dienste gefunden, die deiner Suche entsprechen."
-                : "Füge im Admin-Bereich neue Kacheln hinzu."}
-            </p>
-            <Button asChild className="bg-zinc-800 text-zinc-50 hover:bg-zinc-700">
-              <Link to="/admin" data-testid="add-tile-link">
-                <Plus size={16} className="mr-2" />
-                Kachel hinzufügen
-              </Link>
-            </Button>
-          </div>
-        ) : (
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="show"
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6"
-          >
-            {filteredTiles.map((tile) => {
-              const Icon = getIcon(tile.icon);
-              return (
-                <motion.a
-                  key={tile.id}
-                  href={tile.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  variants={itemVariants}
-                  whileTap={{ scale: 0.95 }}
-                  className="group relative aspect-square rounded-2xl bg-zinc-900 border border-white/5 p-4 sm:p-5 transition-all duration-200 hover:bg-zinc-800 hover:border-white/10 tile-glow flex flex-col"
-                  data-testid={`tile-${tile.name.toLowerCase().replace(/\s+/g, '-')}`}
-                >
-                  {/* Status dot */}
-                  <div className="absolute top-3 right-3">
-                    <Circle
-                      size={10}
-                      weight="fill"
-                      className={`${
-                        tile.status === "running"
-                          ? "text-emerald-500 status-dot-running"
-                          : tile.status === "stopped"
-                          ? "text-red-500"
-                          : "text-zinc-600"
-                      }`}
+        {/* Services */}
+        <h3 className="disney-title text-xl font-bold mb-4">Deine Dienste</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
+          {services.map((service) => {
+            const Icon = iconMap[service.icon] || HardDrives;
+            const health = getServiceHealth(service.id);
+            return (
+              <a
+                key={service.id}
+                href={service.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="disney-card group cursor-pointer"
+                data-testid={`service-${service.id}`}
+              >
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                    <Icon size={24} weight="fill" className="text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white">{service.name}</h4>
+                    <span className="text-xs text-purple-300">{service.category}</span>
+                  </div>
+                  <div className="ml-auto">
+                    <Circle 
+                      size={10} 
+                      weight="fill" 
+                      className={health === 'healthy' ? 'text-green-400' : health === 'offline' ? 'text-red-400' : 'text-yellow-400'} 
                     />
                   </div>
+                </div>
+                <p className="text-sm text-purple-200 mb-3">{service.description}</p>
+                <div className="flex items-center gap-2 text-sm text-pink-400 group-hover:text-pink-300">
+                  <ArrowSquareOut size={14} />
+                  <span>Öffnen</span>
+                </div>
+              </a>
+            );
+          })}
+        </div>
 
-                  {/* Icon */}
-                  <div className="flex-1 flex items-start">
-                    <div className="p-2.5 rounded-xl bg-zinc-800/50 group-hover:bg-zinc-700/50 transition-colors">
-                      <Icon size={24} weight="duotone" className="text-zinc-300 group-hover:text-zinc-50" />
-                    </div>
-                  </div>
-
-                  {/* Info */}
-                  <div className="mt-auto">
-                    <h3 className="font-semibold text-zinc-50 truncate text-sm sm:text-base">
-                      {tile.name}
-                    </h3>
-                    <div className="flex items-center gap-1 mt-1 text-zinc-500 text-xs">
-                      <ArrowSquareOut size={12} />
-                      <span className="truncate">Öffnen</span>
-                    </div>
-                  </div>
-                </motion.a>
-              );
-            })}
-          </motion.div>
-        )}
+        {/* Chat */}
+        <div className="disney-card">
+          <h3 className="disney-title text-lg font-bold mb-4">💬 Frag Aria</h3>
+          <form onSubmit={handleChat} className="flex gap-3">
+            <input
+              type="text"
+              value={chatMessage}
+              onChange={(e) => setChatMessage(e.target.value)}
+              placeholder="Was kann ich für dich tun?"
+              className="disney-input flex-1"
+              data-testid="chat-input"
+            />
+            <button type="submit" className="disney-button">Senden ✨</button>
+          </form>
+        </div>
       </main>
     </div>
   );

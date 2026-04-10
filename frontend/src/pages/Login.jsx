@@ -1,38 +1,25 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { useAuth, formatApiError } from "@/App";
+import { useAuth, useTheme, formatApiError } from "@/App";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { HardDrives, SignIn, Spinner, Eye, EyeSlash } from "@phosphor-icons/react";
+import { HardDrives, SignIn, Eye, EyeSlash } from "@phosphor-icons/react";
 
 const Login = () => {
   const { login } = useAuth();
+  const { theme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: ""
-  });
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  const [formData, setFormData] = useState({ email: "", password: "" });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (!formData.email || !formData.password) {
       toast.error("Bitte fülle alle Felder aus");
       return;
     }
-
     setLoading(true);
     try {
       await login(formData.email, formData.password);
-      toast.success("Erfolgreich angemeldet!");
+      toast.success("Willkommen!");
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail) || "Login fehlgeschlagen");
     } finally {
@@ -40,106 +27,129 @@ const Login = () => {
     }
   };
 
+  // Star Trek Theme
+  if (theme === "startrek") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full border-4 border-orange-500 mb-4">
+              <HardDrives size={40} weight="duotone" className="text-orange-500" />
+            </div>
+            <h1 className="text-4xl font-bold tracking-widest">ARIA</h1>
+            <p className="text-gray-500 mt-2 tracking-wide">ZUGANGSPORTAL</p>
+          </div>
+
+          <div className="lcars-card">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label className="block text-xs text-orange-400 mb-2 tracking-widest">BENUTZER-ID</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="name@domain.com"
+                  className="lcars-input w-full"
+                  data-testid="login-email-input"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-orange-400 mb-2 tracking-widest">ZUGANGSCODE</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="••••••••"
+                    className="lcars-input w-full pr-10"
+                    data-testid="login-password-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400"
+                  >
+                    {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="lcars-button w-full h-12 text-lg"
+                data-testid="login-submit-button"
+              >
+                {loading ? "AUTHENTIFIZIERUNG..." : "ZUGANG GEWÄHREN"}
+              </button>
+            </form>
+          </div>
+
+          <p className="text-center text-gray-600 text-xs mt-6 tracking-wide">
+            ARIA DASHBOARD V2.0 | LCARS INTERFACE
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Disney Theme
   return (
-    <div 
-      className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 relative overflow-hidden"
-      style={{
-        backgroundImage: `linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.95)), url('https://images.unsplash.com/photo-1676068646516-5eda1745a641?w=1920&q=80')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
-      }}
-    >
-      {/* Background grid */}
-      <div className="absolute inset-0 bg-grid-pattern opacity-30" />
-      
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md relative z-10"
-      >
-        {/* Logo */}
+    <div className="min-h-screen flex items-center justify-center p-4 relative z-10">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", duration: 0.6 }}
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-zinc-900 border border-white/10 mb-4"
-          >
-            <HardDrives size={32} weight="duotone" className="text-zinc-50" />
-          </motion.div>
-          <h1 className="text-4xl font-bold tracking-tight text-zinc-50 font-['Outfit']">Aria</h1>
-          <p className="text-zinc-400 mt-2">Dashboard Login</p>
+          <div className="text-6xl mb-4">🏰</div>
+          <h1 className="disney-title text-4xl font-bold disney-glow">Aria</h1>
+          <p className="text-purple-300 mt-2">Willkommen zurück in deinem Königreich</p>
         </div>
 
-        {/* Login Form */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-zinc-900 rounded-3xl border border-white/10 p-8"
-        >
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="disney-panel p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <Label htmlFor="email" className="text-zinc-300">E-Mail</Label>
-              <Input
-                id="email"
-                name="email"
+              <label className="block text-sm text-purple-300 mb-2">E-Mail</label>
+              <input
                 type="email"
                 value={formData.email}
-                onChange={handleInputChange}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="deine@email.com"
-                className="mt-1.5 bg-zinc-800/50 border-white/10 focus:border-zinc-50 text-zinc-50 placeholder:text-zinc-500"
+                className="disney-input w-full"
                 data-testid="login-email-input"
-                autoComplete="email"
               />
             </div>
             <div>
-              <Label htmlFor="password" className="text-zinc-300">Passwort</Label>
+              <label className="block text-sm text-purple-300 mb-2">Passwort</label>
               <div className="relative">
-                <Input
-                  id="password"
-                  name="password"
+                <input
                   type={showPassword ? "text" : "password"}
                   value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="Dein Passwort"
-                  className="mt-1.5 bg-zinc-800/50 border-white/10 focus:border-zinc-50 text-zinc-50 placeholder:text-zinc-500 pr-10"
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="••••••••"
+                  className="disney-input w-full pr-10"
                   data-testid="login-password-input"
-                  autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-50 mt-0.5"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400"
                 >
                   {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
-
-            <Button
+            <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 bg-zinc-50 text-zinc-950 hover:bg-zinc-200 h-12 text-base font-medium"
+              className="disney-button w-full h-12 text-lg"
               data-testid="login-submit-button"
             >
-              {loading ? (
-                <Spinner size={20} className="animate-spin" />
-              ) : (
-                <>
-                  <SignIn size={18} className="mr-2" />
-                  Anmelden
-                </>
-              )}
-            </Button>
+              {loading ? "Einen Moment..." : "Eintreten ✨"}
+            </button>
           </form>
-        </motion.div>
+        </div>
 
-        {/* Footer */}
-        <p className="text-center text-zinc-500 text-sm mt-6">
-          Aria Dashboard v1.0
+        <p className="text-center text-purple-400 text-sm mt-6">
+          ✨ Aria Dashboard v2.0 ✨
         </p>
-      </motion.div>
+      </div>
     </div>
   );
 };

@@ -1,64 +1,47 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Body
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import os
 import logging
-import secrets
 import bcrypt
 import jwt
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+import httpx
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
+from enum import Enum
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'aria_dashboard')]
 
-# JWT Configuration
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours for better UX
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 def get_jwt_secret() -> str:
     return os.environ.get("JWT_SECRET", "aria_default_secret_change_me")
 
 def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
-    return hashed.decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-def create_access_token(user_id: str, email: str) -> str:
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
-        "type": "access"
-    }
+def create_access_token(user_id: str, email: str, role: str) -> str:
+    payload = {"sub": user_id, "email": email, "role": role, "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES), "type": "access"}
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 def create_refresh_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
-        "type": "refresh"
-    }
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS), "type": "refresh"}
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
@@ -76,18 +59,30 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-        return {
-            "id": str(user["_id"]),
-            "email": user["email"],
-            "name": user.get("name", ""),
-            "role": user.get("role", "user")
-        }
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=401, detail="User is deactivated")
+        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {})}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# Pydantic Models
+async def require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+class UserRole(str, Enum):
+    SUPERADMIN = "superadmin"
+    ADMIN = "admin"
+    USER = "user"
+    READONLY = "readonly"
+
+class ThemeType(str, Enum):
+    STARTREK = "startrek"
+    DISNEY = "disney"
+
 class SetupRequest(BaseModel):
     email: str
     password: str
@@ -97,205 +92,102 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-class UserResponse(BaseModel):
-    id: str
+class UserCreate(BaseModel):
     email: str
+    password: str
     name: str
-    role: str
+    role: UserRole = UserRole.USER
+    theme: ThemeType = ThemeType.STARTREK
 
-class TileCreate(BaseModel):
-    name: str
-    url: str
-    icon: str = "cube"
-    category: str = "Sonstige"
-    description: str = ""
-    visible: bool = True
-    is_manual: bool = True
-    container_id: Optional[str] = None
-
-class TileUpdate(BaseModel):
+class UserUpdate(BaseModel):
     name: Optional[str] = None
-    url: Optional[str] = None
-    icon: Optional[str] = None
-    category: Optional[str] = None
-    description: Optional[str] = None
-    visible: Optional[bool] = None
-    order: Optional[int] = None
+    role: Optional[str] = None
+    theme: Optional[str] = None
+    is_active: Optional[bool] = None
+    permissions: Optional[Dict[str, bool]] = None
+    allowed_services: Optional[List[str]] = None
 
-class TileResponse(BaseModel):
-    id: str
-    name: str
-    url: str
-    icon: str
-    category: str
-    description: str
-    visible: bool
-    is_manual: bool
-    container_id: Optional[str]
-    status: str = "unknown"
-    order: int = 0
+class ServiceLinkRequest(BaseModel):
+    service_id: str
+    username: str
+    password: str
 
-class CategoryCreate(BaseModel):
-    name: str
-    icon: str = "folder"
-    order: int = 0
+class ChatMessage(BaseModel):
+    message: str
+    target_service: Optional[str] = None
 
-class DockerSettingsUpdate(BaseModel):
-    docker_host: Optional[str] = None
-    docker_socket_path: Optional[str] = None
-
-class ContainerToggleRequest(BaseModel):
-    container_ids: List[str]
-    visible: bool
-
-# Lifespan for startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await db.users.create_index("email", unique=True)
-    await db.tiles.create_index("container_id")
-    await db.tiles.create_index("category")
-    logger.info("Aria Dashboard started")
+    await db.services.create_index("id", unique=True)
+    await db.logs.create_index("timestamp")
+    
+    default_services = [
+        {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "enabled": True},
+        {"id": "forgepilot", "name": "ForgePilot", "url": "http://192.168.1.140:3000", "icon": "code", "category": "Entwicklung", "description": "Projekt- und Code-Verwaltung mit Agenten", "health_endpoint": "/api/health", "enabled": True},
+        {"id": "unraid", "name": "Unraid", "url": "http://192.168.1.140", "icon": "hard-drives", "category": "Server", "description": "Unraid Server Dashboard", "health_endpoint": "/", "enabled": True},
+    ]
+    
+    for service in default_services:
+        await db.services.update_one({"id": service["id"]}, {"$setOnInsert": service}, upsert=True)
+    
+    logger.info("Aria Dashboard v2.0 started")
     yield
-    # Shutdown
     client.close()
 
-app = FastAPI(title="Aria Dashboard", lifespan=lifespan)
+app = FastAPI(title="Aria Dashboard v2.0", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
-# CORS
-frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-cors_origins = os.environ.get('CORS_ORIGINS', '*')
-if cors_origins == '*':
-    origins = ["*"]
-else:
-    origins = cors_origins.split(',')
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Helper to set auth cookies
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
-    response.set_cookie(
-        key="access_token", value=access_token, httponly=True,
-        secure=False, samesite="lax", max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/"
-    )
-    response.set_cookie(
-        key="refresh_token", value=refresh_token, httponly=True,
-        secure=False, samesite="lax", max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400, path="/"
-    )
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400, path="/")
 
-# ==================== SETUP ENDPOINTS ====================
+# ==================== SETUP ====================
 
 @api_router.get("/setup/status")
 async def get_setup_status():
-    """Check if initial setup is completed"""
     user_count = await db.users.count_documents({})
     settings = await db.settings.find_one({"key": "setup_completed"})
-    return {
-        "setup_completed": user_count > 0 and settings is not None,
-        "has_admin": user_count > 0
-    }
+    return {"setup_completed": user_count > 0 and settings is not None, "has_admin": user_count > 0}
 
 @api_router.post("/setup/complete")
 async def complete_setup(request: SetupRequest, response: Response):
-    """Complete initial setup with admin account"""
-    # Check if setup already done
     user_count = await db.users.count_documents({})
     if user_count > 0:
         raise HTTPException(status_code=400, detail="Setup already completed")
     
-    # Create admin user
-    hashed_password = hash_password(request.password)
-    user_doc = {
-        "email": request.email.lower(),
-        "password_hash": hashed_password,
-        "name": request.name,
-        "role": "admin",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
+    user_doc = {"email": request.email.lower(), "password_hash": hash_password(request.password), "name": request.name, "role": "superadmin", "theme": "startrek", "is_active": True, "allowed_services": ["casedesk", "forgepilot", "unraid"], "service_accounts": {}, "permissions": {"chat": True, "logs": True, "health": True, "admin": True}, "created_at": datetime.now(timezone.utc).isoformat()}
     result = await db.users.insert_one(user_doc)
     user_id = str(result.inserted_id)
     
-    # Mark setup as completed
-    await db.settings.update_one(
-        {"key": "setup_completed"},
-        {"$set": {"value": True, "completed_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
+    await db.settings.update_one({"key": "setup_completed"}, {"$set": {"value": True}}, upsert=True)
     
-    # Create default categories
-    default_categories = [
-        {"name": "Server", "icon": "hard-drives", "order": 0},
-        {"name": "Smart Home", "icon": "house-line", "order": 1},
-        {"name": "Cloud", "icon": "cloud", "order": 2},
-        {"name": "Medien", "icon": "play-circle", "order": 3},
-        {"name": "Tools", "icon": "wrench", "order": 4},
-        {"name": "Sonstige", "icon": "folder", "order": 5},
-    ]
-    for cat in default_categories:
-        await db.categories.update_one(
-            {"name": cat["name"]},
-            {"$set": cat},
-            upsert=True
-        )
-    
-    # Create tokens and set cookies
-    access_token = create_access_token(user_id, request.email.lower())
+    access_token = create_access_token(user_id, request.email.lower(), "superadmin")
     refresh_token = create_refresh_token(user_id)
     set_auth_cookies(response, access_token, refresh_token)
     
-    # Write test credentials
-    try:
-        os.makedirs("/app/memory", exist_ok=True)
-        with open("/app/memory/test_credentials.md", "w") as f:
-            f.write(f"# Test Credentials\n\n")
-            f.write(f"## Admin Account\n")
-            f.write(f"- Email: {request.email}\n")
-            f.write(f"- Password: {request.password}\n")
-            f.write(f"- Role: admin\n\n")
-            f.write(f"## Auth Endpoints\n")
-            f.write(f"- POST /api/auth/login\n")
-            f.write(f"- POST /api/auth/logout\n")
-            f.write(f"- GET /api/auth/me\n")
-    except Exception as e:
-        logger.warning(f"Could not write test credentials: {e}")
-    
-    return {
-        "id": user_id,
-        "email": request.email.lower(),
-        "name": request.name,
-        "role": "admin"
-    }
+    return {"id": user_id, "email": request.email.lower(), "name": request.name, "role": "superadmin", "theme": "startrek"}
 
-# ==================== AUTH ENDPOINTS ====================
+# ==================== AUTH ====================
 
 @api_router.post("/auth/login")
 async def login(request: LoginRequest, response: Response):
-    email = request.email.lower()
-    user = await db.users.find_one({"email": email})
-    if not user:
+    user = await db.users.find_one({"email": request.email.lower()})
+    if not user or not verify_password(request.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not verify_password(request.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=401, detail="Account is deactivated")
     
     user_id = str(user["_id"])
-    access_token = create_access_token(user_id, email)
+    access_token = create_access_token(user_id, user["email"], user.get("role", "user"))
     refresh_token = create_refresh_token(user_id)
     set_auth_cookies(response, access_token, refresh_token)
     
-    return {
-        "id": user_id,
-        "email": user["email"],
-        "name": user.get("name", ""),
-        "role": user.get("role", "user")
-    }
+    await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": datetime.now(timezone.utc).isoformat()})
+    
+    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {})}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -305,331 +197,226 @@ async def logout(response: Response):
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
+    return await get_current_user(request)
+
+@api_router.put("/auth/theme")
+async def update_theme(request: Request, theme: str = Body(..., embed=True)):
     user = await get_current_user(request)
-    return user
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"theme": theme}})
+    return {"theme": theme}
 
-@api_router.post("/auth/refresh")
-async def refresh_token(request: Request, response: Response):
-    token = request.cookies.get("refresh_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="No refresh token")
+# ==================== ADMIN - USERS ====================
+
+@api_router.get("/admin/users")
+async def get_all_users(request: Request):
+    await require_admin(request)
+    users = await db.users.find({}, {"password_hash": 0}).to_list(1000)
+    for user in users:
+        user["id"] = str(user.pop("_id"))
+    return users
+
+@api_router.post("/admin/users")
+async def create_user(user_data: UserCreate, request: Request):
+    await require_admin(request)
+    existing = await db.users.find_one({"email": user_data.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already exists")
     
-    try:
-        payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        user_id = str(user["_id"])
-        new_access_token = create_access_token(user_id, user["email"])
-        response.set_cookie(
-            key="access_token", value=new_access_token, httponly=True,
-            secure=False, samesite="lax", max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/"
-        )
-        
-        return {"message": "Token refreshed"}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Refresh token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    user_doc = {"email": user_data.email.lower(), "password_hash": hash_password(user_data.password), "name": user_data.name, "role": user_data.role.value, "theme": user_data.theme.value, "is_active": True, "allowed_services": [], "service_accounts": {}, "permissions": {"chat": True, "logs": False, "health": False, "admin": False}, "created_at": datetime.now(timezone.utc).isoformat()}
+    result = await db.users.insert_one(user_doc)
+    return {"id": str(result.inserted_id), "email": user_data.email.lower(), "name": user_data.name, "role": user_data.role.value}
 
-# ==================== CATEGORIES ENDPOINTS ====================
-
-@api_router.get("/categories")
-async def get_categories():
-    categories = await db.categories.find({}, {"_id": 0}).sort("order", 1).to_list(100)
-    return categories
-
-@api_router.post("/categories")
-async def create_category(category: CategoryCreate, request: Request):
-    await get_current_user(request)
-    await db.categories.update_one(
-        {"name": category.name},
-        {"$set": category.model_dump()},
-        upsert=True
-    )
-    return {"message": "Category created", "name": category.name}
-
-@api_router.delete("/categories/{name}")
-async def delete_category(name: str, request: Request):
-    await get_current_user(request)
-    await db.categories.delete_one({"name": name})
-    # Move tiles to "Sonstige"
-    await db.tiles.update_many({"category": name}, {"$set": {"category": "Sonstige"}})
-    return {"message": "Category deleted"}
-
-# ==================== TILES ENDPOINTS ====================
-
-@api_router.get("/tiles", response_model=List[TileResponse])
-async def get_tiles(visible_only: bool = False):
-    query = {"visible": True} if visible_only else {}
-    tiles = await db.tiles.find(query, {"_id": 0}).sort("order", 1).to_list(1000)
-    return tiles
-
-@api_router.post("/tiles", response_model=TileResponse)
-async def create_tile(tile: TileCreate, request: Request):
-    await get_current_user(request)
-    
-    tile_doc = tile.model_dump()
-    tile_doc["id"] = str(ObjectId())
-    tile_doc["status"] = "unknown"
-    tile_doc["order"] = await db.tiles.count_documents({})
-    tile_doc["created_at"] = datetime.now(timezone.utc).isoformat()
-    
-    await db.tiles.insert_one(tile_doc)
-    return TileResponse(**tile_doc)
-
-@api_router.put("/tiles/{tile_id}")
-async def update_tile(tile_id: str, tile: TileUpdate, request: Request):
-    await get_current_user(request)
-    
-    update_data = {k: v for k, v in tile.model_dump().items() if v is not None}
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No update data provided")
-    
-    result = await db.tiles.update_one(
-        {"id": tile_id},
-        {"$set": update_data}
-    )
-    
+@api_router.put("/admin/users/{user_id}")
+async def update_user(user_id: str, user_data: UserUpdate, request: Request):
+    await require_admin(request)
+    update_fields = {k: v for k, v in user_data.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No update data")
+    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Tile not found")
-    
-    updated_tile = await db.tiles.find_one({"id": tile_id}, {"_id": 0})
-    return updated_tile
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User updated"}
 
-@api_router.delete("/tiles/{tile_id}")
-async def delete_tile(tile_id: str, request: Request):
-    await get_current_user(request)
-    
-    result = await db.tiles.delete_one({"id": tile_id})
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, request: Request):
+    admin = await require_admin(request)
+    if admin["id"] == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    result = await db.users.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Tile not found")
-    
-    return {"message": "Tile deleted"}
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted"}
 
-@api_router.post("/tiles/reorder")
-async def reorder_tiles(tile_orders: List[dict], request: Request):
-    """Reorder tiles by providing list of {id, order}"""
-    await get_current_user(request)
-    
-    for item in tile_orders:
-        await db.tiles.update_one(
-            {"id": item["id"]},
-            {"$set": {"order": item["order"]}}
-        )
-    
-    return {"message": "Tiles reordered"}
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def reset_password(user_id: str, request: Request, new_password: str = Body(..., embed=True)):
+    await require_admin(request)
+    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"password_hash": hash_password(new_password)}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Password reset"}
 
-# ==================== DOCKER ENDPOINTS ====================
+@api_router.put("/admin/users/{user_id}/services")
+async def update_user_services(user_id: str, request: Request, services: List[str] = Body(..., embed=True)):
+    await require_admin(request)
+    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"allowed_services": services}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Services updated", "allowed_services": services}
 
-@api_router.get("/docker/containers")
-async def get_docker_containers(request: Request):
-    """Get list of Docker containers from Unraid server"""
-    await get_current_user(request)
-    
-    # Get Docker settings
-    settings = await db.settings.find_one({"key": "docker_settings"})
-    docker_host = settings.get("docker_host", "unix:///var/run/docker.sock") if settings else "unix:///var/run/docker.sock"
-    
-    try:
-        import docker
-        
-        # Try to connect to Docker
-        if docker_host.startswith("unix://"):
-            client = docker.DockerClient(base_url=docker_host)
-        else:
-            client = docker.DockerClient(base_url=docker_host)
-        
-        containers = client.containers.list(all=True)
-        result = []
-        
-        for container in containers:
-            # Try to get web port
-            ports = container.ports
-            web_port = None
-            for port_key, port_bindings in ports.items():
-                if port_bindings:
-                    web_port = port_bindings[0].get('HostPort')
-                    break
-            
-            # Check if already added to tiles
-            existing_tile = await db.tiles.find_one({"container_id": container.id})
-            
-            result.append({
-                "id": container.id,
-                "name": container.name,
-                "status": container.status,
-                "image": container.image.tags[0] if container.image.tags else "unknown",
-                "ports": ports,
-                "web_port": web_port,
-                "added_to_dashboard": existing_tile is not None
-            })
-        
-        client.close()
-        return result
-        
-    except Exception as e:
-        logger.error(f"Docker connection error: {e}")
-        # Return mock data for development/demo
-        return [
-            {
-                "id": "demo_unraid",
-                "name": "unraid",
-                "status": "running",
-                "image": "unraid:latest",
-                "ports": {"80/tcp": [{"HostPort": "80"}]},
-                "web_port": "80",
-                "added_to_dashboard": False
-            },
-            {
-                "id": "demo_nextcloud",
-                "name": "nextcloud",
-                "status": "running",
-                "image": "nextcloud:latest",
-                "ports": {"443/tcp": [{"HostPort": "443"}]},
-                "web_port": "443",
-                "added_to_dashboard": False
-            },
-            {
-                "id": "demo_homeassistant",
-                "name": "homeassistant",
-                "status": "running",
-                "image": "homeassistant/home-assistant:latest",
-                "ports": {"8123/tcp": [{"HostPort": "8123"}]},
-                "web_port": "8123",
-                "added_to_dashboard": False
-            },
-            {
-                "id": "demo_plex",
-                "name": "plex",
-                "status": "running",
-                "image": "plexinc/pms-docker:latest",
-                "ports": {"32400/tcp": [{"HostPort": "32400"}]},
-                "web_port": "32400",
-                "added_to_dashboard": False
-            },
-            {
-                "id": "demo_paperless",
-                "name": "paperless-ngx",
-                "status": "stopped",
-                "image": "paperlessngx/paperless-ngx:latest",
-                "ports": {"8000/tcp": [{"HostPort": "8000"}]},
-                "web_port": "8000",
-                "added_to_dashboard": False
-            }
-        ]
+# ==================== SERVICES ====================
 
-@api_router.post("/docker/containers/add")
-async def add_containers_to_dashboard(containers: List[dict], request: Request):
-    """Add selected Docker containers to the dashboard as tiles"""
-    await get_current_user(request)
-    
-    added = []
-    for container in containers:
-        # Check if already exists
-        existing = await db.tiles.find_one({"container_id": container["id"]})
-        if existing:
-            continue
-        
-        # Determine category based on name/image
-        name_lower = container["name"].lower()
-        if "plex" in name_lower or "jellyfin" in name_lower or "emby" in name_lower:
-            category = "Medien"
-        elif "home" in name_lower or "assistant" in name_lower or "hass" in name_lower:
-            category = "Smart Home"
-        elif "cloud" in name_lower or "nextcloud" in name_lower or "syncthing" in name_lower:
-            category = "Cloud"
-        elif "unraid" in name_lower or "portainer" in name_lower:
-            category = "Server"
-        else:
-            category = "Tools"
-        
-        # Determine icon
-        icon = "cube"
-        if "plex" in name_lower:
-            icon = "play-circle"
-        elif "nextcloud" in name_lower:
-            icon = "cloud"
-        elif "home" in name_lower:
-            icon = "house-line"
-        elif "paperless" in name_lower:
-            icon = "files"
-        elif "unraid" in name_lower:
-            icon = "hard-drives"
-        
-        # Build URL
-        web_port = container.get("web_port", "80")
-        url = f"http://192.168.1.140:{web_port}"
-        
-        tile_doc = {
-            "id": str(ObjectId()),
-            "name": container["name"].replace("-", " ").replace("_", " ").title(),
-            "url": url,
-            "icon": icon,
-            "category": category,
-            "description": f"Container: {container['image']}",
-            "visible": True,
-            "is_manual": False,
-            "container_id": container["id"],
-            "status": container.get("status", "unknown"),
-            "order": await db.tiles.count_documents({}),
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.tiles.insert_one(tile_doc)
-        # Remove MongoDB _id for JSON serialization
-        tile_doc.pop('_id', None)
-        added.append(tile_doc)
-    
-    return {"added": len(added), "tiles": added}
+@api_router.get("/services")
+async def get_services(request: Request):
+    user = await get_current_user(request)
+    all_services = await db.services.find({}, {"_id": 0}).to_list(100)
+    if user["role"] not in ["admin", "superadmin"]:
+        allowed = user.get("allowed_services", [])
+        all_services = [s for s in all_services if s["id"] in allowed]
+    service_accounts = user.get("service_accounts", {})
+    for service in all_services:
+        service["linked"] = service["id"] in service_accounts
+        service["linked_username"] = service_accounts.get(service["id"], {}).get("username")
+    return all_services
 
-@api_router.post("/docker/containers/toggle")
-async def toggle_container_visibility(request_data: ContainerToggleRequest, request: Request):
-    """Toggle visibility of containers in dashboard"""
-    await get_current_user(request)
-    
-    result = await db.tiles.update_many(
-        {"container_id": {"$in": request_data.container_ids}},
-        {"$set": {"visible": request_data.visible}}
-    )
-    
-    return {"updated": result.modified_count}
+@api_router.post("/services/{service_id}/link")
+async def link_service_account(service_id: str, link_data: ServiceLinkRequest, request: Request):
+    user = await get_current_user(request)
+    service = await db.services.find_one({"id": service_id})
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {f"service_accounts.{service_id}": {"username": link_data.username, "linked_at": datetime.now(timezone.utc).isoformat()}}})
+    return {"message": "Service linked", "service_id": service_id}
 
-@api_router.put("/docker/settings")
-async def update_docker_settings(settings: DockerSettingsUpdate, request: Request):
-    """Update Docker connection settings"""
-    await get_current_user(request)
-    
-    update_data = {k: v for k, v in settings.model_dump().items() if v is not None}
-    await db.settings.update_one(
-        {"key": "docker_settings"},
-        {"$set": update_data},
-        upsert=True
-    )
-    
-    return {"message": "Docker settings updated"}
+@api_router.delete("/services/{service_id}/link")
+async def unlink_service_account(service_id: str, request: Request):
+    user = await get_current_user(request)
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$unset": {f"service_accounts.{service_id}": ""}})
+    return {"message": "Service unlinked"}
 
-@api_router.get("/docker/settings")
-async def get_docker_settings(request: Request):
-    """Get Docker connection settings"""
-    await get_current_user(request)
-    
-    settings = await db.settings.find_one({"key": "docker_settings"}, {"_id": 0})
-    return settings or {"docker_host": "unix:///var/run/docker.sock"}
+@api_router.post("/admin/services")
+async def create_service(request: Request, service: dict = Body(...)):
+    await require_admin(request)
+    await db.services.update_one({"id": service["id"]}, {"$set": service}, upsert=True)
+    return {"message": "Service created", "id": service["id"]}
 
-# ==================== HEALTH CHECK ====================
+@api_router.put("/admin/services/{service_id}")
+async def update_service(service_id: str, request: Request, service: dict = Body(...)):
+    await require_admin(request)
+    await db.services.update_one({"id": service_id}, {"$set": service})
+    return {"message": "Service updated"}
+
+@api_router.delete("/admin/services/{service_id}")
+async def delete_service(service_id: str, request: Request):
+    await require_admin(request)
+    await db.services.delete_one({"id": service_id})
+    return {"message": "Service deleted"}
+
+# ==================== HEALTH ====================
 
 @api_router.get("/health")
 async def health_check():
-    return {"status": "healthy", "app": "Aria Dashboard"}
+    return {"status": "healthy", "app": "Aria Dashboard", "version": "2.0"}
+
+@api_router.get("/health/services")
+async def get_services_health(request: Request):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("health", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Health access not permitted")
+    
+    services = await db.services.find({"enabled": True}, {"_id": 0}).to_list(100)
+    health_results = []
+    
+    async with httpx.AsyncClient(timeout=5.0) as http_client:
+        for service in services:
+            health = {"id": service["id"], "name": service["name"], "status": "unknown", "response_time": None}
+            try:
+                url = f"{service['url']}{service.get('health_endpoint', '/health')}"
+                start = datetime.now()
+                response = await http_client.get(url)
+                elapsed = (datetime.now() - start).total_seconds() * 1000
+                health["status"] = "healthy" if response.status_code < 400 else "unhealthy"
+                health["response_time"] = round(elapsed, 2)
+            except Exception as e:
+                health["status"] = "offline"
+            health_results.append(health)
+    
+    return health_results
+
+@api_router.get("/health/system")
+async def get_system_health(request: Request):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("health", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Health access not permitted")
+    
+    import subprocess
+    try:
+        result = subprocess.run(["cat", "/proc/meminfo"], capture_output=True, text=True, timeout=5)
+        mem_lines = result.stdout.split("\n")
+        mem_total = int([l for l in mem_lines if "MemTotal" in l][0].split()[1]) // 1024
+        mem_free = int([l for l in mem_lines if "MemAvailable" in l][0].split()[1]) // 1024
+        mem_used_pct = round((1 - mem_free / mem_total) * 100, 1)
+    except:
+        mem_total, mem_free, mem_used_pct = 0, 0, 0
+    
+    try:
+        result = subprocess.run(["cat", "/proc/loadavg"], capture_output=True, text=True, timeout=5)
+        load = float(result.stdout.split()[0])
+        cpu_pct = min(round(load * 25, 1), 100)
+    except:
+        cpu_pct = 0
+    
+    return {"cpu_percent": cpu_pct, "memory_percent": mem_used_pct, "memory_total_mb": mem_total, "memory_used_mb": mem_total - mem_free}
+
+# ==================== LOGS ====================
+
+@api_router.get("/logs")
+async def get_logs(request: Request, limit: int = 100, log_type: Optional[str] = None):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("logs", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Logs access not permitted")
+    
+    query = {}
+    if log_type:
+        query["type"] = log_type
+    logs = await db.logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    return logs
+
+# ==================== CHAT ====================
+
+@api_router.post("/chat")
+async def chat_route(message: ChatMessage, request: Request):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("chat", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Chat not permitted")
+    
+    msg_lower = message.message.lower()
+    target = message.target_service
+    
+    if not target:
+        if any(w in msg_lower for w in ["dokument", "fall", "case", "akte", "pdf"]):
+            target = "casedesk"
+        elif any(w in msg_lower for w in ["projekt", "code", "agent", "entwickl", "build"]):
+            target = "forgepilot"
+    
+    if target and target not in user.get("allowed_services", []) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail=f"No access to service: {target}")
+    
+    await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": target, "timestamp": datetime.now(timezone.utc).isoformat()})
+    
+    return {"message": message.message, "routed_to": target, "response": f"Nachricht wird an {target or 'Aria'} weitergeleitet..." if target else "Wie kann ich dir helfen?"}
+
+# ==================== DASHBOARD ====================
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(request: Request):
+    user = await get_current_user(request)
+    services_count = await db.services.count_documents({"enabled": True})
+    users_count = await db.users.count_documents({})
+    logs_today = await db.logs.count_documents({"timestamp": {"$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()}})
+    return {"services": services_count, "users": users_count, "logs_today": logs_today}
+
+app.include_router(api_router)
 
 @api_router.get("/")
 async def root():
-    return {"message": "Aria Dashboard API", "version": "1.0.0"}
-
-# Include router
-app.include_router(api_router)
+    return {"message": "Aria Dashboard API", "version": "2.0"}
