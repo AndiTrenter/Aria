@@ -13,6 +13,7 @@ import Logs from "@/pages/Logs";
 import Account from "@/pages/Account";
 import Chat from "@/pages/Chat";
 import Weather from "@/pages/Weather";
+import VoiceAssistant from "@/components/VoiceAssistant";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
@@ -164,9 +165,11 @@ const AppRouter = () => {
   const { user, loading, setupRequired } = useAuth();
   const { theme } = useTheme();
 
-  // Disney fairy dust click effect
+  // Disney fairy dust click effect + floating stars
   useEffect(() => {
     if (theme !== "disney") return;
+    
+    // Fairy dust on click
     const colors = ["#ffd700", "#ff6b9d", "#5dade2", "#9b59b6", "#fff", "#ffcc00"];
     const handleClick = (e) => {
       for (let i = 0; i < 8; i++) {
@@ -185,7 +188,24 @@ const AppRouter = () => {
       }
     };
     document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+
+    // Floating stars
+    const starInterval = setInterval(() => {
+      const star = document.createElement("div");
+      star.className = "disney-floating-star";
+      star.style.left = Math.random() * 100 + "vw";
+      star.style.width = (1 + Math.random() * 2) + "px";
+      star.style.height = star.style.width;
+      star.style.animationDuration = (8 + Math.random() * 12) + "s";
+      star.style.opacity = String(0.3 + Math.random() * 0.5);
+      document.body.appendChild(star);
+      setTimeout(() => star.remove(), 20000);
+    }, 2000);
+
+    return () => {
+      document.removeEventListener("click", handleClick);
+      clearInterval(starInterval);
+    };
   }, [theme]);
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
@@ -204,6 +224,7 @@ const AppRouter = () => {
         <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {user && <VoiceAssistant />}
     </div>
   );
 };

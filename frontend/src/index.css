@@ -248,15 +248,147 @@
   50% { opacity: 0.2; }
 }
 
-/* Scanner line */
-.theme-startrek .lcars-scanner {
-  background: linear-gradient(180deg, transparent 0%, rgba(255, 153, 0, 0.08) 50%, transparent 100%);
-  animation: scanner 3s infinite;
+/* ---- LCARS ENERGY FLOW EFFECT ---- */
+/* Header bar energy pulse */
+.theme-startrek .lcars-header-bar::before {
+  content: '';
+  flex: 1;
+  height: 8px;
+  background: var(--lcars-orange);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
 }
 
-@keyframes scanner {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100%); }
+.theme-startrek .lcars-header-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -30%;
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,204,153,0.7), rgba(255,255,255,0.9), rgba(255,204,153,0.7), transparent);
+  animation: energy-flow-h 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.theme-startrek .lcars-header-bar {
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes energy-flow-h {
+  0% { left: -30%; }
+  100% { left: 130%; }
+}
+
+/* Sidebar items energy pulse */
+.theme-startrek .lcars-sidebar-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-startrek .lcars-sidebar-item::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0;
+  width: 100%;
+  height: 40%;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: energy-flow-v 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.theme-startrek .lcars-sidebar-item:nth-child(2)::after { animation-delay: 0.5s; }
+.theme-startrek .lcars-sidebar-item:nth-child(3)::after { animation-delay: 1s; }
+.theme-startrek .lcars-sidebar-item:nth-child(4)::after { animation-delay: 1.5s; }
+.theme-startrek .lcars-sidebar-item:nth-child(5)::after { animation-delay: 2s; }
+.theme-startrek .lcars-sidebar-item:nth-child(6)::after { animation-delay: 2.5s; }
+.theme-startrek .lcars-sidebar-item:nth-child(7)::after { animation-delay: 3s; }
+
+@keyframes energy-flow-v {
+  0% { top: -40%; }
+  40% { top: 140%; }
+  100% { top: 140%; }
+}
+
+/* Footer bar energy flow */
+.theme-startrek .lcars-footer-bar > div {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-startrek .lcars-footer-bar > div::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: energy-flow-h 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.theme-startrek .lcars-footer-bar > div:nth-child(2)::after { animation-delay: 0.6s; animation-duration: 2s; }
+.theme-startrek .lcars-footer-bar > div:nth-child(3)::after { animation-delay: 1.2s; animation-duration: 3s; }
+.theme-startrek .lcars-footer-bar > div:nth-child(4)::after { animation-delay: 0.3s; animation-duration: 2.2s; }
+
+/* LCARS Card left border glow */
+.theme-startrek .lcars-card {
+  position: relative;
+}
+
+.theme-startrek .lcars-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -20%;
+  width: 6px;
+  height: 30%;
+  background: linear-gradient(180deg, transparent, rgba(255,153,0,0.8), transparent);
+  animation: card-border-flow 3s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: 3px;
+}
+
+@keyframes card-border-flow {
+  0% { top: -30%; }
+  50% { top: 110%; }
+  100% { top: 110%; }
+}
+
+/* LCARS Ambient scan line */
+.theme-startrek::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 20%, rgba(255,153,0,0.15), transparent 80%);
+  animation: ambient-scan 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 100;
+}
+
+@keyframes ambient-scan {
+  0% { top: -2px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100vh; opacity: 0; }
+}
+
+/* LCARS Header cap pulse */
+.theme-startrek .lcars-header-cap {
+  animation: cap-pulse 4s ease-in-out infinite;
+}
+
+@keyframes cap-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
 }
 
 /* ============================================
@@ -381,6 +513,105 @@
   50% { transform: translateY(-10px) rotate(180deg); opacity: 0.5; }
 }
 
+/* Disney Card Hover Magic Glow */
+.theme-disney .disney-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-disney .disney-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,215,0,0.08) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+.theme-disney .disney-card:hover::before {
+  opacity: 1;
+}
+
+/* Disney Floating Stars Background */
+.theme-disney .disney-floating-star {
+  position: fixed;
+  pointer-events: none;
+  z-index: 0;
+  background: white;
+  border-radius: 50%;
+  animation: float-star linear infinite;
+}
+
+@keyframes float-star {
+  0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(-20px) rotate(720deg); opacity: 0; }
+}
+
+/* Disney Button Shine */
+.theme-disney .disney-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-disney .disney-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: none;
+  animation: button-shine 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes button-shine {
+  0%, 70% { left: -100%; }
+  100% { left: 200%; }
+}
+
+/* Disney Panel Magic Border */
+.theme-disney .disney-panel,
+.theme-disney .disney-card {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-disney .disney-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow: 0 10px 40px rgba(155, 89, 182, 0.3), 0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+/* Disney Header shimmer */
+.theme-disney .disney-header {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-disney .disney-header::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,215,0,0.06), transparent);
+  animation: header-shimmer 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes header-shimmer {
+  0%, 60% { left: -50%; }
+  100% { left: 150%; }
+}
+
 /* ============================================
    SHARED STYLES
    ============================================ */
@@ -393,9 +624,19 @@ body {
   min-height: 100vh;
 }
 
-/* Hide external badges */
-[data-emergent-badge], .emergent-badge, div[style*="Made with"] {
+/* Hide external badges - aggressive override */
+#emergent-badge,
+[id="emergent-badge"],
+a[href*="emergent"],
+div[style*="Made with"] {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  pointer-events: none !important;
 }
 
 ::-webkit-scrollbar {
