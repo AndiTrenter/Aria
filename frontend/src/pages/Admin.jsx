@@ -20,17 +20,21 @@ const Admin = () => {
   const [weatherApiKey, setWeatherApiKey] = useState("");
 
   const fetchData = async () => {
+    let anyError = false;
     try {
-      const [usersRes, servicesRes, settingsRes] = await Promise.all([
-        axios.get(`${API}/admin/users`),
-        axios.get(`${API}/services`),
-        axios.get(`${API}/admin/settings`).catch(() => ({ data: {} })),
-      ]);
+      const usersRes = await axios.get(`${API}/admin/users`);
       setUsers(usersRes.data);
+    } catch { anyError = true; }
+    try {
+      const servicesRes = await axios.get(`${API}/services`);
       setServices(servicesRes.data);
+    } catch { anyError = true; }
+    try {
+      const settingsRes = await axios.get(`${API}/admin/settings`);
       setSettings(settingsRes.data);
-    } catch (e) {
-      toast.error("Fehler beim Laden der Daten");
+    } catch { anyError = true; }
+    if (anyError && users.length === 0 && services.length === 0) {
+      toast.error("Einige Daten konnten nicht geladen werden. Bitte Seite neu laden.");
     }
   };
 
@@ -96,29 +100,13 @@ const Admin = () => {
   ];
 
   return (
-    <div className="min-h-screen relative z-10">
-      {/* Header */}
-      <header className={isLcars ? "lcars-header" : "disney-header py-4 px-6"}>
-        {isLcars ? (
-          <>
-            <div className="lcars-header-cap">
-              <Link to="/" className="text-black" data-testid="admin-back-link">ARIA</Link>
-            </div>
-            <div className="lcars-header-bar">
-              <span className="text-xs text-gray-500 ml-3 tracking-wider">ADMINISTRATION</span>
-            </div>
-            <div className="lcars-header-end" />
-          </>
-        ) : (
-          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-            <Link to="/" className="text-purple-200" data-testid="admin-back-link"><ArrowLeft size={24} /></Link>
-            <h1 className="disney-title text-2xl font-bold">Administration</h1>
-          </div>
-        )}
-      </header>
+    <div className="p-6">
+      {/* Page Title */}
+      <h2 className={`mb-4 ${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
+        {isLcars ? "ADMINISTRATION" : "Administration"}
+      </h2>
 
-      <main className="max-w-5xl mx-auto px-6 py-6">
-        {/* Tabs */}
+      {/* Tabs */}
         <div className="flex gap-2 mb-6" data-testid="admin-tabs">
           {tabs.map((tab) => (
             <button
@@ -324,7 +312,6 @@ const Admin = () => {
             </button>
           </div>
         )}
-      </main>
     </div>
   );
 };

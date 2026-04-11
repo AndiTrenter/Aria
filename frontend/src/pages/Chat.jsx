@@ -72,29 +72,9 @@ const Chat = () => {
   const cardClass = isLcars ? "lcars-card" : "disney-card";
 
   return (
-    <div className="min-h-screen flex flex-col relative z-10">
-      {/* Header */}
-      <header className={isLcars ? "lcars-header" : "disney-header py-4 px-6"}>
-        {isLcars ? (
-          <>
-            <div className="lcars-header-cap">
-              <Link to="/" className="text-black" data-testid="chat-back-link">ARIA</Link>
-            </div>
-            <div className="lcars-header-bar">
-              <span className="text-xs text-gray-500 ml-3 tracking-wider">KOMMUNIKATIONS-KONSOLE</span>
-            </div>
-            <div className="lcars-header-end" />
-          </>
-        ) : (
-          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-            <Link to="/" className="text-purple-200" data-testid="chat-back-link"><ArrowLeft size={24} /></Link>
-            <h1 className="disney-title text-2xl font-bold">Chat</h1>
-          </div>
-        )}
-      </header>
-
+    <div className="flex flex-col h-[calc(100vh-50px)]">
       {/* Body */}
-      <div className="flex flex-1 overflow-hidden" style={{ maxHeight: "calc(100vh - 50px)" }}>
+      <div className="flex flex-1 overflow-hidden">
         {/* Sessions Sidebar */}
         <div className={`w-64 min-w-[200px] flex flex-col border-r ${isLcars ? "border-[var(--lcars-purple)]/30 bg-[#050510]" : "border-purple-800/30 bg-purple-950/30"}`}>
           <button onClick={startNewSession} className={`m-3 ${isLcars ? "lcars-button" : "disney-button"} flex items-center justify-center gap-2 text-sm`} data-testid="new-chat-button">

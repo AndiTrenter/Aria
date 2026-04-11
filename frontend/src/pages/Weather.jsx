@@ -53,35 +53,19 @@ const Weather = () => {
   const sunTime = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "-";
 
   return (
-    <div className="min-h-screen relative z-10">
-      {/* Header */}
-      <header className={isLcars ? "lcars-header" : "disney-header py-4 px-6"}>
-        {isLcars ? (
-          <>
-            <div className="lcars-header-cap">
-              <Link to="/" className="text-black" data-testid="weather-back-link">ARIA</Link>
-            </div>
-            <div className="lcars-header-bar">
-              <span className="text-xs text-gray-500 ml-3 tracking-wider">METEOROLOGISCHER SENSOR</span>
-              <button onClick={fetchWeather} className="lcars-button py-1 px-3 text-xs ml-auto" data-testid="weather-refresh">
-                <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
-              </button>
-            </div>
-            <div className="lcars-header-end" />
-          </>
-        ) : (
-          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-            <Link to="/" className="text-purple-200" data-testid="weather-back-link"><ArrowLeft size={24} /></Link>
-            <h1 className="disney-title text-2xl font-bold">Wetter</h1>
-            <div className="flex-1" />
-            <button onClick={fetchWeather} className="disney-button py-1 px-3" data-testid="weather-refresh">
-              <ArrowClockwise size={18} className={loading ? "animate-spin" : ""} />
-            </button>
-          </div>
-        )}
-      </header>
+    <div className="p-6">
+      {/* Page Title */}
+      <div className="flex items-center gap-4 mb-6">
+        <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
+          {isLcars ? "METEOROLOGISCHER SENSOR" : "Wetter"}
+        </h2>
+        <div className="flex-1" />
+        <button onClick={fetchWeather} className={isLcars ? "lcars-button py-1 px-3 text-xs" : "disney-button py-1 px-3"} data-testid="weather-refresh">
+          <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
+        </button>
+      </div>
 
-      <main className="max-w-4xl mx-auto px-6 py-6">
+      <div>
         {loading && !weather ? (
           <div className="text-center py-20">
             <div className={`animate-pulse text-xl ${isLcars ? "text-[var(--lcars-orange)] tracking-wider" : "text-purple-300"}`}>

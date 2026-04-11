@@ -14,6 +14,7 @@ import Account from "@/pages/Account";
 import Chat from "@/pages/Chat";
 import Weather from "@/pages/Weather";
 import VoiceAssistant from "@/components/VoiceAssistant";
+import LcarsLayout from "@/components/LcarsLayout";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
@@ -215,13 +216,13 @@ const AppRouter = () => {
       <Routes>
         <Route path="/setup" element={setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
         <Route path="/login" element={setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
-        <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-        <Route path="/weather" element={<ProtectedRoute><Weather /></ProtectedRoute>} />
-        <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
-        <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><LcarsLayout><Dashboard /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/health" element={<ProtectedRoute><LcarsLayout><Health /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/chat" element={<ProtectedRoute><LcarsLayout><Chat /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/weather" element={<ProtectedRoute><LcarsLayout><Weather /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/logs" element={<ProtectedRoute><LcarsLayout><Logs /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/account" element={<ProtectedRoute><LcarsLayout><Account /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {user && <VoiceAssistant />}

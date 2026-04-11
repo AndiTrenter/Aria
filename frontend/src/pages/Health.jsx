@@ -101,39 +101,20 @@ const Health = () => {
   const network = system?.network || EMPTY_SYSTEM.network;
 
   return (
-    <div className="min-h-screen relative z-10">
-      {/* Header */}
-      <header className={isLcars ? "lcars-header" : "disney-header py-4 px-6"}>
-        {isLcars ? (
-          <>
-            <div className="lcars-header-cap">
-              <Link to="/" data-testid="health-back-link" className="text-black">ARIA</Link>
-            </div>
-            <div className="lcars-header-bar">
-              <span className="text-xs text-gray-500 ml-3 tracking-wider">SYSTEM DIAGNOSTIK</span>
-              <div className="flex items-center gap-2 ml-auto">
-                {lastUpdate && <span className="text-[10px] text-gray-600">{lastUpdate}</span>}
-                <button onClick={() => setAutoRefresh(!autoRefresh)} data-testid="auto-refresh-toggle"
-                  className={`text-[10px] px-3 py-1 rounded-full font-bold ${autoRefresh ? "bg-green-700 text-green-200" : "bg-gray-800 text-gray-500"}`}>{autoRefresh ? "LIVE" : "PAUSE"}</button>
-                <button onClick={fetchData} data-testid="refresh-button" className="lcars-button py-1 px-3 text-xs"><ArrowClockwise size={14} className={refreshing ? "animate-spin" : ""} /></button>
-              </div>
-            </div>
-            <div className="lcars-header-end" />
-          </>
-        ) : (
-          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-            <Link to="/" data-testid="health-back-link" className="text-purple-200"><ArrowLeft size={24} /></Link>
-            <h1 className="disney-title text-2xl font-bold">System-Gesundheit</h1>
-            <div className="flex-1" />
-            {lastUpdate && <span className="text-xs text-gray-500 mr-3">Aktualisiert: {lastUpdate}</span>}
-            <button onClick={() => setAutoRefresh(!autoRefresh)} data-testid="auto-refresh-toggle"
-              className={`text-xs px-3 py-1 rounded-full mr-2 ${autoRefresh ? "bg-green-600 text-white" : "bg-gray-700 text-gray-400"}`}>{autoRefresh ? "LIVE" : "PAUSE"}</button>
-            <button onClick={fetchData} data-testid="refresh-button" className="disney-button py-1 px-3"><ArrowClockwise size={18} className={refreshing ? "animate-spin" : ""} /></button>
-          </div>
-        )}
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+    <div className="p-6 space-y-6">
+      {/* Page Title + Controls */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
+          {isLcars ? "SYSTEM DIAGNOSTIK" : "System-Gesundheit"}
+        </h2>
+        <div className="flex-1" />
+        {lastUpdate && <span className="text-xs text-gray-500">{lastUpdate}</span>}
+        <button onClick={() => setAutoRefresh(!autoRefresh)} data-testid="auto-refresh-toggle"
+          className={`text-[10px] px-3 py-1 rounded-full font-bold ${autoRefresh ? "bg-green-700 text-green-200" : "bg-gray-800 text-gray-500"}`}>{autoRefresh ? "LIVE" : "PAUSE"}</button>
+        <button onClick={fetchData} data-testid="refresh-button" className={isLcars ? "lcars-button py-1 px-3 text-xs" : "disney-button py-1 px-3"}>
+          <ArrowClockwise size={14} className={refreshing ? "animate-spin" : ""} />
+        </button>
+      </div>
 
         {/* Uptime */}
         <div className={`${cardClass} flex items-center gap-4`} data-testid="uptime-banner">
@@ -344,7 +325,6 @@ const Health = () => {
             </div>
           </div>
         )}
-      </main>
     </div>
   );
 };
