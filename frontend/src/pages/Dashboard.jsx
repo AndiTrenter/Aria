@@ -13,6 +13,7 @@ const Dashboard = () => {
   const [services, setServices] = useState([]);
   const [stats, setStats] = useState({});
   const [healthData, setHealthData] = useState([]);
+  const [clock, setClock] = useState(new Date());
 
   const fetchData = async () => {
     try {
@@ -31,6 +32,10 @@ const Dashboard = () => {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -46,6 +51,7 @@ const Dashboard = () => {
     { path: "/", label: "Dashboard", shortLabel: "DASH" },
     { path: "/health", label: "Health", shortLabel: "HEALTH" },
     { path: "/chat", label: "Chat", shortLabel: "CHAT" },
+    { path: "/weather", label: "Wetter", shortLabel: "WETTER" },
     { path: "/account", label: "Konto", shortLabel: "KONTO" },
     { path: "/logs", label: "Logs", shortLabel: "LOGS" },
   ];
@@ -56,11 +62,11 @@ const Dashboard = () => {
 
   // LCARS Theme
   if (theme === "startrek") {
-    const stardate = `${new Date().toLocaleDateString("de-DE")} | STARDATE ${Math.floor(Date.now() / 86400000)}`;
+    const stardate = `${clock.toLocaleDateString("de-DE")} ${clock.toLocaleTimeString("de-DE")} | STARDATE ${Math.floor(Date.now() / 86400000)}`;
     return (
       <div className="min-h-screen flex flex-col" data-testid="lcars-dashboard">
-        {/* LCARS Header */}
-        <div className="lcars-header">
+        {/* LCARS Header - sticky */}
+        <div className="lcars-header sticky top-0 z-50">
           <div className="lcars-header-cap" data-testid="lcars-header-cap">
             ARIA
           </div>
@@ -76,8 +82,8 @@ const Dashboard = () => {
 
         {/* Main Layout: Sidebar + Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* LCARS Sidebar */}
-          <div className="lcars-sidebar" data-testid="lcars-sidebar">
+          {/* LCARS Sidebar - sticky */}
+          <div className="lcars-sidebar sticky top-[50px] h-[calc(100vh-50px)] overflow-auto" data-testid="lcars-sidebar">
             {navItems.map((item) => (
               <Link
                 key={item.path}
@@ -176,10 +182,10 @@ const Dashboard = () => {
   // Disney Theme
   return (
     <div className="min-h-screen relative z-10" data-testid="disney-dashboard">
-      <header className="disney-header py-4 px-6">
+      <header className="disney-header py-4 px-6 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center gap-4">
           <h1 className="disney-title text-2xl font-bold">Aria Dashboard</h1>
-          <span className="text-purple-400 text-xs">{new Date().toLocaleDateString("de-DE")}</span>
+          <span className="text-purple-400 text-xs">{clock.toLocaleDateString("de-DE")} {clock.toLocaleTimeString("de-DE")}</span>
           <div className="flex-1" />
           <nav className="flex gap-3">
             {navItems.map((item) => (

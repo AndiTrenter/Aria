@@ -16,6 +16,8 @@ const Admin = () => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", role: "user" });
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [weatherCity, setWeatherCity] = useState("");
+  const [weatherApiKey, setWeatherApiKey] = useState("");
 
   const fetchData = async () => {
     try {
@@ -61,9 +63,13 @@ const Admin = () => {
     try {
       const payload = {};
       if (apiKeyInput) payload.openai_api_key = apiKeyInput;
+      if (weatherCity) payload.weather_city = weatherCity;
+      if (weatherApiKey) payload.weather_api_key = weatherApiKey;
       await axios.put(`${API}/admin/settings`, payload);
       toast.success("Einstellungen gespeichert");
       setApiKeyInput("");
+      setWeatherApiKey("");
+      setWeatherCity("");
       fetchData();
     } catch (e) {
       toast.error("Fehler beim Speichern");
@@ -203,6 +209,7 @@ const Admin = () => {
         {/* Settings Tab */}
         {activeTab === "settings" && (
           <div className="space-y-6">
+            {/* AI Configuration */}
             <div className={cardClass} data-testid="settings-api-key">
               <div className="flex items-center gap-3 mb-4">
                 <Gear size={20} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
@@ -226,30 +233,87 @@ const Admin = () => {
                   <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
                     {isLcars ? "NEUER API-KEY" : "Neuer API-Key"}
                   </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="sk-..."
-                        className={`${inputClass} w-full pr-10`}
-                        data-testid="api-key-input"
-                      />
-                      <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
-                        {showApiKey ? <EyeSlash size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                    <button onClick={handleSaveSettings} className={btnClass} data-testid="save-api-key-button">
-                      {isLcars ? "SPEICHERN" : "Speichern"}
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder="sk-..."
+                      className={`${inputClass} w-full pr-10`}
+                      data-testid="api-key-input"
+                    />
+                    <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                      {showApiKey ? <EyeSlash size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-600">
-                  {isLcars ? "HINWEIS: FALLBACK AUF EMERGENT UNIVERSAL KEY WENN NICHT KONFIGURIERT" : "Hinweis: Falls kein Key hinterlegt wird, wird der Emergent Universal Key als Fallback verwendet."}
+                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className={isLcars ? "text-[var(--lcars-blue)] underline" : "text-purple-400 underline"}>
+                    API-Key bei OpenAI erstellen
+                  </a>
                 </p>
               </div>
             </div>
+
+            {/* Weather Configuration */}
+            <div className={cardClass} data-testid="settings-weather">
+              <div className="flex items-center gap-3 mb-4">
+                <Gear size={20} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
+                <h3 className={isLcars ? "text-sm tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}>
+                  {isLcars ? "WETTER-KONFIGURATION" : "Wetter-Konfiguration"}
+                </h3>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">
+                OpenWeatherMap API-Key und Standort für die Wetteranzeige.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "STANDORT" : "Standort (Stadt)"}
+                  </label>
+                  <input
+                    type="text"
+                    value={weatherCity}
+                    onChange={(e) => setWeatherCity(e.target.value)}
+                    placeholder={settings.weather_city || "z.B. Berlin,DE"}
+                    className={`${inputClass} w-full`}
+                    data-testid="weather-city-input"
+                  />
+                  {settings.weather_city && <span className="text-xs text-gray-500 mt-1 block">Aktuell: {settings.weather_city}</span>}
+                </div>
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "AKTUELLER WETTER-KEY" : "Aktueller Wetter-API-Key"}
+                  </label>
+                  <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                    {settings.weather_api_key || (isLcars ? "NICHT KONFIGURIERT" : "Nicht konfiguriert")}
+                  </div>
+                </div>
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "NEUER WETTER-KEY" : "Neuer Wetter-API-Key"}
+                  </label>
+                  <input
+                    type="password"
+                    value={weatherApiKey}
+                    onChange={(e) => setWeatherApiKey(e.target.value)}
+                    placeholder="API Key..."
+                    className={`${inputClass} w-full`}
+                    data-testid="weather-api-key-input"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-600">
+                  <a href="https://home.openweathermap.org/api_keys" target="_blank" rel="noreferrer" className={isLcars ? "text-[var(--lcars-blue)] underline" : "text-purple-400 underline"}>
+                    Kostenlosen API-Key bei OpenWeatherMap erstellen
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <button onClick={handleSaveSettings} className={`${btnClass} w-full`} data-testid="save-all-settings-button">
+              {isLcars ? "ALLE EINSTELLUNGEN SPEICHERN" : "Alle Einstellungen speichern"}
+            </button>
           </div>
         )}
       </main>

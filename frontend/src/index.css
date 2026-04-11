@@ -393,6 +393,11 @@ body {
   min-height: 100vh;
 }
 
+/* Hide external badges */
+[data-emergent-badge], .emergent-badge, div[style*="Made with"] {
+  display: none !important;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -414,6 +419,23 @@ body {
 .theme-disney ::-webkit-scrollbar-thumb {
   background: var(--disney-purple);
   border-radius: 4px;
+}
+
+/* Disney Fairy Dust Click Effect */
+.fairy-dust-particle {
+  position: fixed;
+  pointer-events: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  z-index: 99999;
+  animation: fairy-dust-fall 0.8s ease-out forwards;
+}
+
+@keyframes fairy-dust-fall {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
 }
 
 @layer base {

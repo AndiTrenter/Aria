@@ -1,4 +1,4 @@
-import { useEffect, useState, createContext, useContext } from "react";
+import { useEffect, useState, createContext, useContext, useCallback } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import axios from "axios";
@@ -12,6 +12,7 @@ import Health from "@/pages/Health";
 import Logs from "@/pages/Logs";
 import Account from "@/pages/Account";
 import Chat from "@/pages/Chat";
+import Weather from "@/pages/Weather";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
@@ -163,6 +164,30 @@ const AppRouter = () => {
   const { user, loading, setupRequired } = useAuth();
   const { theme } = useTheme();
 
+  // Disney fairy dust click effect
+  useEffect(() => {
+    if (theme !== "disney") return;
+    const colors = ["#ffd700", "#ff6b9d", "#5dade2", "#9b59b6", "#fff", "#ffcc00"];
+    const handleClick = (e) => {
+      for (let i = 0; i < 8; i++) {
+        const particle = document.createElement("div");
+        particle.className = "fairy-dust-particle";
+        const angle = (Math.PI * 2 / 8) * i + Math.random() * 0.5;
+        const dist = 30 + Math.random() * 40;
+        particle.style.left = e.clientX + "px";
+        particle.style.top = e.clientY + "px";
+        particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+        particle.style.boxShadow = `0 0 6px ${particle.style.background}`;
+        particle.style.setProperty("--dx", Math.cos(angle) * dist + "px");
+        particle.style.setProperty("--dy", Math.sin(angle) * dist - 20 + "px");
+        document.body.appendChild(particle);
+        setTimeout(() => particle.remove(), 800);
+      }
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [theme]);
+
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
 
   return (
@@ -173,6 +198,7 @@ const AppRouter = () => {
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+        <Route path="/weather" element={<ProtectedRoute><Weather /></ProtectedRoute>} />
         <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />

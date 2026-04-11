@@ -20,10 +20,10 @@ from contextlib import asynccontextmanager
 from enum import Enum
 
 try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    LLM_AVAILABLE = True
+    from openai import AsyncOpenAI
+    OPENAI_AVAILABLE = True
 except ImportError:
-    LLM_AVAILABLE = False
+    OPENAI_AVAILABLE = False
 
 try:
     import docker as docker_sdk
@@ -573,17 +573,19 @@ async def get_settings(request: Request):
     settings = await db.settings.find({}, {"_id": 0}).to_list(100)
     result = {}
     for s in settings:
-        if s["key"] == "openai_api_key" and s.get("value"):
-            result[s["key"]] = s["value"][:8] + "..." + s["value"][-4:]
+        key = s["key"]
+        val = s.get("value", "")
+        if key in ("openai_api_key", "weather_api_key") and val:
+            result[key] = val[:8] + "..." + val[-4:] if len(val) > 12 else val
         else:
-            result[s["key"]] = s.get("value")
+            result[key] = val
     return result
 
 @api_router.put("/admin/settings")
 async def update_settings(request: Request, settings: dict = Body(...)):
     await require_admin(request)
     for key, value in settings.items():
-        if key == "openai_api_key" and value and "..." in value:
+        if key in ("openai_api_key", "weather_api_key") and value and "..." in value:
             continue
         await db.settings.update_one({"key": key}, {"$set": {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
     return {"message": "Settings updated"}
@@ -592,12 +594,9 @@ async def get_llm_api_key() -> str:
     setting = await db.settings.find_one({"key": "openai_api_key"})
     if setting and setting.get("value"):
         return setting["value"]
-    return os.environ.get("EMERGENT_LLM_KEY", "")
+    return ""
 
 # ==================== CHAT ====================
-
-# In-memory cache for LlmChat instances per session
-_chat_instances: Dict[str, LlmChat] = {}
 
 @api_router.post("/chat")
 async def chat_route(message: ChatMessage, request: Request):
@@ -637,8 +636,8 @@ async def chat_route(message: ChatMessage, request: Request):
     if not api_key:
         return {"response": "Kein API-Key konfiguriert. Bitte im Admin-Bereich unter Einstellungen einen OpenAI API-Key hinterlegen.", "routed_to": None, "session_id": message.session_id}
     
-    if not LLM_AVAILABLE:
-        return {"response": "LLM-Modul nicht verfügbar.", "routed_to": None, "session_id": message.session_id}
+    if not OPENAI_AVAILABLE:
+        return {"response": "OpenAI-Modul nicht verfügbar.", "routed_to": None, "session_id": message.session_id}
     
     session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
     
@@ -646,21 +645,23 @@ async def chat_route(message: ChatMessage, request: Request):
     history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
     
     try:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=session_id,
-            system_message="Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud) und allgemeinen IT-Themen. Antworte auf Deutsch, sei hilfreich und präzise."
-        )
-        chat.with_model("openai", "gpt-4o")
+        openai_client = AsyncOpenAI(api_key=api_key)
         
-        # Replay history for context
+        # Build messages array
+        openai_messages = [{"role": "system", "content": "Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud) und allgemeinen IT-Themen. Antworte auf Deutsch, sei hilfreich und präzise."}]
+        
         for msg in history:
-            if msg.get("role") == "user":
-                await chat.send_message(UserMessage(text=msg["content"]))
+            openai_messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
         
-        # Send current message
-        user_msg = UserMessage(text=message.message)
-        response_text = await chat.send_message(user_msg)
+        openai_messages.append({"role": "user", "content": message.message})
+        
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=openai_messages,
+            max_tokens=1000,
+        )
+        
+        response_text = response.choices[0].message.content
         
         # Store messages
         now = datetime.now(timezone.utc).isoformat()
@@ -712,6 +713,84 @@ async def get_dashboard_stats(request: Request):
     users_count = await db.users.count_documents({})
     logs_today = await db.logs.count_documents({"timestamp": {"$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()}})
     return {"services": services_count, "users": users_count, "logs_today": logs_today}
+
+# ==================== WEATHER ====================
+
+async def get_weather_settings():
+    city_doc = await db.settings.find_one({"key": "weather_city"})
+    key_doc = await db.settings.find_one({"key": "weather_api_key"})
+    city = city_doc["value"] if city_doc and city_doc.get("value") else ""
+    api_key = key_doc["value"] if key_doc and key_doc.get("value") else ""
+    return city, api_key
+
+@api_router.get("/weather")
+async def get_weather(request: Request):
+    user = await get_current_user(request)
+    city, api_key = await get_weather_settings()
+    
+    if not city or not api_key:
+        return {"available": False, "message": "Wetter nicht konfiguriert. Bitte Stadt und API-Key in den Admin-Einstellungen hinterlegen."}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            # Current weather
+            current_resp = await http_client.get(
+                f"https://api.openweathermap.org/data/2.5/weather",
+                params={"q": city, "appid": api_key, "units": "metric", "lang": "de"}
+            )
+            if current_resp.status_code != 200:
+                error = current_resp.json().get("message", "Unbekannter Fehler")
+                return {"available": False, "message": f"Wetter-API Fehler: {error}"}
+            
+            current = current_resp.json()
+            
+            # 5-day forecast (3h intervals)
+            forecast_resp = await http_client.get(
+                f"https://api.openweathermap.org/data/2.5/forecast",
+                params={"q": city, "appid": api_key, "units": "metric", "lang": "de", "cnt": 24}
+            )
+            forecast_data = forecast_resp.json() if forecast_resp.status_code == 200 else {}
+            
+            # Group forecast by day
+            daily = {}
+            for item in forecast_data.get("list", []):
+                date = item["dt_txt"][:10]
+                if date not in daily:
+                    daily[date] = {"temps": [], "descriptions": [], "icons": [], "date": date}
+                daily[date]["temps"].append(item["main"]["temp"])
+                daily[date]["descriptions"].append(item["weather"][0]["description"])
+                daily[date]["icons"].append(item["weather"][0]["icon"])
+            
+            forecast_days = []
+            for date, data in list(daily.items())[:4]:
+                forecast_days.append({
+                    "date": date,
+                    "temp_min": round(min(data["temps"]), 1),
+                    "temp_max": round(max(data["temps"]), 1),
+                    "description": max(set(data["descriptions"]), key=data["descriptions"].count),
+                    "icon": max(set(data["icons"]), key=data["icons"].count),
+                })
+            
+            return {
+                "available": True,
+                "city": current.get("name", city),
+                "current": {
+                    "temp": round(current["main"]["temp"], 1),
+                    "feels_like": round(current["main"]["feels_like"], 1),
+                    "humidity": current["main"]["humidity"],
+                    "pressure": current["main"]["pressure"],
+                    "description": current["weather"][0]["description"],
+                    "icon": current["weather"][0]["icon"],
+                    "wind_speed": round(current.get("wind", {}).get("speed", 0) * 3.6, 1),
+                    "clouds": current.get("clouds", {}).get("all", 0),
+                    "sunrise": current.get("sys", {}).get("sunrise"),
+                    "sunset": current.get("sys", {}).get("sunset"),
+                },
+                "forecast": forecast_days,
+            }
+    except Exception as e:
+        logger.error(f"Weather error: {e}")
+        return {"available": False, "message": f"Fehler: {str(e)}"}
 
 app.include_router(api_router)
 
