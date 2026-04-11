@@ -1,82 +1,67 @@
-# Aria Dashboard - Product Requirements Document
+# Aria Dashboard v2.0 - PRD
 
-## Original Problem Statement
-Erstelle ein mobiles Dashboard namens "Aria" für Unraid und Docker-Zugriff, das über GitHub gebaut und auf einem Unraid-Server installiert werden kann.
+## Originale Problemstellung
+Aria ist ein zentrales OS-Interface (Hybrid Auth Dashboard) für einen Unraid-Server. Es dient als Gateway für externe Docker-Services (CaseDesk-AI, ForgePilot, Nextcloud) mit dynamischem Theme-System (Star Trek LCARS & Disney).
 
-## Architecture
-- **Frontend**: React 19 mit Tailwind CSS, Shadcn UI, Framer Motion, Phosphor Icons
-- **Backend**: FastAPI (Python 3.11) mit Motor (async MongoDB)
-- **Database**: MongoDB
-- **Authentication**: JWT-based (httpOnly cookies)
-- **Deployment**: Docker Container mit GitHub Actions CI/CD
+## Architektur
+- **Backend**: FastAPI + Motor (Async MongoDB) + PyJWT
+- **Frontend**: React + Tailwind CSS + Shadcn UI + Phosphor Icons
+- **Deployment**: Docker (Multi-Stage Build) -> GitHub Actions -> Unraid GHCR
 
-## User Personas
-1. **Unraid Admin**: Technisch versiert, will zentralen Zugriff auf alle Docker-Services
-2. **Mobile User**: Zugriff von unterwegs, braucht schnelle Touch-Bedienung
+## Was wurde implementiert
 
-## Core Requirements (Implemented)
-- [x] Setup-Wizard beim ersten Start
-- [x] Admin-Account Erstellung
-- [x] JWT-basierte Authentifizierung
-- [x] Dark Mode Theme
-- [x] Kachel-Dashboard für Dienste
-- [x] Kategorien (Server, Smart Home, Cloud, Medien, Tools, Sonstige)
-- [x] Automatische Docker Container-Erkennung (Mock-Daten wenn kein Socket)
-- [x] Manuelle Kachel-Erstellung
-- [x] Tile Sichtbarkeit (ein-/ausblenden)
-- [x] Mobile-optimiertes Design
-- [x] Dockerfile für Unraid
-- [x] docker-compose.yml
-- [x] GitHub Actions Workflow für automatischen Build
+### Phase 1 - Basis (DONE)
+- JWT Auth System (Login, Logout, Setup Wizard)
+- Admin Panel (User/Service Management)
+- Star Trek LCARS + Disney Theme Engine
+- Dockerfile, GitHub Actions CI/CD, Unraid Deployment Config
 
-## What's Been Implemented (April 2026)
-### Backend (/app/backend/server.py)
-- Setup endpoint (/api/setup/status, /api/setup/complete)
-- Auth endpoints (login, logout, me, refresh)
-- Tiles CRUD (/api/tiles)
-- Categories (/api/categories)
-- Docker integration (/api/docker/containers, /api/docker/containers/add)
+### Phase 2 - System Monitoring (DONE - 2026-04-11)
+- **System Diagnostik Seite** mit Live-Daten:
+  - CPU: Modell, Gesamtlast, Pro-Kern-Auslastung, Load Average
+  - Arbeitsspeicher: Gesamt/Belegt/Verfügbar mit Donut-Chart
+  - Festplatten: Mountpoints, Nutzung mit Balken
+  - Netzwerk: Interfaces, Gesendet/Empfangen Bytes
+  - Docker Container: Status (laufend/gestoppt), Image, Uptime, Ports
+  - Auto-Refresh (15s) mit LIVE/PAUSE Toggle
+- **Auth-Fix**: Bearer Token wird vor Cookies geprüft (Preview-Umgebung Stabilität)
+- **Dashboard-Fix**: Timeout für health/services API (verhindert langes Laden)
+- Backend: psutil + Docker SDK für System-Monitoring
+- Beide Themes (LCARS + Disney) funktionieren korrekt
 
-### Frontend
-- SetupWizard.jsx - 3-step wizard
-- Login.jsx - Dark themed login
-- Dashboard.jsx - Tile grid with categories
-- Admin.jsx - Tile & Container management
+## Offene / Anstehende Aufgaben
 
-### Docker/CI
-- Dockerfile (multi-stage build)
-- docker-compose.yml
-- .github/workflows/docker-build.yml
+### P0 (Nächste)
+- [ ] Nextcloud-Integration als externen Service einbinden
+- [ ] Kontoverknüpfung (Account Linking) - UI/Backend für Service-Credentials
+- [ ] CaseDesk-AI & ForgePilot funktionale Integration (Proxy, Health-Checks)
 
-## Prioritized Backlog
+### P1
+- [ ] Globaler Chat & Routing (Queries an CaseDesk vs ForgePilot)
+- [ ] Health System auf Unraid-spezifische Daten erweitern (SMART, Disk-Temps via Unraid API)
 
-### P0 (Critical) - Done ✅
-- Setup Wizard
-- Authentication
-- Dashboard
-- Admin Panel
-- Docker Files
+### P2
+- [ ] Zentralisierter Log-Viewer (System, User, Routing)
+- [ ] Session-Management Refactoring (localStorage Interceptor)
 
-### P1 (High Priority) - Future
-- [ ] HTTPS/SSL Konfiguration Anleitung
-- [ ] Container Status live polling
-- [ ] 2-Faktor-Authentifizierung
-- [ ] Tile Drag & Drop Sortierung
+## Service-URLs auf Unraid
+- Aria: 192.168.1.140:8080
+- CaseDesk Frontend: 192.168.1.140:9090
+- ForgePilot Frontend: 192.168.1.140:3000
+- ForgePilot Backend: 192.168.1.140:8001
+- Nextcloud: 192.168.1.140:8666
 
-### P2 (Medium Priority) - Future
-- [ ] Container Start/Stop Funktionen
-- [ ] Mehrere Benutzer
-- [ ] Benachrichtigungen
-- [ ] Backup/Export der Einstellungen
+## DB Schema
+- `users`: {email, password_hash, name, role, linked_accounts, theme, permissions}
+- `services`: {id, name, url, icon, category, description, health_endpoint, enabled}
+- `logs`: {type, user_id, timestamp, ...}
 
-### P3 (Low Priority) - Future
-- [ ] Mehrere Server/Hosts
-- [ ] API-Anbindungen
-- [ ] Push-Mitteilungen
-- [ ] Custom Themes
-
-## Next Tasks
-1. User testet Setup und Dashboard auf Unraid
-2. GitHub Repository erstellen und Code pushen
-3. Warten auf GitHub Actions Build
-4. Docker Image auf Unraid installieren
+## API Endpoints
+- POST /api/auth/login, GET /api/auth/me, POST /api/auth/logout
+- GET /api/setup/status, POST /api/setup/complete
+- GET /api/services, POST /api/services/{id}/link
+- GET /api/health, GET /api/health/system, GET /api/health/docker, GET /api/health/services
+- GET /api/admin/users, POST /api/admin/users, PUT /api/admin/users/{id}
+- GET /api/dashboard/stats
+- POST /api/chat
+- GET /api/logs
