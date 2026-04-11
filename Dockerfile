@@ -77,7 +77,7 @@ RUN mkdir -p /var/log/supervisor /app/data
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
     CMD curl -f http://localhost/api/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

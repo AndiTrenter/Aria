@@ -135,13 +135,38 @@ class ChatMessage(BaseModel):
     target_service: Optional[str] = None
     session_id: Optional[str] = None
 
+import asyncio
+
+async def wait_for_mongo(max_retries=30, delay=2):
+    """Wait for MongoDB to be ready before proceeding."""
+    for attempt in range(max_retries):
+        try:
+            await client.admin.command('ping')
+            logger.info(f"MongoDB connected (attempt {attempt + 1})")
+            return True
+        except Exception as e:
+            logger.warning(f"MongoDB not ready (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+    logger.error("MongoDB connection failed after all retries")
+    return False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await db.users.create_index("email", unique=True)
-    await db.services.create_index("id", unique=True)
-    await db.logs.create_index("timestamp")
-    await db.chat_messages.create_index("session_id")
-    await db.chat_messages.create_index("user_id")
+    mongo_ready = await wait_for_mongo()
+    if not mongo_ready:
+        logger.error("Starting without MongoDB - some features will be unavailable")
+        yield
+        return
+
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.services.create_index("id", unique=True)
+        await db.logs.create_index("timestamp")
+        await db.chat_messages.create_index("session_id")
+        await db.chat_messages.create_index("user_id")
+    except Exception as e:
+        logger.warning(f"Index creation failed: {e}")
     
     default_services = [
         {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
@@ -150,8 +175,11 @@ async def lifespan(app: FastAPI):
         {"id": "unraid", "name": "Unraid", "url": "http://192.168.1.140", "icon": "hard-drives", "category": "Server", "description": "Unraid Server Dashboard", "health_endpoint": "/", "enabled": True},
     ]
     
-    for service in default_services:
-        await db.services.update_one({"id": service["id"]}, {"$setOnInsert": service}, upsert=True)
+    try:
+        for service in default_services:
+            await db.services.update_one({"id": service["id"]}, {"$setOnInsert": service}, upsert=True)
+    except Exception as e:
+        logger.warning(f"Service seeding failed: {e}")
     
     logger.info("Aria Dashboard v2.0 started")
     yield

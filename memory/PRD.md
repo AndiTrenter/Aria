@@ -46,6 +46,12 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - Disney Theme: Top-Navigation Bar
 - LCARS Theme: Sidebar + Header-Bar
 
+### Deployment-Robustheit - DONE 2026-04-11
+- MongoDB Retry-Logik: Backend wartet bis zu 60s auf MongoDB (30 Versuche × 2s)
+- Graceful Degradation: Server crasht nicht mehr wenn MongoDB kurz nicht erreichbar
+- Docker-Compose: MongoDB Healthcheck + depends_on mit condition: service_healthy
+- Healthcheck: start_period auf 60s erhöht für langsame Container-Starts
+
 ## Offene Aufgaben (Backlog P2)
 - [ ] Chat: Server-Status-Awareness (Docker-Daten)
 - [ ] Health: SMART, Disk-Temps via Unraid API

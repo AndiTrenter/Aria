@@ -31,7 +31,8 @@ services:
       # Optional: Persistente Daten
       - aria_data:/app/data
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - aria-network
 
@@ -43,6 +44,12 @@ services:
       - aria_mongo_data:/data/db
     networks:
       - aria-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     # Kein externer Port - nur intern erreichbar
 
 volumes:
