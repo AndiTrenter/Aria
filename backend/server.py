@@ -187,7 +187,7 @@ async def login(request: LoginRequest, response: Response):
     
     await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": datetime.now(timezone.utc).isoformat()})
     
-    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {})}
+    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "access_token": access_token}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):

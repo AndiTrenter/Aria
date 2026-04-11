@@ -26,15 +26,22 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Fetch data immediately, the API will handle auth
     fetchData();
   }, []);
 
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('aria_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchData = async () => {
     try {
+      const headers = getAuthHeader();
       const [servicesRes, statsRes, healthRes] = await Promise.all([
-        axios.get(`${API}/services`),
-        axios.get(`${API}/dashboard/stats`),
-        axios.get(`${API}/health/services`).catch(() => ({ data: [] }))
+        axios.get(`${API}/services`, { headers }),
+        axios.get(`${API}/dashboard/stats`, { headers }),
+        axios.get(`${API}/health/services`, { headers }).catch(() => ({ data: [] }))
       ]);
       setServices(servicesRes.data);
       setStats(statsRes.data);
@@ -55,7 +62,8 @@ const Dashboard = () => {
     e.preventDefault();
     if (!chatMessage.trim()) return;
     try {
-      const { data } = await axios.post(`${API}/chat`, { message: chatMessage });
+      const headers = getAuthHeader();
+      const { data } = await axios.post(`${API}/chat`, { message: chatMessage }, { headers });
       toast.success(data.response);
       setChatMessage("");
     } catch (e) {

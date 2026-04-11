@@ -17,6 +17,20 @@ export const API = `${BACKEND_URL}/api`;
 
 axios.defaults.withCredentials = true;
 
+// Add request interceptor to include token from localStorage
+axios.interceptors.request.use((config) => {
+  const stored = localStorage.getItem('aria_user');
+  if (stored) {
+    try {
+      const token = localStorage.getItem('aria_token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {}
+  }
+  return config;
+});
+
 export const AuthContext = createContext(null);
 export const ThemeContext = createContext(null);
 
@@ -61,9 +75,21 @@ const AuthProvider = ({ children }) => {
       const { data } = await axios.get(`${API}/auth/me`);
       setUser(data);
       setThemeState(data.theme || "startrek");
+      localStorage.setItem('aria_user', JSON.stringify(data));
       return data;
     } catch (e) {
+      // Try localStorage backup
+      const stored = localStorage.getItem('aria_user');
+      if (stored) {
+        try {
+          const userData = JSON.parse(stored);
+          setUser(userData);
+          setThemeState(userData.theme || "startrek");
+          return userData;
+        } catch {}
+      }
       setUser(null);
+      localStorage.removeItem('aria_user');
       return null;
     }
   };
@@ -72,12 +98,19 @@ const AuthProvider = ({ children }) => {
     const { data } = await axios.post(`${API}/auth/login`, { email, password });
     setUser(data);
     setThemeState(data.theme || "startrek");
+    // Store in localStorage
+    localStorage.setItem('aria_user', JSON.stringify(data));
+    if (data.access_token) {
+      localStorage.setItem('aria_token', data.access_token);
+    }
     return data;
   };
 
   const logout = async () => {
     try { await axios.post(`${API}/auth/logout`); } catch (e) {}
     setUser(null);
+    localStorage.removeItem('aria_user');
+    localStorage.removeItem('aria_token');
   };
 
   const completeSetup = async (email, password, name) => {
@@ -88,9 +121,16 @@ const AuthProvider = ({ children }) => {
   };
 
   const setTheme = async (newTheme) => {
+    setThemeState(newTheme);
     try {
       await axios.put(`${API}/auth/theme`, { theme: newTheme });
-      setThemeState(newTheme);
+      // Update localStorage
+      const stored = localStorage.getItem('aria_user');
+      if (stored) {
+        const userData = JSON.parse(stored);
+        userData.theme = newTheme;
+        localStorage.setItem('aria_user', JSON.stringify(userData));
+      }
     } catch (e) {
       console.error("Failed to update theme:", e);
     }
