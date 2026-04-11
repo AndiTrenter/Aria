@@ -3,49 +3,46 @@ import { Link } from "react-router-dom";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, User, Trash, PencilSimple, Check, X, HardDrives, Shield } from "@phosphor-icons/react";
+import { ArrowLeft, Plus, User, Trash, PencilSimple, Check, X, HardDrives, Shield, Gear, Eye, EyeSlash } from "@phosphor-icons/react";
 
 const Admin = () => {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
   const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("users");
-  const [showAddUser, setShowAddUser] = useState(false);
+  const [settings, setSettings] = useState({});
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", role: "user" });
-  const [editingServices, setEditingServices] = useState(null);
-
-  useEffect(() => { fetchData(); }, []);
+  const [apiKeyInput, setApiKeyInput] = useState("");
 
   const fetchData = async () => {
     try {
-      const [usersRes, servicesRes] = await Promise.all([
+      const [usersRes, servicesRes, settingsRes] = await Promise.all([
         axios.get(`${API}/admin/users`),
-        axios.get(`${API}/services`)
+        axios.get(`${API}/services`),
+        axios.get(`${API}/admin/settings`).catch(() => ({ data: {} })),
       ]);
       setUsers(usersRes.data);
       setServices(servicesRes.data);
+      setSettings(settingsRes.data);
     } catch (e) {
-      toast.error("Fehler beim Laden");
-    } finally {
-      setLoading(false);
+      toast.error("Fehler beim Laden der Daten");
     }
   };
 
-  const handleAddUser = async () => {
-    if (!newUser.email || !newUser.password || !newUser.name) {
-      toast.error("Alle Felder ausfüllen");
-      return;
-    }
+  useEffect(() => { fetchData(); }, []);
+
+  const handleCreateUser = async () => {
     try {
       await axios.post(`${API}/admin/users`, newUser);
       toast.success("Benutzer erstellt");
-      setShowAddUser(false);
+      setShowCreateUser(false);
       setNewUser({ email: "", password: "", name: "", role: "user" });
       fetchData();
     } catch (e) {
-      toast.error(formatApiError(e.response?.data?.detail));
+      toast.error(formatApiError(e.response?.data?.detail) || "Fehler");
     }
   };
 
@@ -56,155 +53,127 @@ const Admin = () => {
       toast.success("Benutzer gelöscht");
       fetchData();
     } catch (e) {
-      toast.error(formatApiError(e.response?.data?.detail));
+      toast.error(formatApiError(e.response?.data?.detail) || "Fehler");
     }
   };
 
-  const handleToggleActive = async (userId, currentActive) => {
+  const handleSaveSettings = async () => {
     try {
-      await axios.put(`${API}/admin/users/${userId}`, { is_active: !currentActive });
-      toast.success(currentActive ? "Deaktiviert" : "Aktiviert");
+      const payload = {};
+      if (apiKeyInput) payload.openai_api_key = apiKeyInput;
+      await axios.put(`${API}/admin/settings`, payload);
+      toast.success("Einstellungen gespeichert");
+      setApiKeyInput("");
       fetchData();
     } catch (e) {
-      toast.error("Fehler");
+      toast.error("Fehler beim Speichern");
     }
   };
 
-  const handleUpdateServices = async (userId, serviceIds) => {
-    try {
-      await axios.put(`${API}/admin/users/${userId}/services`, { services: serviceIds });
-      toast.success("Dienste aktualisiert");
-      setEditingServices(null);
-      fetchData();
-    } catch (e) {
-      toast.error("Fehler");
-    }
-  };
+  const isLcars = theme === "startrek";
+  const cardClass = isLcars ? "lcars-card" : "disney-card";
+  const btnClass = isLcars ? "lcars-button" : "disney-button";
+  const inputClass = isLcars ? "lcars-input" : "disney-input";
 
-  const cardClass = theme === "startrek" ? "lcars-card" : "disney-card";
-  const btnClass = theme === "startrek" ? "lcars-button" : "disney-button";
-  const inputClass = theme === "startrek" ? "lcars-input" : "disney-input";
+  const tabs = [
+    { id: "users", label: isLcars ? "BENUTZER" : "Benutzer" },
+    { id: "services", label: isLcars ? "DIENSTE" : "Dienste" },
+    { id: "settings", label: isLcars ? "EINSTELLUNGEN" : "Einstellungen" },
+  ];
 
   return (
     <div className="min-h-screen relative z-10">
       {/* Header */}
-      <header className={theme === "startrek" ? "lcars-header px-6 flex items-center" : "disney-header py-4 px-6"}>
-        <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-          <Link to="/" className={theme === "startrek" ? "text-black hover:text-gray-700" : "text-purple-200 hover:text-white"}>
-            <ArrowLeft size={24} />
-          </Link>
-          {theme === "startrek" ? (
-            <span className="text-black font-bold text-xl tracking-widest">ADMIN KONTROLLE</span>
-          ) : (
-            <h1 className="disney-title text-2xl font-bold">👑 Admin-Bereich</h1>
-          )}
-        </div>
+      <header className={isLcars ? "lcars-header" : "disney-header py-4 px-6"}>
+        {isLcars ? (
+          <>
+            <div className="lcars-header-cap">
+              <Link to="/" className="text-black" data-testid="admin-back-link">ARIA</Link>
+            </div>
+            <div className="lcars-header-bar">
+              <span className="text-xs text-gray-500 ml-3 tracking-wider">ADMINISTRATION</span>
+            </div>
+            <div className="lcars-header-end" />
+          </>
+        ) : (
+          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
+            <Link to="/" className="text-purple-200" data-testid="admin-back-link"><ArrowLeft size={24} /></Link>
+            <h1 className="disney-title text-2xl font-bold">Administration</h1>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-6">
         {/* Tabs */}
-        <div className="flex gap-4 mb-8">
-          <button
-            onClick={() => setActiveTab("users")}
-            className={`px-6 py-2 rounded-full font-bold transition-all ${activeTab === "users" ? btnClass : 'bg-gray-700 text-gray-300'}`}
-          >
-            <User size={18} className="inline mr-2" /> Benutzer
-          </button>
-          <button
-            onClick={() => setActiveTab("services")}
-            className={`px-6 py-2 rounded-full font-bold transition-all ${activeTab === "services" ? btnClass : 'bg-gray-700 text-gray-300'}`}
-          >
-            <HardDrives size={18} className="inline mr-2" /> Dienste
-          </button>
+        <div className="flex gap-2 mb-6" data-testid="admin-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
+                activeTab === tab.id
+                  ? isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-600 text-white"
+                  : isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)] hover:bg-[var(--lcars-purple)]/40" : "bg-purple-900/30 text-purple-400 hover:bg-purple-800/40"
+              }`}
+              data-testid={`tab-${tab.id}`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Users Tab */}
         {activeTab === "users" && (
-          <div className={cardClass}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className={theme === "startrek" ? "text-lg tracking-widest" : "disney-title text-xl"}>
-                {theme === "startrek" ? "BENUTZER DATENBANK" : "Benutzer verwalten"}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className={isLcars ? "text-sm tracking-widest text-[var(--lcars-mauve)]" : "text-lg font-bold text-purple-200"}>
+                {users.length} {isLcars ? "BENUTZER REGISTRIERT" : "Benutzer"}
               </h2>
-              <button onClick={() => setShowAddUser(true)} className={btnClass}>
-                <Plus size={16} className="inline mr-1" /> Neu
+              <button onClick={() => setShowCreateUser(!showCreateUser)} className={btnClass} data-testid="create-user-button">
+                <Plus size={14} className="inline mr-1" /> {isLcars ? "NEU" : "Neuer Benutzer"}
               </button>
             </div>
 
-            {showAddUser && (
-              <div className="mb-6 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
-                <h3 className="font-bold mb-4">Neuer Benutzer</h3>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <input placeholder="Name" value={newUser.name} onChange={(e) => setNewUser({...newUser, name: e.target.value})} className={inputClass} />
-                  <input placeholder="E-Mail" value={newUser.email} onChange={(e) => setNewUser({...newUser, email: e.target.value})} className={inputClass} />
-                  <input type="password" placeholder="Passwort" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={inputClass} />
-                  <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className={inputClass}>
-                    <option value="user">User</option>
+            {showCreateUser && (
+              <div className={`${cardClass} mb-4`} data-testid="create-user-form">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <input placeholder="Name" value={newUser.name} onChange={(e) => setNewUser({...newUser, name: e.target.value})} className={inputClass} data-testid="new-user-name" />
+                  <input placeholder="E-Mail" value={newUser.email} onChange={(e) => setNewUser({...newUser, email: e.target.value})} className={inputClass} data-testid="new-user-email" />
+                  <input type="password" placeholder="Passwort" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={inputClass} data-testid="new-user-password" />
+                  <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className={inputClass} data-testid="new-user-role">
+                    <option value="user">Benutzer</option>
                     <option value="admin">Admin</option>
-                    <option value="readonly">ReadOnly</option>
+                    <option value="readonly">Nur Lesen</option>
                   </select>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={handleAddUser} className={btnClass}>Erstellen</button>
-                  <button onClick={() => setShowAddUser(false)} className="px-4 py-2 bg-gray-700 rounded-lg">Abbrechen</button>
+                  <button onClick={handleCreateUser} className={btnClass} data-testid="submit-create-user">Erstellen</button>
+                  <button onClick={() => setShowCreateUser(false)} className={`${isLcars ? "lcars-button lcars-button-salmon" : "disney-button"} opacity-70`}>Abbrechen</button>
                 </div>
               </div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {users.map((u) => (
-                <div key={u.id} className="flex items-center gap-4 p-4 bg-gray-900/30 rounded-lg border border-gray-700">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-purple-600 flex items-center justify-center">
-                    <User size={20} className="text-white" />
+                <div key={u.id} className={`${cardClass} flex items-center gap-4`} data-testid={`user-row-${u.id}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isLcars ? "bg-[var(--lcars-purple)]/20" : "bg-purple-800/40"}`}>
+                    <User size={18} className={isLcars ? "text-[var(--lcars-purple)]" : "text-purple-400"} />
                   </div>
-                  <div className="flex-1">
-                    <div className="font-bold">{u.name}</div>
-                    <div className="text-sm text-gray-400">{u.email}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{u.name || u.email}</div>
+                    <div className="text-xs text-gray-500">{u.email}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded text-xs ${u.role === 'superadmin' ? 'bg-purple-600' : u.role === 'admin' ? 'bg-orange-600' : 'bg-gray-600'}`}>
-                      {u.role}
-                    </span>
-                    <span className={`px-2 py-1 rounded text-xs ${u.is_active ? 'bg-green-600' : 'bg-red-600'}`}>
-                      {u.is_active ? 'Aktiv' : 'Inaktiv'}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setEditingServices(editingServices === u.id ? null : u.id)} className="p-2 hover:bg-gray-700 rounded" title="Dienste">
-                      <Shield size={18} />
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded tracking-wider ${
+                    u.role === "superadmin" ? (isLcars ? "bg-[var(--lcars-orange)]/20 text-[var(--lcars-orange)]" : "bg-purple-600/30 text-purple-300") :
+                    u.role === "admin" ? (isLcars ? "bg-[var(--lcars-blue)]/20 text-[var(--lcars-blue)]" : "bg-blue-600/30 text-blue-300") :
+                    isLcars ? "bg-gray-800 text-gray-400" : "bg-gray-700 text-gray-400"
+                  }`}>
+                    {u.role}
+                  </span>
+                  {u.id !== user?.id && (
+                    <button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:text-red-300 p-2" data-testid={`delete-user-${u.id}`}>
+                      <Trash size={16} />
                     </button>
-                    <button onClick={() => handleToggleActive(u.id, u.is_active)} className="p-2 hover:bg-gray-700 rounded" title={u.is_active ? "Deaktivieren" : "Aktivieren"}>
-                      {u.is_active ? <X size={18} /> : <Check size={18} />}
-                    </button>
-                    {u.role !== 'superadmin' && (
-                      <button onClick={() => handleDeleteUser(u.id)} className="p-2 hover:bg-red-900 rounded text-red-400" title="Löschen">
-                        <Trash size={18} />
-                      </button>
-                    )}
-                  </div>
-                  
-                  {editingServices === u.id && (
-                    <div className="w-full mt-4 p-4 bg-gray-800 rounded-lg">
-                      <h4 className="font-bold mb-2">Dienst-Freigaben</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {services.map((s) => {
-                          const isAllowed = u.allowed_services?.includes(s.id);
-                          return (
-                            <button
-                              key={s.id}
-                              onClick={() => {
-                                const newServices = isAllowed 
-                                  ? u.allowed_services.filter(id => id !== s.id)
-                                  : [...(u.allowed_services || []), s.id];
-                                handleUpdateServices(u.id, newServices);
-                              }}
-                              className={`px-3 py-1 rounded-full text-sm ${isAllowed ? 'bg-green-600' : 'bg-gray-600'}`}
-                            >
-                              {s.name} {isAllowed ? '✓' : ''}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
                   )}
                 </div>
               ))}
@@ -214,21 +183,72 @@ const Admin = () => {
 
         {/* Services Tab */}
         {activeTab === "services" && (
-          <div className={cardClass}>
-            <h2 className={theme === "startrek" ? "text-lg tracking-widest mb-6" : "disney-title text-xl mb-6"}>
-              {theme === "startrek" ? "DIENSTE KONFIGURATION" : "Dienste"}
-            </h2>
-            <div className="space-y-3">
-              {services.map((s) => (
-                <div key={s.id} className="flex items-center gap-4 p-4 bg-gray-900/30 rounded-lg border border-gray-700">
-                  <HardDrives size={24} className="text-orange-500" />
-                  <div className="flex-1">
-                    <div className="font-bold">{s.name}</div>
-                    <div className="text-sm text-gray-400">{s.url}</div>
-                  </div>
-                  <span className="px-2 py-1 rounded text-xs bg-gray-600">{s.category}</span>
+          <div className="space-y-2">
+            {services.map((s) => (
+              <div key={s.id} className={`${cardClass} flex items-center gap-4`} data-testid={`service-admin-${s.id}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isLcars ? "bg-[var(--lcars-blue)]/20" : "bg-blue-800/40"}`}>
+                  <HardDrives size={18} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
                 </div>
-              ))}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm">{s.name}</div>
+                  <div className="text-xs text-gray-500">{s.url}</div>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400">{s.category}</span>
+                <span className={`text-[10px] font-bold ${s.enabled ? "text-green-400" : "text-red-400"}`}>{s.enabled ? "AKTIV" : "INAKTIV"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === "settings" && (
+          <div className="space-y-6">
+            <div className={cardClass} data-testid="settings-api-key">
+              <div className="flex items-center gap-3 mb-4">
+                <Gear size={20} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+                <h3 className={isLcars ? "text-sm tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}>
+                  {isLcars ? "KI-KONFIGURATION" : "KI-Konfiguration"}
+                </h3>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">
+                OpenAI API-Key für den Aria Chat-Assistenten. Wird für GPT-4o basierte Antworten verwendet.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "AKTUELLER API-KEY" : "Aktueller API-Key"}
+                  </label>
+                  <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                    {settings.openai_api_key || (isLcars ? "NICHT KONFIGURIERT" : "Nicht konfiguriert")}
+                  </div>
+                </div>
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "NEUER API-KEY" : "Neuer API-Key"}
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        placeholder="sk-..."
+                        className={`${inputClass} w-full pr-10`}
+                        data-testid="api-key-input"
+                      />
+                      <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                        {showApiKey ? <EyeSlash size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <button onClick={handleSaveSettings} className={btnClass} data-testid="save-api-key-button">
+                      {isLcars ? "SPEICHERN" : "Speichern"}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-600">
+                  {isLcars ? "HINWEIS: FALLBACK AUF EMERGENT UNIVERSAL KEY WENN NICHT KONFIGURIERT" : "Hinweis: Falls kein Key hinterlegt wird, wird der Emergent Universal Key als Fallback verwendet."}
+                </p>
+              </div>
             </div>
           </div>
         )}

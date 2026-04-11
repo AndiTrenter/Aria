@@ -1,144 +1,257 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================
-   STAR TREK LCARS THEME
+   STAR TREK LCARS THEME - AUTHENTIC TNG
    ============================================ */
 .theme-startrek {
   --lcars-bg: #000000;
-  --lcars-panel: #1a1a2e;
-  --lcars-orange: #ff9900;
-  --lcars-gold: #cc9933;
-  --lcars-beige: #cc99cc;
-  --lcars-purple: #9977aa;
-  --lcars-blue: #6699cc;
-  --lcars-red: #cc6666;
-  --lcars-text: #ff9900;
+  --lcars-orange: #FF9900;
+  --lcars-gold: #FFCC99;
+  --lcars-mauve: #CC99CC;
+  --lcars-purple: #9977AA;
+  --lcars-blue: #6699CC;
+  --lcars-salmon: #CC6666;
+  --lcars-tan: #FFCC66;
+  --lcars-lavender: #9999CC;
+  --lcars-panel: #0a0a14;
+  --lcars-text: #FF9900;
   
   background: var(--lcars-bg);
-  color: var(--lcars-text);
-  font-family: 'Orbitron', monospace;
+  color: #CCCCCC;
+  font-family: 'Antonio', sans-serif;
   min-height: 100vh;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.theme-startrek .lcars-panel {
-  background: linear-gradient(135deg, #1a1a2e 0%, #0d0d1a 100%);
-  border: 2px solid var(--lcars-orange);
-  border-radius: 0 30px 30px 0;
+/* LCARS Elbow - the iconic L-shaped bracket */
+.theme-startrek .lcars-elbow-tl {
+  position: relative;
+  background: var(--lcars-orange);
+  border-radius: 0 0 0 40px;
+  width: 100%;
+  height: 50px;
 }
 
+.theme-startrek .lcars-elbow-tl::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: calc(100% - 140px);
+  height: 100%;
+  background: var(--lcars-bg);
+  border-radius: 40px 0 0 0;
+}
+
+/* LCARS Header Bar */
+.theme-startrek .lcars-header {
+  background: transparent;
+  display: flex;
+  align-items: stretch;
+  height: 50px;
+  position: relative;
+  z-index: 20;
+}
+
+.theme-startrek .lcars-header-cap {
+  background: var(--lcars-orange);
+  width: 140px;
+  min-width: 140px;
+  border-radius: 0 0 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.theme-startrek .lcars-header-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.theme-startrek .lcars-header-bar::before {
+  content: '';
+  flex: 1;
+  height: 8px;
+  background: var(--lcars-orange);
+  border-radius: 4px;
+}
+
+.theme-startrek .lcars-header-end {
+  background: var(--lcars-mauve);
+  width: 120px;
+  min-width: 120px;
+  border-radius: 0 0 30px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* LCARS Sidebar */
+.theme-startrek .lcars-sidebar {
+  width: 140px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+}
+
+.theme-startrek .lcars-sidebar-item {
+  color: #000;
+  padding: 10px 8px;
+  text-align: right;
+  padding-right: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-radius: 20px 0 0 20px;
+  letter-spacing: 1px;
+}
+
+.theme-startrek .lcars-sidebar-item:nth-child(odd) { background: var(--lcars-purple); }
+.theme-startrek .lcars-sidebar-item:nth-child(even) { background: var(--lcars-mauve); }
+.theme-startrek .lcars-sidebar-item:hover { background: var(--lcars-orange); }
+.theme-startrek .lcars-sidebar-item.active { background: var(--lcars-orange); }
+
+.theme-startrek .lcars-sidebar-spacer {
+  flex: 1;
+  min-height: 20px;
+}
+
+.theme-startrek .lcars-sidebar-bottom {
+  background: var(--lcars-blue);
+  height: 60px;
+  border-radius: 20px 0 0 0;
+}
+
+/* LCARS Footer Bar */
+.theme-startrek .lcars-footer-bar {
+  height: 18px;
+  display: flex;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.theme-startrek .lcars-footer-bar > div:nth-child(1) { flex: 2; background: var(--lcars-blue); border-radius: 0 0 0 20px; }
+.theme-startrek .lcars-footer-bar > div:nth-child(2) { flex: 3; background: var(--lcars-salmon); border-radius: 9px; }
+.theme-startrek .lcars-footer-bar > div:nth-child(3) { flex: 5; background: var(--lcars-mauve); border-radius: 9px; }
+.theme-startrek .lcars-footer-bar > div:nth-child(4) { flex: 2; background: var(--lcars-purple); border-radius: 0 0 20px 0; }
+
+/* LCARS Buttons */
 .theme-startrek .lcars-button {
   background: var(--lcars-orange);
   color: #000;
-  border-radius: 20px;
-  padding: 8px 24px;
+  border-radius: 18px;
+  padding: 8px 22px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  transition: all 0.2s;
+  letter-spacing: 1.5px;
+  transition: all 0.15s;
   border: none;
+  font-family: 'Antonio', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .theme-startrek .lcars-button:hover {
   background: var(--lcars-gold);
-  transform: scale(1.02);
 }
 
-.theme-startrek .lcars-header {
-  background: linear-gradient(90deg, var(--lcars-orange) 0%, var(--lcars-gold) 50%, var(--lcars-beige) 100%);
-  height: 60px;
-  border-radius: 0 0 30px 0;
-  position: relative;
-}
+.theme-startrek .lcars-button-purple { background: var(--lcars-purple); }
+.theme-startrek .lcars-button-purple:hover { background: var(--lcars-mauve); }
+.theme-startrek .lcars-button-blue { background: var(--lcars-blue); }
+.theme-startrek .lcars-button-blue:hover { background: var(--lcars-lavender); }
+.theme-startrek .lcars-button-salmon { background: var(--lcars-salmon); }
 
-.theme-startrek .lcars-sidebar {
-  background: var(--lcars-panel);
-  width: 120px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 20px 0;
-}
-
-.theme-startrek .lcars-sidebar-item {
-  background: var(--lcars-purple);
-  color: #000;
-  padding: 12px 8px;
-  text-align: center;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.2s;
-  border-radius: 0 15px 15px 0;
-  margin-left: -2px;
-}
-
-.theme-startrek .lcars-sidebar-item:hover,
-.theme-startrek .lcars-sidebar-item.active {
-  background: var(--lcars-orange);
-}
-
+/* LCARS Cards */
 .theme-startrek .lcars-card {
-  background: rgba(26, 26, 46, 0.9);
-  border: 1px solid var(--lcars-orange);
-  border-radius: 0 20px 20px 0;
-  padding: 16px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(255, 153, 0, 0.25);
+  border-left: 6px solid var(--lcars-orange);
+  border-radius: 0 12px 12px 0;
+  padding: 16px 16px 16px 20px;
   position: relative;
 }
 
-.theme-startrek .lcars-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  background: var(--lcars-orange);
-  border-radius: 0 0 0 20px;
+.theme-startrek .lcars-card-purple {
+  border-left-color: var(--lcars-purple);
+}
+.theme-startrek .lcars-card-blue {
+  border-left-color: var(--lcars-blue);
+}
+.theme-startrek .lcars-card-mauve {
+  border-left-color: var(--lcars-mauve);
 }
 
+/* LCARS Inputs */
 .theme-startrek .lcars-input {
-  background: #0d0d1a;
-  border: 1px solid var(--lcars-orange);
+  background: #0a0a14;
+  border: 1px solid var(--lcars-purple);
   color: var(--lcars-text);
-  padding: 12px 16px;
-  border-radius: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: 'Antonio', sans-serif;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .theme-startrek .lcars-input:focus {
   outline: none;
-  border-color: var(--lcars-gold);
-  box-shadow: 0 0 10px rgba(255, 153, 0, 0.3);
+  border-color: var(--lcars-orange);
+  box-shadow: 0 0 8px rgba(255, 153, 0, 0.3);
 }
 
+.theme-startrek .lcars-input option {
+  background: #0a0a14;
+  color: var(--lcars-text);
+}
+
+.theme-startrek .lcars-label {
+  color: var(--lcars-mauve);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+/* Status indicators */
 .theme-startrek .status-online {
-  color: #00ff00;
-  text-shadow: 0 0 10px #00ff00;
+  color: #33ff33;
+  text-shadow: 0 0 8px rgba(51, 255, 51, 0.4);
 }
 
 .theme-startrek .status-offline {
-  color: #ff0000;
-  text-shadow: 0 0 10px #ff0000;
+  color: #ff3333;
+  text-shadow: 0 0 8px rgba(255, 51, 51, 0.4);
 }
 
-/* Blinking animation for alerts */
+/* Blinking animation */
 .theme-startrek .lcars-blink {
-  animation: lcars-blink 1s infinite;
+  animation: lcars-blink 1.5s infinite;
 }
 
 @keyframes lcars-blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50% { opacity: 0.2; }
 }
 
-/* Scanner effect */
+/* Scanner line */
 .theme-startrek .lcars-scanner {
-  background: linear-gradient(180deg, transparent 0%, rgba(255, 153, 0, 0.1) 50%, transparent 100%);
-  animation: scanner 2s infinite;
+  background: linear-gradient(180deg, transparent 0%, rgba(255, 153, 0, 0.08) 50%, transparent 100%);
+  animation: scanner 3s infinite;
 }
 
 @keyframes scanner {
@@ -168,10 +281,7 @@
 .theme-disney::before {
   content: '';
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   background-image: 
     radial-gradient(2px 2px at 20px 30px, white, transparent),
     radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
@@ -266,17 +376,6 @@
   background-clip: text;
 }
 
-/* Sparkle effect */
-.theme-disney .sparkle {
-  position: relative;
-}
-
-.theme-disney .sparkle::after {
-  content: '✨';
-  position: absolute;
-  animation: sparkle-float 2s infinite;
-}
-
 @keyframes sparkle-float {
   0%, 100% { transform: translateY(0) rotate(0deg); opacity: 1; }
   50% { transform: translateY(-10px) rotate(180deg); opacity: 0.5; }
@@ -300,11 +399,11 @@ body {
 }
 
 .theme-startrek ::-webkit-scrollbar-track {
-  background: #0d0d1a;
+  background: #0a0a14;
 }
 
 .theme-startrek ::-webkit-scrollbar-thumb {
-  background: var(--lcars-orange);
+  background: var(--lcars-purple);
   border-radius: 4px;
 }
 
@@ -315,19 +414,6 @@ body {
 .theme-disney ::-webkit-scrollbar-thumb {
   background: var(--disney-purple);
   border-radius: 4px;
-}
-
-/* Status indicators */
-.status-healthy {
-  color: #00ff00;
-}
-
-.status-unhealthy {
-  color: #ff6600;
-}
-
-.status-offline {
-  color: #ff0000;
 }
 
 @layer base {

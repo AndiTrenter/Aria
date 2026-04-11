@@ -12,11 +12,18 @@ import jwt
 import httpx
 import psutil
 import shutil
+import uuid
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from enum import Enum
+
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
 
 try:
     import docker as docker_sdk
@@ -126,16 +133,20 @@ class ServiceLinkRequest(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     target_service: Optional[str] = None
+    session_id: Optional[str] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.users.create_index("email", unique=True)
     await db.services.create_index("id", unique=True)
     await db.logs.create_index("timestamp")
+    await db.chat_messages.create_index("session_id")
+    await db.chat_messages.create_index("user_id")
     
     default_services = [
         {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
         {"id": "forgepilot", "name": "ForgePilot", "url": "http://192.168.1.140:3000", "icon": "code", "category": "Entwicklung", "description": "Projekt- und Code-Verwaltung mit Agenten", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
+        {"id": "nextcloud", "name": "Nextcloud", "url": "http://192.168.1.140:8666", "icon": "cloud", "category": "Cloud", "description": "Dateien, Kalender und Kontakte", "health_endpoint": "/status.php", "api_base": "", "enabled": True},
         {"id": "unraid", "name": "Unraid", "url": "http://192.168.1.140", "icon": "hard-drives", "category": "Server", "description": "Unraid Server Dashboard", "health_endpoint": "/", "enabled": True},
     ]
     
@@ -554,7 +565,39 @@ async def get_logs(request: Request, limit: int = 100, log_type: Optional[str] =
     logs = await db.logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
     return logs
 
+# ==================== ADMIN SETTINGS ====================
+
+@api_router.get("/admin/settings")
+async def get_settings(request: Request):
+    await require_admin(request)
+    settings = await db.settings.find({}, {"_id": 0}).to_list(100)
+    result = {}
+    for s in settings:
+        if s["key"] == "openai_api_key" and s.get("value"):
+            result[s["key"]] = s["value"][:8] + "..." + s["value"][-4:]
+        else:
+            result[s["key"]] = s.get("value")
+    return result
+
+@api_router.put("/admin/settings")
+async def update_settings(request: Request, settings: dict = Body(...)):
+    await require_admin(request)
+    for key, value in settings.items():
+        if key == "openai_api_key" and value and "..." in value:
+            continue
+        await db.settings.update_one({"key": key}, {"$set": {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return {"message": "Settings updated"}
+
+async def get_llm_api_key() -> str:
+    setting = await db.settings.find_one({"key": "openai_api_key"})
+    if setting and setting.get("value"):
+        return setting["value"]
+    return os.environ.get("EMERGENT_LLM_KEY", "")
+
 # ==================== CHAT ====================
+
+# In-memory cache for LlmChat instances per session
+_chat_instances: Dict[str, LlmChat] = {}
 
 @api_router.post("/chat")
 async def chat_route(message: ChatMessage, request: Request):
@@ -566,17 +609,99 @@ async def chat_route(message: ChatMessage, request: Request):
     target = message.target_service
     
     if not target:
-        if any(w in msg_lower for w in ["dokument", "fall", "case", "akte", "pdf"]):
+        if any(w in msg_lower for w in ["dokument", "fall", "case", "akte", "pdf", "scan"]):
             target = "casedesk"
-        elif any(w in msg_lower for w in ["projekt", "code", "agent", "entwickl", "build"]):
+        elif any(w in msg_lower for w in ["projekt", "code", "agent", "entwickl", "build", "git"]):
             target = "forgepilot"
     
-    if target and target not in user.get("allowed_services", []) and user["role"] not in ["admin", "superadmin"]:
-        raise HTTPException(status_code=403, detail=f"No access to service: {target}")
+    # Route to CaseDesk if targeted
+    if target == "casedesk":
+        service_account = user.get("service_accounts", {}).get("casedesk", {})
+        try:
+            service = await db.services.find_one({"id": "casedesk"})
+            if service:
+                async with httpx.AsyncClient(timeout=10.0) as http_client:
+                    resp = await http_client.post(
+                        f"{service['url']}{service.get('api_base', '/api')}/chat",
+                        json={"message": message.message, "user": service_account.get("username", user["email"])},
+                    )
+                    if resp.status_code == 200:
+                        await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": "casedesk", "timestamp": datetime.now(timezone.utc).isoformat()})
+                        return {"response": resp.json().get("response", resp.text), "routed_to": "casedesk", "session_id": message.session_id}
+        except Exception as e:
+            logger.warning(f"CaseDesk routing failed: {e}")
+            # Fall through to AI chat
     
-    await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": target, "timestamp": datetime.now(timezone.utc).isoformat()})
+    # AI Chat with GPT
+    api_key = await get_llm_api_key()
+    if not api_key:
+        return {"response": "Kein API-Key konfiguriert. Bitte im Admin-Bereich unter Einstellungen einen OpenAI API-Key hinterlegen.", "routed_to": None, "session_id": message.session_id}
     
-    return {"message": message.message, "routed_to": target, "response": f"Nachricht wird an {target or 'Aria'} weitergeleitet..." if target else "Wie kann ich dir helfen?"}
+    if not LLM_AVAILABLE:
+        return {"response": "LLM-Modul nicht verfügbar.", "routed_to": None, "session_id": message.session_id}
+    
+    session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
+    
+    # Load chat history for this session
+    history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
+    
+    try:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=session_id,
+            system_message="Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud) und allgemeinen IT-Themen. Antworte auf Deutsch, sei hilfreich und präzise."
+        )
+        chat.with_model("openai", "gpt-4o")
+        
+        # Replay history for context
+        for msg in history:
+            if msg.get("role") == "user":
+                await chat.send_message(UserMessage(text=msg["content"]))
+        
+        # Send current message
+        user_msg = UserMessage(text=message.message)
+        response_text = await chat.send_message(user_msg)
+        
+        # Store messages
+        now = datetime.now(timezone.utc).isoformat()
+        await db.chat_messages.insert_many([
+            {"session_id": session_id, "user_id": user["id"], "role": "user", "content": message.message, "timestamp": now},
+            {"session_id": session_id, "user_id": user["id"], "role": "assistant", "content": response_text, "timestamp": now},
+        ])
+        
+        await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": target or "aria-ai", "timestamp": now})
+        
+        return {"response": response_text, "routed_to": target or "aria-ai", "session_id": session_id}
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return {"response": f"Fehler bei der KI-Verarbeitung: {str(e)}", "routed_to": None, "session_id": session_id}
+
+@api_router.get("/chat/sessions")
+async def get_chat_sessions(request: Request):
+    user = await get_current_user(request)
+    pipeline = [
+        {"$match": {"user_id": user["id"]}},
+        {"$group": {"_id": "$session_id", "last_message": {"$last": "$content"}, "last_time": {"$last": "$timestamp"}, "count": {"$sum": 1}}},
+        {"$sort": {"last_time": -1}},
+        {"$limit": 20}
+    ]
+    sessions = await db.chat_messages.aggregate(pipeline).to_list(20)
+    return [{"session_id": s["_id"], "preview": s["last_message"][:80], "timestamp": s["last_time"], "messages": s["count"]} for s in sessions]
+
+@api_router.get("/chat/history/{session_id}")
+async def get_chat_history(session_id: str, request: Request):
+    user = await get_current_user(request)
+    messages = await db.chat_messages.find(
+        {"session_id": session_id, "user_id": user["id"]},
+        {"_id": 0, "role": 1, "content": 1, "timestamp": 1}
+    ).sort("timestamp", 1).to_list(100)
+    return messages
+
+@api_router.delete("/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str, request: Request):
+    user = await get_current_user(request)
+    await db.chat_messages.delete_many({"session_id": session_id, "user_id": user["id"]})
+    return {"message": "Session gelöscht"}
 
 # ==================== DASHBOARD ====================
 

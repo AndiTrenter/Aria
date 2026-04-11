@@ -38,21 +38,30 @@ const Logs = () => {
 
   return (
     <div className="min-h-screen relative z-10">
-      <header className={theme === "startrek" ? "lcars-header px-6 flex items-center" : "disney-header py-4 px-6"}>
-        <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-          <Link to="/" className={theme === "startrek" ? "text-black" : "text-purple-200"}>
-            <ArrowLeft size={24} />
-          </Link>
-          {theme === "startrek" ? (
-            <span className="text-black font-bold text-xl tracking-widest">SYSTEM LOGS</span>
-          ) : (
-            <h1 className="disney-title text-2xl font-bold">📜 Aktivitäts-Log</h1>
-          )}
-          <div className="flex-1" />
-          <button onClick={fetchData} className={theme === "startrek" ? "lcars-button" : "disney-button"}>
-            <ArrowClockwise size={18} className={loading ? "animate-spin" : ""} />
-          </button>
-        </div>
+      <header className={theme === "startrek" ? "lcars-header" : "disney-header py-4 px-6"}>
+        {theme === "startrek" ? (
+          <>
+            <div className="lcars-header-cap">
+              <Link to="/" className="text-black">ARIA</Link>
+            </div>
+            <div className="lcars-header-bar">
+              <span className="text-xs text-gray-500 ml-3 tracking-wider">SYSTEM LOGS</span>
+              <button onClick={fetchData} className="lcars-button py-1 px-3 text-xs ml-auto">
+                <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
+            <div className="lcars-header-end" />
+          </>
+        ) : (
+          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
+            <Link to="/" className="text-purple-200"><ArrowLeft size={24} /></Link>
+            <h1 className="disney-title text-2xl font-bold">Aktivitäts-Log</h1>
+            <div className="flex-1" />
+            <button onClick={fetchData} className="disney-button py-1 px-3">
+              <ArrowClockwise size={18} className={loading ? "animate-spin" : ""} />
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">

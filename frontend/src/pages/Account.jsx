@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { ArrowLeft, User, Link as LinkIcon, Check, X } from "@phosphor-icons/react";
+import { ArrowLeft, User, Link as LinkIcon, Check, X, Eye, EyeSlash } from "@phosphor-icons/react";
 
 const Account = () => {
   const { user, checkAuth } = useAuth();
@@ -11,9 +11,10 @@ const Account = () => {
   const [services, setServices] = useState([]);
   const [linkForm, setLinkForm] = useState({ service_id: "", username: "", password: "" });
   const [showLinkForm, setShowLinkForm] = useState(false);
+  const [showLinkPassword, setShowLinkPassword] = useState(false);
 
-  useState(() => {
-    axios.get(`${API}/services`).then(res => setServices(res.data));
+  useEffect(() => {
+    axios.get(`${API}/services`).then(res => setServices(res.data)).catch(() => {});
   }, []);
 
   const handleLinkService = async () => {
@@ -43,17 +44,23 @@ const Account = () => {
 
   return (
     <div className="min-h-screen relative z-10">
-      <header className={theme === "startrek" ? "lcars-header px-6 flex items-center" : "disney-header py-4 px-6"}>
-        <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-          <Link to="/" className={theme === "startrek" ? "text-black" : "text-purple-200"}>
-            <ArrowLeft size={24} />
-          </Link>
-          {theme === "startrek" ? (
-            <span className="text-black font-bold text-xl tracking-widest">BENUTZER PROFIL</span>
-          ) : (
-            <h1 className="disney-title text-2xl font-bold">👤 Mein Konto</h1>
-          )}
-        </div>
+      <header className={theme === "startrek" ? "lcars-header" : "disney-header py-4 px-6"}>
+        {theme === "startrek" ? (
+          <>
+            <div className="lcars-header-cap">
+              <Link to="/" className="text-black">ARIA</Link>
+            </div>
+            <div className="lcars-header-bar">
+              <span className="text-xs text-gray-500 ml-3 tracking-wider">BENUTZER PROFIL</span>
+            </div>
+            <div className="lcars-header-end" />
+          </>
+        ) : (
+          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
+            <Link to="/" className="text-purple-200"><ArrowLeft size={24} /></Link>
+            <h1 className="disney-title text-2xl font-bold">Mein Konto</h1>
+          </div>
+        )}
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-8">
@@ -110,12 +117,13 @@ const Account = () => {
           </div>
 
           {showLinkForm && (
-            <div className="mb-4 p-4 bg-gray-900/50 rounded-lg">
+            <div className="mb-4 p-4 bg-gray-900/50 rounded-lg" data-testid="link-service-form">
               <div className="grid grid-cols-1 gap-3 mb-3">
                 <select 
                   value={linkForm.service_id} 
                   onChange={(e) => setLinkForm({...linkForm, service_id: e.target.value})}
                   className={inputClass}
+                  data-testid="link-service-select"
                 >
                   <option value="">Dienst wählen...</option>
                   {services.filter(s => !s.linked).map(s => (
@@ -127,16 +135,24 @@ const Account = () => {
                   value={linkForm.username}
                   onChange={(e) => setLinkForm({...linkForm, username: e.target.value})}
                   className={inputClass}
+                  data-testid="link-service-username"
                 />
-                <input 
-                  type="password"
-                  placeholder="Passwort" 
-                  value={linkForm.password}
-                  onChange={(e) => setLinkForm({...linkForm, password: e.target.value})}
-                  className={inputClass}
-                />
+                <div className="relative">
+                  <input 
+                    type={showLinkPassword ? "text" : "password"}
+                    placeholder="Passwort" 
+                    value={linkForm.password}
+                    onChange={(e) => setLinkForm({...linkForm, password: e.target.value})}
+                    className={`${inputClass} w-full pr-10`}
+                    data-testid="link-service-password"
+                  />
+                  <button type="button" onClick={() => setShowLinkPassword(!showLinkPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                    {showLinkPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-              <button onClick={handleLinkService} className={btnClass}>Verknüpfen</button>
+              <button onClick={handleLinkService} className={btnClass} data-testid="link-service-submit">Verknüpfen</button>
             </div>
           )}
 
