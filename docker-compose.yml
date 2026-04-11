@@ -37,7 +37,7 @@ services:
       - aria-network
 
   mongo:
-    image: mongo:7
+    image: mongo:4.4
     container_name: aria-mongo
     restart: unless-stopped
     volumes:
@@ -45,7 +45,7 @@ services:
     networks:
       - aria-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 10
