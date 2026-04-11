@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useAuth, useTheme, API } from "@/App";
+import { useTheme, API } from "@/App";
 import axios from "axios";
-import { ArrowLeft, ArrowClockwise, Sun, Cloud, CloudRain, Snowflake, Wind, Drop, Thermometer, CloudSun } from "@phosphor-icons/react";
+import { ArrowClockwise, Sun, Cloud, CloudRain, Snowflake, Wind, Drop, Thermometer, CloudSun } from "@phosphor-icons/react";
 
 const weatherIcons = {
   "01d": Sun, "01n": Sun,
@@ -32,7 +32,6 @@ const weekday = (dateStr) => {
 };
 
 const Weather = () => {
-  const { user } = useAuth();
   const { theme } = useTheme();
   const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -193,7 +192,7 @@ const Weather = () => {
             )}
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 };

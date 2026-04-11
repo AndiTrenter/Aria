@@ -9,7 +9,7 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - **Deployment**: Docker Multi-Stage Build -> GitHub Actions -> Unraid GHCR
 - **Keine externen Abhängigkeiten** zu Emergent oder Drittanbieter-Plattformen
 
-## Implementiert (Alles DONE - 2026-04-11)
+## Implementiert (Alles DONE)
 
 ### Kern-Features
 - JWT Auth System, Admin Panel, Setup Wizard
@@ -25,7 +25,7 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### LCARS Theme (Star Trek TNG)
 - Authentisches Design: Sidebar, Header-Caps, Footer-Bars
 - Antonio Font, LCARS-Farbpalette
-- **Energie-Fluss-Animationen**: Header-Bar, Sidebar, Footer, Card-Borders
+- Energie-Fluss-Animationen: Header-Bar, Sidebar, Footer, Card-Borders
 - Ambient Scan-Line, Cap-Pulse
 
 ### Disney Theme
@@ -38,13 +38,20 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - Wake Word "Aria" via Web Speech API
 - Spracheingabe -> GPT-4o -> Sprachausgabe (TTS)
 - Visuelles Feedback: Waveform, Status-Anzeige
-- Aktivierungs-Ton bei Erkennung
 
-## Offene Aufgaben (Später)
+### Globales Layout (LcarsLayout) - DONE 2026-04-11
+- Einheitliche Navigation (Sidebar + Header) über alle Seiten
+- Alle Seiten (Dashboard, Admin, Health, Chat, Weather, Account, Logs) nutzen LcarsLayout
+- Keine doppelten Header/Sidebars mehr
+- Disney Theme: Top-Navigation Bar
+- LCARS Theme: Sidebar + Header-Bar
+
+## Offene Aufgaben (Backlog P2)
 - [ ] Chat: Server-Status-Awareness (Docker-Daten)
 - [ ] Health: SMART, Disk-Temps via Unraid API
 - [ ] Benachrichtigungen/Alerts
 - [ ] Mobile-Optimierung
+- [ ] Zentraler Logs Viewer Verbesserungen
 
 ## API Endpoints
 - Auth: POST /login, GET /me, POST /logout

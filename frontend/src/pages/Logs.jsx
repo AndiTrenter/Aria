@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
-import { ArrowLeft, ClockClockwise, ArrowClockwise, User, SignIn, ChatsCircle } from "@phosphor-icons/react";
+import { ClockClockwise, ArrowClockwise, SignIn, ChatsCircle } from "@phosphor-icons/react";
 
 const Logs = () => {
   const { user } = useAuth();
@@ -34,71 +33,55 @@ const Logs = () => {
   };
 
   const filteredLogs = filter ? logs.filter(l => l.type === filter) : logs;
-  const cardClass = theme === "startrek" ? "lcars-card" : "disney-card";
+  const isLcars = theme === "startrek";
+  const cardClass = isLcars ? "lcars-card" : "disney-card";
 
   return (
-    <div className="min-h-screen relative z-10">
-      <header className={theme === "startrek" ? "lcars-header" : "disney-header py-4 px-6"}>
-        {theme === "startrek" ? (
-          <>
-            <div className="lcars-header-cap">
-              <Link to="/" className="text-black">ARIA</Link>
-            </div>
-            <div className="lcars-header-bar">
-              <span className="text-xs text-gray-500 ml-3 tracking-wider">SYSTEM LOGS</span>
-              <button onClick={fetchData} className="lcars-button py-1 px-3 text-xs ml-auto">
-                <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
-              </button>
-            </div>
-            <div className="lcars-header-end" />
-          </>
-        ) : (
-          <div className="max-w-7xl mx-auto flex items-center gap-4 w-full">
-            <Link to="/" className="text-purple-200"><ArrowLeft size={24} /></Link>
-            <h1 className="disney-title text-2xl font-bold">Aktivitäts-Log</h1>
-            <div className="flex-1" />
-            <button onClick={fetchData} className="disney-button py-1 px-3">
-              <ArrowClockwise size={18} className={loading ? "animate-spin" : ""} />
-            </button>
-          </div>
-        )}
-      </header>
+    <div className="p-6" data-testid="logs-page">
+      {/* Page Title + Controls */}
+      <div className="flex items-center gap-4 mb-6">
+        <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
+          {isLcars ? "SYSTEM LOGS" : "Aktivitäts-Log"}
+        </h2>
+        <div className="flex-1" />
+        <button onClick={fetchData} className={isLcars ? "lcars-button py-1 px-3 text-xs" : "disney-button py-1 px-3"} data-testid="logs-refresh">
+          <ArrowClockwise size={14} className={loading ? "animate-spin" : ""} />
+        </button>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Filter */}
-        <div className="flex gap-2 mb-6">
-          <button onClick={() => setFilter("")} className={`px-4 py-2 rounded-full text-sm ${!filter ? (theme === "startrek" ? "lcars-button" : "disney-button") : "bg-gray-700"}`}>
-            Alle
-          </button>
-          <button onClick={() => setFilter("user_login")} className={`px-4 py-2 rounded-full text-sm ${filter === "user_login" ? (theme === "startrek" ? "lcars-button" : "disney-button") : "bg-gray-700"}`}>
-            Logins
-          </button>
-          <button onClick={() => setFilter("chat")} className={`px-4 py-2 rounded-full text-sm ${filter === "chat" ? (theme === "startrek" ? "lcars-button" : "disney-button") : "bg-gray-700"}`}>
-            Chat
-          </button>
-        </div>
+      {/* Filter */}
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setFilter("")} className={`px-4 py-2 rounded-full text-sm ${!filter ? (isLcars ? "lcars-button" : "disney-button") : "bg-gray-700"}`} data-testid="filter-all">
+          Alle
+        </button>
+        <button onClick={() => setFilter("user_login")} className={`px-4 py-2 rounded-full text-sm ${filter === "user_login" ? (isLcars ? "lcars-button" : "disney-button") : "bg-gray-700"}`} data-testid="filter-login">
+          Logins
+        </button>
+        <button onClick={() => setFilter("chat")} className={`px-4 py-2 rounded-full text-sm ${filter === "chat" ? (isLcars ? "lcars-button" : "disney-button") : "bg-gray-700"}`} data-testid="filter-chat">
+          Chat
+        </button>
+      </div>
 
-        <div className={cardClass}>
-          <div className="space-y-2 max-h-[600px] overflow-y-auto">
-            {filteredLogs.map((log, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 bg-gray-900/30 rounded-lg text-sm">
-                {getIcon(log.type)}
-                <div className="flex-1">
-                  <span className="font-bold">{log.type}</span>
-                  {log.email && <span className="ml-2 text-gray-400">{log.email}</span>}
-                  {log.message && <span className="ml-2 text-gray-400 truncate">{log.message}</span>}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {new Date(log.timestamp).toLocaleString('de-DE')}
-                </div>
+      <div className={cardClass}>
+        <div className="space-y-2 max-h-[600px] overflow-y-auto">
+          {filteredLogs.map((log, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-gray-900/30 rounded-lg text-sm" data-testid={`log-entry-${i}`}>
+              {getIcon(log.type)}
+              <div className="flex-1">
+                <span className="font-bold">{log.type}</span>
+                {log.email && <span className="ml-2 text-gray-400">{log.email}</span>}
+                {log.message && <span className="ml-2 text-gray-400 truncate">{log.message}</span>}
               </div>
-            ))}
-            {filteredLogs.length === 0 && (
-              <div className="text-center py-8 text-gray-500">Keine Logs gefunden</div>
-            )}
-          </div>
+              <div className="text-xs text-gray-500">
+                {new Date(log.timestamp).toLocaleString('de-DE')}
+              </div>
+            </div>
+          ))}
+          {filteredLogs.length === 0 && (
+            <div className="text-center py-8 text-gray-500">Keine Logs gefunden</div>
+          )}
         </div>
-      </main>
+      </div>
     </div>
   );
 };
