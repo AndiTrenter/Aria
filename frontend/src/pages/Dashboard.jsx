@@ -26,28 +26,33 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch data immediately, the API will handle auth
-    fetchData();
-  }, []);
-
-  const getAuthHeader = () => {
-    const token = localStorage.getItem('aria_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
+    // Fetch data when user is available
+    // Small delay to ensure token is stored in localStorage
+    if (user) {
+      const timer = setTimeout(() => {
+        fetchData();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
 
   const fetchData = async () => {
     try {
-      const headers = getAuthHeader();
+      // Token is automatically added by axios interceptor in App.js
+      // Add timeout to health/services as it can be slow when external services are unreachable
+      const healthPromise = axios.get(`${API}/health/services`, { timeout: 3000 })
+        .catch(() => ({ data: [] }));
+      
       const [servicesRes, statsRes, healthRes] = await Promise.all([
-        axios.get(`${API}/services`, { headers }),
-        axios.get(`${API}/dashboard/stats`, { headers }),
-        axios.get(`${API}/health/services`, { headers }).catch(() => ({ data: [] }))
+        axios.get(`${API}/services`),
+        axios.get(`${API}/dashboard/stats`),
+        healthPromise
       ]);
       setServices(servicesRes.data);
       setStats(statsRes.data);
       setHealthData(healthRes.data);
     } catch (e) {
-      console.error("Failed to fetch data:", e);
+      console.error("Failed to fetch dashboard data:", e);
     } finally {
       setLoading(false);
     }
@@ -62,8 +67,8 @@ const Dashboard = () => {
     e.preventDefault();
     if (!chatMessage.trim()) return;
     try {
-      const headers = getAuthHeader();
-      const { data } = await axios.post(`${API}/chat`, { message: chatMessage }, { headers });
+      // Token is automatically added by axios interceptor
+      const { data } = await axios.post(`${API}/chat`, { message: chatMessage });
       toast.success(data.response);
       setChatMessage("");
     } catch (e) {

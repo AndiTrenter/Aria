@@ -10,11 +10,21 @@ import logging
 import bcrypt
 import jwt
 import httpx
+import psutil
+import shutil
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from enum import Enum
+
+try:
+    import docker as docker_sdk
+    docker_client = docker_sdk.from_env()
+    DOCKER_AVAILABLE = True
+except Exception:
+    docker_client = None
+    DOCKER_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -45,11 +55,12 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("access_token")
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
     if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+        token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -123,8 +134,8 @@ async def lifespan(app: FastAPI):
     await db.logs.create_index("timestamp")
     
     default_services = [
-        {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "enabled": True},
-        {"id": "forgepilot", "name": "ForgePilot", "url": "http://192.168.1.140:3000", "icon": "code", "category": "Entwicklung", "description": "Projekt- und Code-Verwaltung mit Agenten", "health_endpoint": "/api/health", "enabled": True},
+        {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
+        {"id": "forgepilot", "name": "ForgePilot", "url": "http://192.168.1.140:3000", "icon": "code", "category": "Entwicklung", "description": "Projekt- und Code-Verwaltung mit Agenten", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
         {"id": "unraid", "name": "Unraid", "url": "http://192.168.1.140", "icon": "hard-drives", "category": "Server", "description": "Unraid Server Dashboard", "health_endpoint": "/", "enabled": True},
     ]
     
@@ -336,7 +347,7 @@ async def get_services_health(request: Request):
                 elapsed = (datetime.now() - start).total_seconds() * 1000
                 health["status"] = "healthy" if response.status_code < 400 else "unhealthy"
                 health["response_time"] = round(elapsed, 2)
-            except Exception as e:
+            except Exception:
                 health["status"] = "offline"
             health_results.append(health)
     
@@ -348,24 +359,186 @@ async def get_system_health(request: Request):
     if not user.get("permissions", {}).get("health", False) and user["role"] not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Health access not permitted")
     
-    import subprocess
+    # CPU Info
+    cpu_count_physical = psutil.cpu_count(logical=False) or 0
+    cpu_count_logical = psutil.cpu_count(logical=True) or 0
+    cpu_freq = psutil.cpu_freq()
+    cpu_percent_overall = psutil.cpu_percent(interval=0.5)
+    cpu_percent_per_core = psutil.cpu_percent(interval=0.1, percpu=True)
+    load_avg = psutil.getloadavg()
+    
+    cpu_model = "Unknown"
     try:
-        result = subprocess.run(["cat", "/proc/meminfo"], capture_output=True, text=True, timeout=5)
-        mem_lines = result.stdout.split("\n")
-        mem_total = int([l for l in mem_lines if "MemTotal" in l][0].split()[1]) // 1024
-        mem_free = int([l for l in mem_lines if "MemAvailable" in l][0].split()[1]) // 1024
-        mem_used_pct = round((1 - mem_free / mem_total) * 100, 1)
-    except:
-        mem_total, mem_free, mem_used_pct = 0, 0, 0
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if "model name" in line:
+                    cpu_model = line.split(":")[1].strip()
+                    break
+    except Exception:
+        pass
+    
+    # Memory Info
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    
+    # Uptime
+    boot_time = psutil.boot_time()
+    uptime_seconds = int((datetime.now().timestamp() - boot_time))
+    uptime_days = uptime_seconds // 86400
+    uptime_hours = (uptime_seconds % 86400) // 3600
+    uptime_minutes = (uptime_seconds % 3600) // 60
+    
+    # Disk usage - deduplicate by device
+    disk_partitions = []
+    seen_devices = set()
+    try:
+        for part in psutil.disk_partitions(all=False):
+            if part.device in seen_devices:
+                continue
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+                seen_devices.add(part.device)
+                disk_partitions.append({
+                    "device": part.device,
+                    "mountpoint": part.mountpoint,
+                    "fstype": part.fstype,
+                    "total_gb": round(usage.total / (1024**3), 1),
+                    "used_gb": round(usage.used / (1024**3), 1),
+                    "free_gb": round(usage.free / (1024**3), 1),
+                    "percent": usage.percent,
+                })
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Network
+    net_io = psutil.net_io_counters()
+    net_interfaces = []
+    try:
+        addrs = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+        for iface, addr_list in addrs.items():
+            if iface == "lo":
+                continue
+            ip = ""
+            for addr in addr_list:
+                if addr.family.name == "AF_INET":
+                    ip = addr.address
+                    break
+            is_up = stats.get(iface, None)
+            net_interfaces.append({
+                "name": iface,
+                "ip": ip,
+                "is_up": is_up.isup if is_up else False,
+                "speed_mbps": is_up.speed if is_up else 0,
+            })
+    except Exception:
+        pass
+    
+    return {
+        "cpu": {
+            "model": cpu_model,
+            "physical_cores": cpu_count_physical,
+            "logical_cores": cpu_count_logical,
+            "frequency_mhz": round(cpu_freq.current, 0) if cpu_freq else 0,
+            "overall_percent": cpu_percent_overall,
+            "per_core_percent": cpu_percent_per_core,
+            "load_avg_1m": round(load_avg[0], 2),
+            "load_avg_5m": round(load_avg[1], 2),
+            "load_avg_15m": round(load_avg[2], 2),
+        },
+        "memory": {
+            "total_gb": round(mem.total / (1024**3), 2),
+            "used_gb": round(mem.used / (1024**3), 2),
+            "available_gb": round(mem.available / (1024**3), 2),
+            "percent": mem.percent,
+            "swap_total_gb": round(swap.total / (1024**3), 2),
+            "swap_used_gb": round(swap.used / (1024**3), 2),
+            "swap_percent": swap.percent,
+        },
+        "uptime": {
+            "days": uptime_days,
+            "hours": uptime_hours,
+            "minutes": uptime_minutes,
+            "boot_time": datetime.fromtimestamp(boot_time, tz=timezone.utc).isoformat(),
+        },
+        "disks": disk_partitions,
+        "network": {
+            "bytes_sent": net_io.bytes_sent,
+            "bytes_recv": net_io.bytes_recv,
+            "interfaces": net_interfaces,
+        },
+    }
+
+@api_router.get("/health/docker")
+async def get_docker_containers(request: Request):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("health", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Health access not permitted")
+    
+    if not DOCKER_AVAILABLE:
+        return {"available": False, "containers": [], "message": "Docker Socket nicht verfügbar"}
     
     try:
-        result = subprocess.run(["cat", "/proc/loadavg"], capture_output=True, text=True, timeout=5)
-        load = float(result.stdout.split()[0])
-        cpu_pct = min(round(load * 25, 1), 100)
-    except:
-        cpu_pct = 0
-    
-    return {"cpu_percent": cpu_pct, "memory_percent": mem_used_pct, "memory_total_mb": mem_total, "memory_used_mb": mem_total - mem_free}
+        containers = docker_client.containers.list(all=True)
+        result = []
+        for c in containers:
+            ports = {}
+            try:
+                ports = c.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
+            except Exception:
+                pass
+            
+            port_mappings = []
+            for container_port, host_bindings in ports.items():
+                if host_bindings:
+                    for binding in host_bindings:
+                        port_mappings.append(f"{binding.get('HostIp', '0.0.0.0')}:{binding.get('HostPort', '?')} -> {container_port}")
+                else:
+                    port_mappings.append(container_port)
+            
+            networks = {}
+            try:
+                net_settings = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+                for net_name, net_info in net_settings.items():
+                    networks[net_name] = net_info.get("IPAddress", "")
+            except Exception:
+                pass
+            
+            started_at = c.attrs.get("State", {}).get("StartedAt", "")
+            uptime_str = ""
+            if c.status == "running" and started_at:
+                try:
+                    start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                    delta = datetime.now(timezone.utc) - start_dt
+                    days = delta.days
+                    hours = delta.seconds // 3600
+                    if days > 0:
+                        uptime_str = f"{days}d {hours}h"
+                    else:
+                        minutes = (delta.seconds % 3600) // 60
+                        uptime_str = f"{hours}h {minutes}m"
+                except Exception:
+                    pass
+            
+            result.append({
+                "id": c.short_id,
+                "name": c.name,
+                "image": c.image.tags[0] if c.image.tags else str(c.image.id)[:20],
+                "status": c.status,
+                "state": c.attrs.get("State", {}).get("Status", "unknown"),
+                "ports": port_mappings,
+                "networks": networks,
+                "uptime": uptime_str,
+                "created": c.attrs.get("Created", ""),
+            })
+        
+        result.sort(key=lambda x: x["name"].lower())
+        return {"available": True, "containers": result, "total": len(result), "running": sum(1 for c in result if c["status"] == "running"), "stopped": sum(1 for c in result if c["status"] != "running")}
+    except Exception as e:
+        logger.error(f"Docker error: {e}")
+        return {"available": False, "containers": [], "message": str(e)}
 
 # ==================== LOGS ====================
 

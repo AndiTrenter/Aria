@@ -19,14 +19,9 @@ axios.defaults.withCredentials = true;
 
 // Add request interceptor to include token from localStorage
 axios.interceptors.request.use((config) => {
-  const stored = localStorage.getItem('aria_user');
-  if (stored) {
-    try {
-      const token = localStorage.getItem('aria_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    } catch {}
+  const token = localStorage.getItem('aria_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -96,13 +91,14 @@ const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/auth/login`, { email, password });
-    setUser(data);
-    setThemeState(data.theme || "startrek");
-    // Store in localStorage
-    localStorage.setItem('aria_user', JSON.stringify(data));
+    // Store token FIRST before setting user state
     if (data.access_token) {
       localStorage.setItem('aria_token', data.access_token);
     }
+    localStorage.setItem('aria_user', JSON.stringify(data));
+    // Now set user state (this triggers Dashboard re-render)
+    setUser(data);
+    setThemeState(data.theme || "startrek");
     return data;
   };
 
