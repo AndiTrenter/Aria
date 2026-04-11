@@ -60,19 +60,27 @@ const Admin = () => {
   };
 
   const handleSaveSettings = async () => {
+    const payload = {};
+    if (apiKeyInput) payload.openai_api_key = apiKeyInput;
+    if (weatherCity) payload.weather_city = weatherCity;
+    if (weatherApiKey) payload.weather_api_key = weatherApiKey;
+    if (Object.keys(payload).length === 0) {
+      toast.error("Keine Änderungen eingegeben");
+      return;
+    }
     try {
-      const payload = {};
-      if (apiKeyInput) payload.openai_api_key = apiKeyInput;
-      if (weatherCity) payload.weather_city = weatherCity;
-      if (weatherApiKey) payload.weather_api_key = weatherApiKey;
       await axios.put(`${API}/admin/settings`, payload);
-      toast.success("Einstellungen gespeichert");
+      const saved = [];
+      if (payload.openai_api_key) saved.push("OpenAI Key");
+      if (payload.weather_city) saved.push("Stadt");
+      if (payload.weather_api_key) saved.push("Wetter Key");
+      toast.success(`Gespeichert: ${saved.join(", ")}`);
       setApiKeyInput("");
       setWeatherApiKey("");
       setWeatherCity("");
       fetchData();
     } catch (e) {
-      toast.error("Fehler beim Speichern");
+      toast.error("Fehler beim Speichern der Einstellungen");
     }
   };
 

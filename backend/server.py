@@ -738,9 +738,12 @@ async def get_weather(request: Request):
                 f"https://api.openweathermap.org/data/2.5/weather",
                 params={"q": city, "appid": api_key, "units": "metric", "lang": "de"}
             )
+            if current_resp.status_code == 401:
+                return {"available": False, "message": "Ungültiger API-Key. Bitte prüfe deinen OpenWeatherMap API-Key. Neue Keys brauchen bis zu 2 Stunden um aktiv zu werden."}
+            if current_resp.status_code == 404:
+                return {"available": False, "message": f"Stadt '{city}' nicht gefunden. Bitte prüfe den Stadtnamen (Format: Berlin,DE)."}
             if current_resp.status_code != 200:
-                error = current_resp.json().get("message", "Unbekannter Fehler")
-                return {"available": False, "message": f"Wetter-API Fehler: {error}"}
+                return {"available": False, "message": f"Wetter-API Fehler (Code {current_resp.status_code}). Bitte versuche es später erneut."}
             
             current = current_resp.json()
             

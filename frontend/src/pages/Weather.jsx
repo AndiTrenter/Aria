@@ -92,9 +92,22 @@ const Weather = () => {
           <div className={`${cardClass} text-center py-12`} data-testid="weather-not-configured">
             <Cloud size={64} className={`mx-auto mb-4 ${isLcars ? "text-[var(--lcars-blue)]" : "text-purple-400"}`} />
             <p className={`text-lg mb-2 ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200"}`}>
-              {isLcars ? "SENSOREN NICHT KALIBRIERT" : "Wetter nicht konfiguriert"}
+              {isLcars ? "SENSOREN NICHT KALIBRIERT" : "Wetter nicht verfügbar"}
             </p>
-            <p className="text-sm text-gray-400 mb-4">{weather?.message}</p>
+            <p className={`text-sm mb-4 ${isLcars ? "text-[var(--lcars-gold)]" : "text-purple-300"}`}>
+              {weather?.message?.includes("Invalid API key")
+                ? "Ungültiger API-Key. Bitte prüfe deinen OpenWeatherMap API-Key in den Admin-Einstellungen."
+                : weather?.message?.includes("city not found")
+                ? "Stadt nicht gefunden. Bitte prüfe den Stadtnamen in den Admin-Einstellungen (Format: Berlin,DE)."
+                : weather?.message?.includes("nicht konfiguriert")
+                ? "Bitte hinterlege Stadt und API-Key in den Admin-Einstellungen."
+                : weather?.message || "Unbekannter Fehler."}
+            </p>
+            {weather?.message?.includes("Invalid API key") && (
+              <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-400"}`}>
+                Tipp: Neue API-Keys bei OpenWeatherMap können bis zu 2 Stunden brauchen um aktiv zu werden.
+              </p>
+            )}
             <Link to="/admin" className={isLcars ? "lcars-button" : "disney-button"} data-testid="weather-go-to-settings">
               {isLcars ? "ZU DEN EINSTELLUNGEN" : "Einstellungen"}
             </Link>

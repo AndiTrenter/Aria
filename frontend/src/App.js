@@ -235,7 +235,10 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
-          <Toaster position="top-right" />
+          <Toaster position="top-right" toastOptions={{
+            style: { background: '#1a1a2e', color: '#e0e0e0', border: '1px solid #333' },
+            className: 'aria-toast',
+          }} />
         </AuthProvider>
       </BrowserRouter>
     </div>
