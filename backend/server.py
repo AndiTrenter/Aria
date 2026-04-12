@@ -603,7 +603,7 @@ async def get_settings(request: Request):
     for s in settings:
         key = s["key"]
         val = s.get("value", "")
-        if key in ("openai_api_key", "weather_api_key") and val:
+        if key in ("openai_api_key", "weather_api_key", "ha_token") and val:
             result[key] = val[:8] + "..." + val[-4:] if len(val) > 12 else val
         else:
             result[key] = val
@@ -613,7 +613,7 @@ async def get_settings(request: Request):
 async def update_settings(request: Request, settings: dict = Body(...)):
     await require_admin(request)
     for key, value in settings.items():
-        if key in ("openai_api_key", "weather_api_key") and value and "..." in value:
+        if key in ("openai_api_key", "weather_api_key", "ha_token") and value and "..." in value:
             continue
         await db.settings.update_one({"key": key}, {"$set": {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
     return {"message": "Settings updated"}
@@ -634,6 +634,26 @@ async def chat_route(message: ChatMessage, request: Request):
     
     msg_lower = message.message.lower()
     target = message.target_service
+    
+    # Detect Home Assistant commands
+    ha_keywords = ["licht", "lampe", "heizung", "thermostat", "temperatur", "rollladen", "jalousie", "steckdose", "schalte", "einschalten", "ausschalten", "aufmachen", "zumachen", "dimmen", "heller", "dunkler"]
+    is_ha_command = any(w in msg_lower for w in ha_keywords)
+    
+    if is_ha_command:
+        ha_url, ha_token = await get_ha_settings()
+        if ha_url and ha_token:
+            try:
+                ha_result = await ha_command(request, {"command": message.message})
+                if ha_result.get("success"):
+                    session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
+                    now = datetime.now(timezone.utc).isoformat()
+                    await db.chat_messages.insert_many([
+                        {"session_id": session_id, "user_id": user["id"], "role": "user", "content": message.message, "timestamp": now},
+                        {"session_id": session_id, "user_id": user["id"], "role": "assistant", "content": ha_result["message"], "timestamp": now},
+                    ])
+                    return {"response": ha_result["message"], "routed_to": "home-assistant", "session_id": session_id}
+            except Exception as e:
+                logger.warning(f"HA command via chat failed: {e}")
     
     if not target:
         if any(w in msg_lower for w in ["dokument", "fall", "case", "akte", "pdf", "scan"]):
@@ -676,7 +696,7 @@ async def chat_route(message: ChatMessage, request: Request):
         openai_client = AsyncOpenAI(api_key=api_key)
         
         # Build messages array
-        openai_messages = [{"role": "system", "content": "Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud) und allgemeinen IT-Themen. Antworte auf Deutsch, sei hilfreich und präzise."}]
+        openai_messages = [{"role": "system", "content": "Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud), Smart Home (Home Assistant) und allgemeinen IT-Themen. Du kannst auch Smart-Home-Geräte wie Lichter, Heizungen und Rollläden steuern. Antworte auf Deutsch, sei hilfreich und präzise."}]
         
         for msg in history:
             openai_messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
@@ -869,8 +889,160 @@ async def get_weather(request: Request):
         logger.error(f"Weather error: {e}")
         return {"available": False, "message": f"Fehler: {str(e)}"}
 
-app.include_router(api_router)
+# ==================== HOME ASSISTANT ====================
+
+async def get_ha_settings():
+    url_doc = await db.settings.find_one({"key": "ha_url"})
+    token_doc = await db.settings.find_one({"key": "ha_token"})
+    url = url_doc["value"] if url_doc and url_doc.get("value") else ""
+    token = token_doc["value"] if token_doc and token_doc.get("value") else ""
+    return url, token
+
+@api_router.get("/ha/status")
+async def ha_status(request: Request):
+    user = await get_current_user(request)
+    url, token = await get_ha_settings()
+    if not url or not token:
+        return {"connected": False, "message": "Nicht konfiguriert"}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as http_client:
+            resp = await http_client.get(f"{url}/api/", headers={"Authorization": f"Bearer {token}"})
+            if resp.status_code == 200:
+                return {"connected": True, "message": "Verbunden"}
+            return {"connected": False, "message": f"Fehler {resp.status_code}"}
+    except Exception as e:
+        return {"connected": False, "message": str(e)}
+
+@api_router.get("/ha/entities")
+async def ha_entities(request: Request):
+    user = await get_current_user(request)
+    url, token = await get_ha_settings()
+    if not url or not token:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            resp = await http_client.get(f"{url}/api/states", headers={"Authorization": f"Bearer {token}"})
+            if resp.status_code == 200:
+                entities = resp.json()
+                result = []
+                for e in entities:
+                    eid = e.get("entity_id", "")
+                    domain = eid.split(".")[0] if "." in eid else ""
+                    if domain in ("light", "switch", "climate", "cover", "media_player", "scene", "script", "fan", "lock", "vacuum"):
+                        result.append({
+                            "entity_id": eid,
+                            "name": e.get("attributes", {}).get("friendly_name", eid),
+                            "state": e.get("state", "unknown"),
+                            "domain": domain,
+                        })
+                return result
+    except Exception as e:
+        logger.error(f"HA entities error: {e}")
+    return []
+
+@api_router.post("/ha/command")
+async def ha_command(request: Request, body: dict = Body(...)):
+    """Execute a Home Assistant command parsed from natural language via GPT."""
+    user = await get_current_user(request)
+    url, token = await get_ha_settings()
+    command_text = body.get("command", "")
+    
+    if not url or not token:
+        return {"success": False, "message": "Home Assistant nicht konfiguriert. Bitte URL und Token in den Admin-Einstellungen hinterlegen."}
+    
+    api_key = await get_llm_api_key()
+    if not api_key or not OPENAI_AVAILABLE:
+        return {"success": False, "message": "OpenAI API-Key fehlt. Wird benötigt um Sprachbefehle zu verstehen."}
+    
+    # Get available entities for context
+    entities = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            resp = await http_client.get(f"{url}/api/states", headers={"Authorization": f"Bearer {token}"})
+            if resp.status_code == 200:
+                for e in resp.json():
+                    eid = e.get("entity_id", "")
+                    domain = eid.split(".")[0] if "." in eid else ""
+                    if domain in ("light", "switch", "climate", "cover", "media_player", "scene", "script", "fan", "lock", "vacuum", "automation"):
+                        entities.append({"id": eid, "name": e.get("attributes", {}).get("friendly_name", eid), "state": e.get("state")})
+    except Exception as e:
+        logger.warning(f"Could not fetch HA entities: {e}")
+    
+    entity_list = "\n".join([f"- {e['id']} ({e['name']}, aktuell: {e['state']})" for e in entities[:80]])
+    
+    # Use GPT to parse the command
+    try:
+        openai_client = AsyncOpenAI(api_key=api_key)
+        parse_response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": f"""Du bist ein Smart Home Controller. Analysiere den Benutzerbefehl und gib eine JSON-Antwort zurück.
+
+Verfügbare Geräte:
+{entity_list}
+
+Antworte NUR mit einem JSON-Objekt in diesem Format:
+{{"action": "call_service", "domain": "light", "service": "turn_on", "entity_id": "light.wohnzimmer", "data": {{}}, "response_text": "Licht im Wohnzimmer wurde eingeschaltet."}}
+
+Für Klimaanlagen/Heizungen:
+{{"action": "call_service", "domain": "climate", "service": "set_temperature", "entity_id": "climate.wohnzimmer", "data": {{"temperature": 22}}, "response_text": "Heizung im Wohnzimmer auf 22 Grad gestellt."}}
+
+Für Statusabfragen:
+{{"action": "query", "entity_id": "light.wohnzimmer", "response_text": "Das Licht im Wohnzimmer ist aktuell an."}}
+
+Services: turn_on, turn_off, toggle, set_temperature, open_cover, close_cover, lock, unlock
+Wenn der Befehl unklar ist oder kein passendes Gerät gefunden wird:
+{{"action": "unknown", "response_text": "Ich konnte kein passendes Gerät finden..."}}"""},
+                {"role": "user", "content": command_text}
+            ],
+            max_tokens=300,
+        )
+        
+        import json
+        raw = parse_response.choices[0].message.content.strip()
+        # Extract JSON from markdown code blocks if present
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+        
+        parsed = json.loads(raw)
+        
+        if parsed.get("action") == "unknown" or parsed.get("action") == "query":
+            return {"success": True, "message": parsed.get("response_text", ""), "action": parsed.get("action")}
+        
+        if parsed.get("action") == "call_service":
+            domain = parsed.get("domain", "")
+            service = parsed.get("service", "")
+            entity_id = parsed.get("entity_id", "")
+            data = parsed.get("data", {})
+            
+            service_data = {"entity_id": entity_id}
+            service_data.update(data)
+            
+            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                resp = await http_client.post(
+                    f"{url}/api/services/{domain}/{service}",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json=service_data
+                )
+                if resp.status_code in (200, 201):
+                    await db.logs.insert_one({"type": "ha_command", "user_id": str(user.get("_id", "")), "command": command_text, "entity": entity_id, "service": f"{domain}.{service}", "timestamp": datetime.now(timezone.utc).isoformat()})
+                    return {"success": True, "message": parsed.get("response_text", f"{service} für {entity_id} ausgeführt."), "action": "executed"}
+                else:
+                    return {"success": False, "message": f"Home Assistant Fehler: {resp.status_code} - {resp.text[:200]}"}
+        
+        return {"success": False, "message": "Konnte den Befehl nicht verarbeiten."}
+        
+    except json.JSONDecodeError:
+        return {"success": False, "message": "Konnte die KI-Antwort nicht verarbeiten. Bitte versuche es nochmal."}
+    except Exception as e:
+        logger.error(f"HA command error: {e}")
+        return {"success": False, "message": f"Fehler: {str(e)}"}
 
 @api_router.get("/")
 async def root():
     return {"message": "Aria Dashboard API", "version": "2.0"}
+
+app.include_router(api_router)

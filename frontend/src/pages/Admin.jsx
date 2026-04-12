@@ -18,6 +18,10 @@ const Admin = () => {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [weatherCity, setWeatherCity] = useState("");
   const [weatherApiKey, setWeatherApiKey] = useState("");
+  const [haUrl, setHaUrl] = useState("");
+  const [haToken, setHaToken] = useState("");
+  const [haStatus, setHaStatus] = useState(null);
+  const [haEntities, setHaEntities] = useState([]);
 
   const fetchData = async () => {
     let anyError = false;
@@ -68,6 +72,8 @@ const Admin = () => {
     if (apiKeyInput) payload.openai_api_key = apiKeyInput;
     if (weatherCity) payload.weather_city = weatherCity;
     if (weatherApiKey) payload.weather_api_key = weatherApiKey;
+    if (haUrl) payload.ha_url = haUrl;
+    if (haToken) payload.ha_token = haToken;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       return;
@@ -78,17 +84,36 @@ const Admin = () => {
       if (payload.openai_api_key) saved.push("OpenAI Key");
       if (payload.weather_city) saved.push("Stadt");
       if (payload.weather_api_key) saved.push("Wetter Key");
+      if (payload.ha_url) saved.push("HA URL");
+      if (payload.ha_token) saved.push("HA Token");
       toast.success(`Gespeichert: ${saved.join(", ")}`);
       setApiKeyInput("");
       setWeatherApiKey("");
       setWeatherCity("");
+      setHaUrl("");
+      setHaToken("");
       fetchData();
+      checkHaStatus();
     } catch (e) {
       toast.error("Fehler beim Speichern der Einstellungen");
     }
   };
 
   const isLcars = theme === "startrek";
+
+  const checkHaStatus = async () => {
+    try {
+      const { data } = await axios.get(`${API}/ha/status`);
+      setHaStatus(data);
+      if (data.connected) {
+        const entResp = await axios.get(`${API}/ha/entities`);
+        setHaEntities(entResp.data);
+      }
+    } catch { setHaStatus(null); }
+  };
+
+  useEffect(() => { checkHaStatus(); }, [settings]);
+
   const cardClass = isLcars ? "lcars-card" : "disney-card";
   const btnClass = isLcars ? "lcars-button" : "disney-button";
   const inputClass = isLcars ? "lcars-input" : "disney-input";
@@ -303,6 +328,102 @@ const Admin = () => {
                     Kostenlosen API-Key bei OpenWeatherMap erstellen
                   </a>
                 </p>
+              </div>
+            </div>
+
+            {/* Home Assistant Configuration */}
+            <div className={cardClass} data-testid="settings-ha">
+              <div className="flex items-center gap-3 mb-4">
+                <Gear size={20} className={isLcars ? "text-[var(--lcars-salmon)]" : "text-green-400"} />
+                <h3 className={isLcars ? "text-sm tracking-widest text-[var(--lcars-salmon)]" : "font-bold text-purple-200"}>
+                  {isLcars ? "HOME ASSISTANT" : "Home Assistant"}
+                </h3>
+                {haStatus && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${haStatus.connected ? "bg-green-900/50 text-green-400" : "bg-red-900/50 text-red-400"}`}>
+                    {haStatus.connected ? "VERBUNDEN" : "OFFLINE"}
+                  </span>
+                )}
+              </div>
+              <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+                {isLcars ? "VERBINDE ARIA MIT DEINEM SMART HOME." : "Verbinde Aria mit deinem Smart Home."}{" "}
+                Sage z.B. <span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200"}>"Aria, mach das Licht im Wohnzimmer aus"</span>
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "HOME ASSISTANT URL" : "Home Assistant URL"}
+                  </label>
+                  <input
+                    type="text"
+                    value={haUrl}
+                    onChange={(e) => setHaUrl(e.target.value)}
+                    placeholder={settings.ha_url || "http://192.168.1.140:8123"}
+                    className={`${inputClass} w-full`}
+                    data-testid="ha-url-input"
+                  />
+                  {settings.ha_url && <span className="text-xs text-gray-500 mt-1 block">Aktuell: {settings.ha_url}</span>}
+                </div>
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "AKTUELLER HA-TOKEN" : "Aktueller Token"}
+                  </label>
+                  <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                    {settings.ha_token || (isLcars ? "NICHT KONFIGURIERT" : "Nicht konfiguriert")}
+                  </div>
+                </div>
+                <div>
+                  <label className={isLcars ? "lcars-label block" : "text-sm text-purple-300 block mb-1"}>
+                    {isLcars ? "NEUER HA-TOKEN" : "Neuer Token"}
+                  </label>
+                  <input
+                    type="password"
+                    value={haToken}
+                    onChange={(e) => setHaToken(e.target.value)}
+                    placeholder="eyJhb..."
+                    className={`${inputClass} w-full`}
+                    data-testid="ha-token-input"
+                  />
+                </div>
+
+                {/* Anleitung */}
+                <div className={`p-3 rounded-lg text-xs space-y-2 ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20" : "bg-purple-950/30 border border-purple-800/30"}`}>
+                  <div className={`font-bold mb-2 ${isLcars ? "text-[var(--lcars-salmon)] tracking-wider" : "text-purple-200"}`}>
+                    {isLcars ? "ANLEITUNG" : "So findest du den Token:"}
+                  </div>
+                  <div className="space-y-1.5 text-gray-400">
+                    <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>1.</span> Öffne Home Assistant im Browser</p>
+                    <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>2.</span> Klicke unten links auf dein <strong>Profil</strong> (dein Name)</p>
+                    <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>3.</span> Scrolle ganz nach unten zu <strong>"Langlebige Zugriffstoken"</strong></p>
+                    <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>4.</span> Klicke <strong>"Token erstellen"</strong>, Name: <em>Aria</em></p>
+                    <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>5.</span> Kopiere den Token und füge ihn oben ein</p>
+                  </div>
+                  <p className="text-gray-500 mt-2">
+                    URL ist normalerweise: <code className={isLcars ? "text-[var(--lcars-blue)]" : "text-purple-400"}>http://192.168.1.140:8123</code>
+                  </p>
+                </div>
+
+                {/* Connected entities count */}
+                {haStatus?.connected && haEntities.length > 0 && (
+                  <div className={`p-3 rounded-lg ${isLcars ? "bg-green-900/10 border border-green-800/30" : "bg-green-900/20 border border-green-700/30"}`} data-testid="ha-entities-info">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield size={16} className="text-green-400" />
+                      <span className={`text-xs font-bold ${isLcars ? "text-green-400 tracking-wider" : "text-green-300"}`}>
+                        {haEntities.length} {isLcars ? "GERÄTE ERKANNT" : "Geräte erkannt"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(haEntities.reduce((acc, e) => { acc[e.domain] = (acc[e.domain] || 0) + 1; return acc; }, {})).map(([domain, count]) => (
+                        <span key={domain} className="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400">
+                          {domain}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={checkHaStatus} className={`${btnClass} text-xs`} data-testid="ha-test-button">
+                  {isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen"}
+                </button>
               </div>
             </div>
 

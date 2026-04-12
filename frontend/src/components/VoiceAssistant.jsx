@@ -52,6 +52,22 @@ const VoiceAssistant = () => {
     setState("processing");
     setTranscript(text);
     try {
+      // Try HA command first for smart home keywords
+      const haKeywords = ["licht", "lampe", "heizung", "thermostat", "temperatur", "rollladen", "jalousie", "steckdose", "schalte", "einschalten", "ausschalten", "aufmachen", "zumachen", "dimmen", "heller", "dunkler"];
+      const isHaCommand = haKeywords.some(w => text.toLowerCase().includes(w));
+      
+      if (isHaCommand) {
+        try {
+          const { data: haResult } = await axios.post(`${API}/ha/command`, { command: text });
+          if (haResult.success) {
+            setResponse(haResult.message);
+            speak(haResult.message);
+            return;
+          }
+        } catch {}
+      }
+      
+      // Fallback to regular chat
       const { data } = await axios.post(`${API}/chat`, { message: text, session_id: "voice_session" });
       setResponse(data.response);
       speak(data.response);

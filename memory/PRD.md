@@ -49,8 +49,23 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### Deployment-Robustheit - DONE 2026-04-11
 - MongoDB Retry-Logik: Backend wartet bis zu 60s auf MongoDB (30 Versuche × 2s)
 - Graceful Degradation: Server crasht nicht mehr wenn MongoDB kurz nicht erreichbar
-- Docker-Compose: MongoDB Healthcheck + depends_on mit condition: service_healthy
+- Docker-Compose: MongoDB 4.4 (für CPUs ohne AVX) + Healthcheck + depends_on
 - Healthcheck: start_period auf 60s erhöht für langsame Container-Starts
+
+### Home Assistant Integration - DONE 2026-04-12
+- Admin-Einstellungen: HA URL + Long-Lived Access Token Konfiguration
+- Schritt-für-Schritt Anleitung wo der Token in HA zu finden ist
+- "Verbindung testen" Button mit Live-Status (VERBUNDEN/OFFLINE)
+- Geräte-Erkennung: Zeigt Anzahl erkannter Smart Home Geräte nach Domain
+- GPT-gestützte Befehlserkennung: Natürliche Sprache → HA Service Calls
+- Unterstützte Domains: light, switch, climate, cover, media_player, scene, script, fan, lock, vacuum
+- Voice Assistant: "Aria, mach das Licht im Wohnzimmer aus" → HA-Aktion
+- Chat-Integration: Smart Home Keywords werden automatisch an HA geroutet
+- Logging: Alle ausgeführten HA-Befehle werden in der Datenbank protokolliert
+
+### Wetter PLZ-Fix - DONE 2026-04-12
+- Automatische Erkennung von PLZ-Formaten (4718 Holderbank, CH / 4718,CH)
+- Fallback: PLZ → Stadtname wenn PLZ nicht gefunden
 
 ## Offene Aufgaben (Backlog P2)
 - [ ] Chat: Server-Status-Awareness (Docker-Daten)
