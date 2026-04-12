@@ -751,6 +751,24 @@ async def get_weather_settings():
     api_key = key_doc["value"] if key_doc and key_doc.get("value") else ""
     return city, api_key
 
+import re
+
+def parse_city_query(city_input: str):
+    """Parse city input - supports 'Berlin,DE', '4718 Holderbank, CH', '4718,CH' etc."""
+    city_input = city_input.strip()
+    # Check for zip code pattern: "1234 City, CC" or "1234, CC" or "1234 City,CC"
+    zip_match = re.match(r'^(\d{4,5})\s+(.+?)\s*[,]\s*([A-Za-z]{2})$', city_input)
+    if zip_match:
+        zip_code = zip_match.group(1)
+        country = zip_match.group(3).strip().lower()
+        return {"type": "zip", "zip": zip_code, "country": country, "city_name": zip_match.group(2).strip()}
+    # Check for simple zip: "1234,CC"
+    zip_simple = re.match(r'^(\d{4,5})\s*[,]\s*([A-Za-z]{2})$', city_input)
+    if zip_simple:
+        return {"type": "zip", "zip": zip_simple.group(1), "country": zip_simple.group(2).strip().lower(), "city_name": ""}
+    # Default: city name query (e.g. "Berlin,DE" or "Holderbank,CH")
+    return {"type": "city", "q": city_input}
+
 @api_router.get("/weather")
 async def get_weather(request: Request):
     user = await get_current_user(request)
@@ -760,25 +778,53 @@ async def get_weather(request: Request):
         return {"available": False, "message": "Wetter nicht konfiguriert. Bitte Stadt und API-Key in den Admin-Einstellungen hinterlegen."}
     
     try:
+        parsed = parse_city_query(city)
         async with httpx.AsyncClient(timeout=10.0) as http_client:
+            # Build params based on input type
+            base_params = {"appid": api_key, "units": "metric", "lang": "de"}
+            if parsed["type"] == "zip":
+                base_params["zip"] = f"{parsed['zip']},{parsed['country']}"
+            else:
+                base_params["q"] = parsed["q"]
+            
             # Current weather
             current_resp = await http_client.get(
                 f"https://api.openweathermap.org/data/2.5/weather",
-                params={"q": city, "appid": api_key, "units": "metric", "lang": "de"}
+                params=base_params
             )
             if current_resp.status_code == 401:
                 return {"available": False, "message": "Ungültiger API-Key. Bitte prüfe deinen OpenWeatherMap API-Key. Neue Keys brauchen bis zu 2 Stunden um aktiv zu werden."}
             if current_resp.status_code == 404:
-                return {"available": False, "message": f"Stadt '{city}' nicht gefunden. Bitte prüfe den Stadtnamen (Format: Berlin,DE)."}
+                # If zip failed, try as city name (extract city name from input)
+                if parsed["type"] == "zip":
+                    city_name = parsed.get("city_name", "")
+                    if not city_name:
+                        city_name = re.sub(r'^\d+\s*', '', city).split(',')[0].strip()
+                    if city_name:
+                        country = parsed.get("country", "")
+                        fallback_q = f"{city_name},{country}" if country else city_name
+                        fallback_resp = await http_client.get(
+                            f"https://api.openweathermap.org/data/2.5/weather",
+                            params={"q": fallback_q, "appid": api_key, "units": "metric", "lang": "de"}
+                        )
+                        if fallback_resp.status_code == 200:
+                            current_resp = fallback_resp
+                        else:
+                            return {"available": False, "message": f"Stadt '{city}' nicht gefunden. Versuche: Holderbank,CH oder Zürich,CH"}
+                    else:
+                        return {"available": False, "message": f"Stadt '{city}' nicht gefunden. Versuche: Holderbank,CH oder 4718,CH"}
+                else:
+                    return {"available": False, "message": f"Stadt '{city}' nicht gefunden. Bitte prüfe den Stadtnamen (Format: Holderbank,CH oder Berlin,DE)."}
             if current_resp.status_code != 200:
                 return {"available": False, "message": f"Wetter-API Fehler (Code {current_resp.status_code}). Bitte versuche es später erneut."}
             
             current = current_resp.json()
             
             # 5-day forecast (3h intervals)
+            forecast_params = {**base_params, "cnt": 24}
             forecast_resp = await http_client.get(
                 f"https://api.openweathermap.org/data/2.5/forecast",
-                params={"q": city, "appid": api_key, "units": "metric", "lang": "de", "cnt": 24}
+                params=forecast_params
             )
             forecast_data = forecast_resp.json() if forecast_resp.status_code == 200 else {}
             

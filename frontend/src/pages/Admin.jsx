@@ -271,7 +271,7 @@ const Admin = () => {
                     type="text"
                     value={weatherCity}
                     onChange={(e) => setWeatherCity(e.target.value)}
-                    placeholder={settings.weather_city || "z.B. Berlin,DE"}
+                    placeholder={settings.weather_city || "z.B. Holderbank,CH oder 4718,CH"}
                     className={`${inputClass} w-full`}
                     data-testid="weather-city-input"
                   />
