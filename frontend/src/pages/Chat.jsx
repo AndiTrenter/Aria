@@ -125,7 +125,7 @@ const Chat = () => {
                     {isLcars ? "BEREIT FÜR KOMMUNIKATION" : "Starte eine Konversation..."}
                   </p>
                   <p className={`text-xs mt-2 ${isLcars ? "text-gray-600" : "text-purple-500"}`}>
-                    Aria kann Fragen zu deinen Diensten beantworten und an CaseDesk/ForgePilot weiterleiten.
+                    Aria nutzt automatisch Wetter, System-Health, Docker und Home Assistant Daten für ihre Antworten.
                   </p>
                 </div>
               </div>
@@ -139,8 +139,12 @@ const Chat = () => {
                 }`} style={{ textTransform: "none", letterSpacing: "normal" }}>
                   {msg.routed_to && (
                     <div className={`text-[10px] mb-1 flex items-center gap-1 ${isLcars ? "text-[var(--lcars-mauve)]" : "text-purple-400"}`}>
-                      <Circle size={6} weight="fill" className="text-green-400" />
-                      {msg.routed_to === "casedesk" ? "CaseDesk AI" : msg.routed_to === "forgepilot" ? "ForgePilot" : "Aria AI"}
+                      <Circle size={6} weight="fill" className={msg.routed_to.includes("live-data") ? "text-cyan-400" : msg.routed_to === "home-assistant" ? "text-green-400" : "text-green-400"} />
+                      {msg.routed_to === "casedesk" ? "CaseDesk AI" 
+                        : msg.routed_to === "forgepilot" ? "ForgePilot" 
+                        : msg.routed_to === "home-assistant" ? "Home Assistant"
+                        : msg.routed_to.includes("live-data") ? "Aria AI + Live-Daten" 
+                        : "Aria AI"}
                     </div>
                   )}
                   <div className="whitespace-pre-wrap">{msg.content}</div>

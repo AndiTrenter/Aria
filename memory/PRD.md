@@ -63,7 +63,14 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - Chat-Integration: Smart Home Keywords werden automatisch an HA geroutet
 - Logging: Alle ausgeführten HA-Befehle werden in der Datenbank protokolliert
 
-### Wetter PLZ-Fix - DONE 2026-04-12
+### Intelligenter Chat mit Live-Daten - DONE 2026-04-12
+- Chat erkennt automatisch Kontext aus der Frage (Wetter, System, Docker, HA)
+- Wetter-Keywords → holt aktuelle Wetterdaten + 24h Vorhersage von OpenWeatherMap
+- System-Keywords → holt CPU, RAM, Disk-Auslastung + Docker Container Status
+- HA-Keywords → holt Smart Home Geräte-Status
+- Echtzeitdaten werden als Kontext an GPT übergeben für natürliche Antworten
+- Chat-UI zeigt "Aria AI + Live-Daten" Badge wenn Echtzeitdaten genutzt wurden
+- HA-Aktionsbefehle (Licht an/aus etc.) werden direkt ausgeführt
 - Automatische Erkennung von PLZ-Formaten (4718 Holderbank, CH / 4718,CH)
 - Fallback: PLZ → Stadtname wenn PLZ nicht gefunden
 

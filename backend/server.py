@@ -624,6 +624,106 @@ async def get_llm_api_key() -> str:
         return setting["value"]
     return ""
 
+# ==================== CHAT CONTEXT ENRICHMENT ====================
+
+async def gather_context(msg_lower: str, request: Request) -> str:
+    """Gather real-time data from connected services based on the user's question."""
+    context_parts = []
+    
+    # Weather context
+    weather_keywords = ["wetter", "temperatur", "regen", "sonne", "sonnig", "schnee", "wind", "wolken", "vorhersage", "morgen wetter", "heute wetter", "grad draußen", "kalt", "warm", "unwetter", "sturm", "gewitter", "nebel", "feucht"]
+    if any(w in msg_lower for w in weather_keywords):
+        try:
+            city, api_key = await get_weather_settings()
+            if city and api_key:
+                parsed = parse_city_query(city)
+                async with httpx.AsyncClient(timeout=8.0) as http_client:
+                    params = {"appid": api_key, "units": "metric", "lang": "de"}
+                    if parsed["type"] == "zip":
+                        params["zip"] = f"{parsed['zip']},{parsed['country']}"
+                    else:
+                        params["q"] = parsed["q"]
+                    
+                    current_resp = await http_client.get("https://api.openweathermap.org/data/2.5/weather", params=params)
+                    if current_resp.status_code == 200:
+                        w = current_resp.json()
+                        forecast_params = {**params, "cnt": 24}
+                        forecast_resp = await http_client.get("https://api.openweathermap.org/data/2.5/forecast", params=forecast_params)
+                        forecast_text = ""
+                        if forecast_resp.status_code == 200:
+                            items = forecast_resp.json().get("list", [])
+                            forecast_text = "\nVorhersage (nächste 24h):\n"
+                            for item in items[:8]:
+                                dt = item.get("dt_txt", "")
+                                temp = item["main"]["temp"]
+                                desc = item["weather"][0]["description"]
+                                forecast_text += f"  {dt}: {temp}°C, {desc}\n"
+                        
+                        context_parts.append(f"""AKTUELLE WETTERDATEN für {w.get('name', city)}:
+- Temperatur: {w['main']['temp']}°C (gefühlt {w['main']['feels_like']}°C)
+- Beschreibung: {w['weather'][0]['description']}
+- Luftfeuchtigkeit: {w['main']['humidity']}%
+- Wind: {w['wind']['speed']} m/s
+- Wolken: {w['clouds']['all']}%
+- Luftdruck: {w['main']['pressure']} hPa
+- Min/Max heute: {w['main']['temp_min']}°C / {w['main']['temp_max']}°C{forecast_text}""")
+        except Exception as e:
+            logger.warning(f"Weather context failed: {e}")
+    
+    # System Health context
+    health_keywords = ["server", "system", "cpu", "ram", "speicher", "festplatte", "disk", "arbeitsspeicher", "auslastung", "performance", "docker", "container", "dienst", "service", "netzwerk", "uptime"]
+    if any(w in msg_lower for w in health_keywords):
+        try:
+            import psutil
+            cpu = psutil.cpu_percent(interval=0.5)
+            mem = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            context_parts.append(f"""AKTUELLE SYSTEMDATEN:
+- CPU Auslastung: {cpu}%
+- RAM: {mem.used / (1024**3):.1f} GB / {mem.total / (1024**3):.1f} GB ({mem.percent}%)
+- Festplatte: {disk.used / (1024**3):.1f} GB / {disk.total / (1024**3):.1f} GB ({disk.percent}%)
+- Uptime: {datetime.now(timezone.utc).isoformat()}""")
+        except Exception as e:
+            logger.warning(f"System context failed: {e}")
+        
+        # Docker containers
+        try:
+            import docker as docker_lib
+            dock = docker_lib.DockerClient(base_url='unix:///var/run/docker.sock', timeout=5)
+            containers = dock.containers.list(all=True)
+            container_list = "\n".join([f"  - {c.name}: {c.status}" for c in containers[:15]])
+            context_parts.append(f"DOCKER CONTAINER:\n{container_list}")
+        except Exception:
+            pass
+    
+    # Home Assistant context
+    ha_keywords = ["smart home", "home assistant", "geräte", "haus", "zuhause", "sensor", "automation"]
+    if any(w in msg_lower for w in ha_keywords):
+        try:
+            ha_url, ha_token = await get_ha_settings()
+            if ha_url and ha_token:
+                async with httpx.AsyncClient(timeout=5.0) as http_client:
+                    resp = await http_client.get(f"{ha_url}/api/states", headers={"Authorization": f"Bearer {ha_token}"})
+                    if resp.status_code == 200:
+                        entities = resp.json()
+                        ha_info = []
+                        for e in entities[:30]:
+                            eid = e.get("entity_id", "")
+                            domain = eid.split(".")[0]
+                            if domain in ("light", "switch", "climate", "cover", "sensor", "binary_sensor"):
+                                name = e.get("attributes", {}).get("friendly_name", eid)
+                                state = e.get("state")
+                                unit = e.get("attributes", {}).get("unit_of_measurement", "")
+                                ha_info.append(f"  - {name}: {state} {unit}".strip())
+                        if ha_info:
+                            context_parts.append(f"HOME ASSISTANT GERÄTE:\n" + "\n".join(ha_info))
+        except Exception:
+            pass
+    
+    if context_parts:
+        return "\n\n".join(context_parts)
+    return ""
+
 # ==================== CHAT ====================
 
 @api_router.post("/chat")
@@ -635,9 +735,9 @@ async def chat_route(message: ChatMessage, request: Request):
     msg_lower = message.message.lower()
     target = message.target_service
     
-    # Detect Home Assistant commands
-    ha_keywords = ["licht", "lampe", "heizung", "thermostat", "temperatur", "rollladen", "jalousie", "steckdose", "schalte", "einschalten", "ausschalten", "aufmachen", "zumachen", "dimmen", "heller", "dunkler"]
-    is_ha_command = any(w in msg_lower for w in ha_keywords)
+    # Detect Home Assistant action commands (turn on/off etc.)
+    ha_action_keywords = ["licht", "lampe", "schalte", "einschalten", "ausschalten", "aufmachen", "zumachen", "dimmen", "heller", "dunkler"]
+    is_ha_command = any(w in msg_lower for w in ha_action_keywords)
     
     if is_ha_command:
         ha_url, ha_token = await get_ha_settings()
@@ -677,9 +777,8 @@ async def chat_route(message: ChatMessage, request: Request):
                         return {"response": resp.json().get("response", resp.text), "routed_to": "casedesk", "session_id": message.session_id}
         except Exception as e:
             logger.warning(f"CaseDesk routing failed: {e}")
-            # Fall through to AI chat
     
-    # AI Chat with GPT
+    # AI Chat with GPT + enriched context from services
     api_key = await get_llm_api_key()
     if not api_key:
         return {"response": "Kein API-Key konfiguriert. Bitte im Admin-Bereich unter Einstellungen einen OpenAI API-Key hinterlegen.", "routed_to": None, "session_id": message.session_id}
@@ -689,14 +788,23 @@ async def chat_route(message: ChatMessage, request: Request):
     
     session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
     
+    # Gather real-time context from connected services
+    live_context = await gather_context(msg_lower, request)
+    
     # Load chat history for this session
     history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
     
     try:
         openai_client = AsyncOpenAI(api_key=api_key)
         
-        # Build messages array
-        openai_messages = [{"role": "system", "content": "Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud), Smart Home (Home Assistant) und allgemeinen IT-Themen. Du kannst auch Smart-Home-Geräte wie Lichter, Heizungen und Rollläden steuern. Antworte auf Deutsch, sei hilfreich und präzise."}]
+        system_prompt = """Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud), Smart Home (Home Assistant) und allgemeinen IT-Themen. Du kannst auch Smart-Home-Geräte wie Lichter, Heizungen und Rollläden steuern. Antworte auf Deutsch, sei hilfreich und präzise.
+
+WICHTIG: Wenn dir Echtzeitdaten zur Verfügung gestellt werden, nutze diese für deine Antwort. Gib die Daten in einer freundlichen, natürlichen Art wieder — nicht als Rohdaten-Dump."""
+        
+        if live_context:
+            system_prompt += f"\n\nAKTUELLE ECHTZEITDATEN:\n{live_context}"
+        
+        openai_messages = [{"role": "system", "content": system_prompt}]
         
         for msg in history:
             openai_messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
@@ -718,9 +826,12 @@ async def chat_route(message: ChatMessage, request: Request):
             {"session_id": session_id, "user_id": user["id"], "role": "assistant", "content": response_text, "timestamp": now},
         ])
         
-        await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": target or "aria-ai", "timestamp": now})
+        routed = target or "aria-ai"
+        if live_context:
+            routed = "aria-ai+live-data"
+        await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": routed, "timestamp": now})
         
-        return {"response": response_text, "routed_to": target or "aria-ai", "session_id": session_id}
+        return {"response": response_text, "routed_to": routed, "session_id": session_id}
     except Exception as e:
         logger.error(f"Chat error: {e}")
         return {"response": f"Fehler bei der KI-Verarbeitung: {str(e)}", "routed_to": None, "session_id": session_id}
