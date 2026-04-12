@@ -4,21 +4,35 @@ import { useTheme, API } from "@/App";
 import axios from "axios";
 import { ArrowClockwise, Sun, Cloud, CloudRain, Snowflake, Wind, Drop, Thermometer, CloudSun } from "@phosphor-icons/react";
 
-const weatherIcons = {
-  "01d": Sun, "01n": Sun,
-  "02d": CloudSun, "02n": CloudSun,
-  "03d": Cloud, "03n": Cloud,
-  "04d": Cloud, "04n": Cloud,
-  "09d": CloudRain, "09n": CloudRain,
-  "10d": CloudRain, "10n": CloudRain,
-  "11d": CloudRain, "11n": CloudRain,
-  "13d": Snowflake, "13n": Snowflake,
-  "50d": Wind, "50n": Wind,
+const OWM_ICON_URL = "https://openweathermap.org/img/wn";
+
+const WeatherImage = ({ iconCode, size = 100, className = "" }) => {
+  if (!iconCode) return null;
+  return (
+    <img
+      src={`${OWM_ICON_URL}/${iconCode}@4x.png`}
+      alt="Wetter"
+      width={size}
+      height={size}
+      className={`drop-shadow-[0_0_12px_rgba(255,200,50,0.4)] ${className}`}
+      style={{ imageRendering: "auto" }}
+      data-testid="weather-image"
+    />
+  );
 };
 
-const getWeatherIcon = (iconCode, size = 48) => {
-  const IconComp = weatherIcons[iconCode] || Cloud;
-  return <IconComp size={size} weight="fill" />;
+const SmallWeatherImage = ({ iconCode, size = 64 }) => {
+  if (!iconCode) return null;
+  return (
+    <img
+      src={`${OWM_ICON_URL}/${iconCode}@2x.png`}
+      alt="Wetter"
+      width={size}
+      height={size}
+      className="drop-shadow-[0_0_8px_rgba(255,200,50,0.3)]"
+      data-testid="weather-image-small"
+    />
+  );
 };
 
 const weekday = (dateStr) => {
@@ -97,31 +111,36 @@ const Weather = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Current Weather */}
+            {/* Current Weather - Hero Card */}
             <div className={cardClass} data-testid="current-weather">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className={`text-2xl font-bold ${isLcars ? "text-[var(--lcars-orange)]" : "disney-title disney-glow"}`}>
+              <div className="flex items-center gap-6">
+                {/* Weather Image */}
+                <div className={`relative flex-shrink-0 ${isLcars ? "" : ""}`}>
+                  <div className={`rounded-2xl p-2 ${isLcars ? "bg-[#1a1a2e]/60 border border-[var(--lcars-purple)]/20" : "bg-purple-900/20 border border-purple-700/20"}`}>
+                    <WeatherImage iconCode={weather.current.icon} size={120} />
+                  </div>
+                </div>
+
+                {/* Temperature + City */}
+                <div className="flex-1">
+                  <h2 className={`text-2xl font-bold mb-1 ${isLcars ? "text-[var(--lcars-orange)]" : "disney-title disney-glow"}`}>
                     {weather.city}
                   </h2>
-                  <p className="text-sm text-gray-400 capitalize">{weather.current.description}</p>
+                  <p className="text-sm text-gray-400 capitalize mb-3">{weather.current.description}</p>
+                  <div className="flex items-end gap-2">
+                    <span className={`text-6xl font-bold ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-100"}`}>
+                      {weather.current.temp}
+                    </span>
+                    <span className={`text-2xl mb-2 ${isLcars ? "text-[var(--lcars-mauve)]" : "text-purple-300"}`}>°C</span>
+                    <span className="text-sm text-gray-500 mb-2 ml-4">
+                      Gefühlt {weather.current.feels_like}°C
+                    </span>
+                  </div>
                 </div>
-                <div className={isLcars ? "text-[var(--lcars-gold)]" : "text-yellow-400"}>
-                  {getWeatherIcon(weather.current.icon, 64)}
-                </div>
-              </div>
-              
-              <div className="flex items-end gap-2 mb-6">
-                <span className={`text-6xl font-bold ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-100"}`}>
-                  {weather.current.temp}
-                </span>
-                <span className={`text-2xl mb-2 ${isLcars ? "text-[var(--lcars-mauve)]" : "text-purple-300"}`}>°C</span>
-                <span className="text-sm text-gray-500 mb-2 ml-4">
-                  Gefühlt {weather.current.feels_like}°C
-                </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
                 <div className="flex items-center gap-2">
                   <Drop size={18} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
                   <div>
@@ -174,11 +193,11 @@ const Weather = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {weather.forecast.map((day, i) => (
                     <div key={i} className={cardClass + " text-center"} data-testid={`forecast-day-${i}`}>
-                      <div className={`text-sm font-bold mb-2 ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200"}`}>
+                      <div className={`text-sm font-bold mb-1 ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200"}`}>
                         {weekday(day.date)}
                       </div>
-                      <div className={`flex justify-center mb-2 ${isLcars ? "text-[var(--lcars-gold)]" : "text-yellow-400"}`}>
-                        {getWeatherIcon(day.icon, 36)}
+                      <div className="flex justify-center">
+                        <SmallWeatherImage iconCode={day.icon} size={64} />
                       </div>
                       <div className="text-xs text-gray-400 capitalize mb-2">{day.description}</div>
                       <div className="flex justify-center gap-3">
