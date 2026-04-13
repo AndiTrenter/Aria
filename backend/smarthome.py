@@ -66,8 +66,10 @@ class RoomProfileCreate(BaseModel):
     room_id: str
     user_id: Optional[str] = None
     kiosk_mode: bool = False
+    child_mode: bool = False
     allowed_widgets: List[str] = []
     start_page: str = "smarthome"
+    scenes: List[Dict[str, Any]] = []  # [{name, icon, actions: [{service, entity_id, data}]}]
 
 class BulkPermissionUpdate(BaseModel):
     user_id: str
@@ -305,6 +307,63 @@ async def list_profiles(request: Request):
     profiles = await db.room_profiles.find({}, {"_id": 0}).to_list(100)
     return profiles
 
+@router.get("/profiles/{profile_id}")
+async def get_profile(profile_id: str, request: Request):
+    user = await get_current_user(request)
+    profile = await db.room_profiles.find_one({"id": profile_id}, {"_id": 0})
+    if not profile:
+        raise HTTPException(404, "Profil nicht gefunden")
+    
+    # If admin, enrich with room + device data for preview
+    if user["role"] in ["superadmin", "admin"]:
+        room = await db.rooms.find_one({"id": profile.get("room_id")}, {"_id": 0})
+        devices_in_room = await db.devices.find({"room_id": profile.get("room_id")}, {"_id": 0}).to_list(100)
+        # For admin preview, mark all devices as controllable
+        for dev in devices_in_room:
+            dev["_perm"] = {"controllable": True, "voice_allowed": True}
+        profile["room"] = room
+        profile["devices"] = devices_in_room
+        profile["has_profile"] = True
+    
+    return profile
+
+@router.get("/profiles/by-user/{user_id}")
+async def get_user_profile(user_id: str, request: Request):
+    """Get the kiosk/room profile assigned to a user."""
+    user = await get_current_user(request)
+    profile = await db.room_profiles.find_one({"user_id": user_id}, {"_id": 0})
+    return profile or {}
+
+@router.get("/my-profile")
+async def get_my_profile(request: Request):
+    """Get the current user's room profile (for kiosk mode)."""
+    user = await get_current_user(request)
+    profile = await db.room_profiles.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not profile:
+        return {"has_profile": False}
+    
+    # Enrich with room data and devices
+    room = await db.rooms.find_one({"id": profile.get("room_id")}, {"_id": 0})
+    perms = await get_user_permissions(user["id"])
+    devices_in_room = await db.devices.find({"room_id": profile.get("room_id")}, {"_id": 0}).to_list(100)
+    
+    visible_devices = []
+    for dev in devices_in_room:
+        perm = perms.get(dev["entity_id"], {})
+        if perm.get("visible", False):
+            dev["_perm"] = {
+                "controllable": perm.get("controllable", False),
+                "voice_allowed": perm.get("voice_allowed", False),
+            }
+            visible_devices.append(dev)
+    
+    return {
+        "has_profile": True,
+        **profile,
+        "room": room,
+        "devices": visible_devices,
+    }
+
 @router.post("/profiles")
 async def create_profile(request: Request, body: RoomProfileCreate):
     await require_admin(request)
@@ -315,18 +374,142 @@ async def create_profile(request: Request, body: RoomProfileCreate):
         "room_id": body.room_id,
         "user_id": body.user_id,
         "kiosk_mode": body.kiosk_mode,
+        "child_mode": body.child_mode,
         "allowed_widgets": body.allowed_widgets,
         "start_page": body.start_page,
+        "scenes": body.scenes,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.room_profiles.insert_one(profile)
     return {"id": profile_id, **{k: v for k, v in profile.items() if k != "_id"}}
+
+@router.put("/profiles/{profile_id}")
+async def update_profile(profile_id: str, request: Request, body: dict = Body(...)):
+    await require_admin(request)
+    allowed = {"name", "room_id", "user_id", "kiosk_mode", "child_mode", "allowed_widgets", "start_page", "scenes"}
+    update = {k: v for k, v in body.items() if k in allowed}
+    if not update:
+        raise HTTPException(400, "Keine Änderungen")
+    await db.room_profiles.update_one({"id": profile_id}, {"$set": update})
+    return {"success": True}
 
 @router.delete("/profiles/{profile_id}")
 async def delete_profile(profile_id: str, request: Request):
     await require_admin(request)
     await db.room_profiles.delete_one({"id": profile_id})
     return {"success": True}
+
+# ==================== SCENE TEMPLATES ====================
+
+DEFAULT_SCENE_TEMPLATES = [
+    {
+        "id": "gute_nacht",
+        "name": "Gute Nacht",
+        "icon": "moon",
+        "description": "Lichter aus, Nachtlicht an",
+        "actions_template": [
+            {"service": "light.turn_off", "entity_filter": {"domain": "light", "exclude_name": ["nachtlicht", "nacht"]}},
+            {"service": "light.turn_on", "entity_filter": {"domain": "light", "include_name": ["nachtlicht", "nacht"]}, "data": {"brightness": 30}},
+            {"service": "cover.close_cover", "entity_filter": {"domain": "cover"}},
+        ]
+    },
+    {
+        "id": "aufstehen",
+        "name": "Aufstehen",
+        "icon": "sun",
+        "description": "Rollladen auf, Licht an",
+        "actions_template": [
+            {"service": "cover.open_cover", "entity_filter": {"domain": "cover"}},
+            {"service": "light.turn_on", "entity_filter": {"domain": "light"}, "data": {"brightness": 200}},
+        ]
+    },
+    {
+        "id": "lernen",
+        "name": "Lernen",
+        "icon": "book",
+        "description": "Helles Licht, ruhige Atmosphäre",
+        "actions_template": [
+            {"service": "light.turn_on", "entity_filter": {"domain": "light"}, "data": {"brightness": 255}},
+        ]
+    },
+    {
+        "id": "spielen",
+        "name": "Spielen",
+        "icon": "game-controller",
+        "description": "Gemütliches Licht",
+        "actions_template": [
+            {"service": "light.turn_on", "entity_filter": {"domain": "light"}, "data": {"brightness": 150}},
+        ]
+    },
+    {
+        "id": "film",
+        "name": "Filmabend",
+        "icon": "film-strip",
+        "description": "Gedimmtes Licht, Rollladen zu",
+        "actions_template": [
+            {"service": "light.turn_on", "entity_filter": {"domain": "light"}, "data": {"brightness": 30}},
+            {"service": "cover.close_cover", "entity_filter": {"domain": "cover"}},
+        ]
+    },
+]
+
+@router.get("/scene-templates")
+async def get_scene_templates(request: Request):
+    user = await get_current_user(request)
+    return DEFAULT_SCENE_TEMPLATES
+
+@router.post("/execute-scene")
+async def execute_scene(request: Request, body: dict = Body(...)):
+    """Execute a scene for the current user's room."""
+    user = await get_current_user(request)
+    scene_actions = body.get("actions", [])
+    
+    ha_url, ha_token = await get_ha_settings()
+    if not ha_url or not ha_token:
+        return {"success": False, "message": "HA nicht verbunden"}
+    
+    is_admin = user["role"] in ["superadmin", "admin"]
+    executed = 0
+    errors = []
+    
+    for action in scene_actions:
+        entity_id = action.get("entity_id", "")
+        service = action.get("service", "")
+        data = action.get("data", {})
+        
+        if not entity_id or not service:
+            continue
+        
+        # Permission check
+        if not is_admin:
+            has_access = await check_device_access(user, entity_id, "controllable")
+            if not has_access:
+                errors.append(f"Kein Zugriff auf {entity_id}")
+                continue
+        
+        domain = service.split(".")[0] if "." in service else entity_id.split(".")[0]
+        svc = service.split(".")[1] if "." in service else service
+        
+        service_data = {"entity_id": entity_id}
+        service_data.update(data)
+        
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as http_client:
+                resp = await http_client.post(
+                    f"{ha_url}/api/services/{domain}/{svc}",
+                    headers={"Authorization": f"Bearer {ha_token}", "Content-Type": "application/json"},
+                    json=service_data
+                )
+                if resp.status_code in (200, 201):
+                    executed += 1
+        except Exception:
+            errors.append(f"Fehler bei {entity_id}")
+    
+    await db.logs.insert_one({"type": "scene_executed", "user_id": user["id"], "user_email": user.get("email", ""), "scene_name": body.get("name", ""), "executed": executed, "errors": len(errors), "timestamp": datetime.now(timezone.utc).isoformat()})
+    
+    if errors:
+        return {"success": True, "message": f"{executed} Aktionen ausgeführt, {len(errors)} Fehler", "errors": errors}
+    return {"success": True, "message": f"Szene ausgeführt ({executed} Aktionen)"}
 
 # ==================== HA SYNC ====================
 

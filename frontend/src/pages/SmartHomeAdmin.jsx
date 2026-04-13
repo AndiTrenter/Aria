@@ -39,6 +39,9 @@ const SmartHomeAdmin = () => {
   const [newRoom, setNewRoom] = useState({ name: "", icon: "house", order: 0 });
   const [editingDevice, setEditingDevice] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [showCreateProfile, setShowCreateProfile] = useState(false);
+  const [newProfile, setNewProfile] = useState({ name: "", room_id: "", user_id: "", kiosk_mode: false, child_mode: false });
 
   const [auditLogs, setAuditLogs] = useState([]);
 
@@ -49,14 +52,16 @@ const SmartHomeAdmin = () => {
 
   const fetchData = async () => {
     try {
-      const [roomsRes, devicesRes, usersRes] = await Promise.all([
+      const [roomsRes, devicesRes, usersRes, profilesRes] = await Promise.all([
         axios.get(`${API}/smarthome/rooms`),
         axios.get(`${API}/smarthome/devices`),
         axios.get(`${API}/admin/users`),
+        axios.get(`${API}/smarthome/profiles`),
       ]);
       setRooms(roomsRes.data);
       setDevices(devicesRes.data);
       setUsers(usersRes.data);
+      setProfiles(profilesRes.data);
     } catch (e) { console.error(e); }
   };
 
@@ -162,6 +167,7 @@ const SmartHomeAdmin = () => {
     { id: "rooms", label: isLcars ? "RÄUME" : "Räume" },
     { id: "devices", label: isLcars ? "GERÄTE" : "Geräte" },
     { id: "permissions", label: isLcars ? "FREIGABEN" : "Freigaben" },
+    { id: "profiles", label: isLcars ? "PROFILE" : "Profile" },
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
   ];
 
@@ -462,6 +468,126 @@ const SmartHomeAdmin = () => {
           )}
         </div>
       )}
+      {/* ==================== PROFILES TAB ==================== */}
+      {activeTab === "profiles" && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`text-sm ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+              {profiles.length} {isLcars ? "TABLET-/RAUMPROFILE" : "Tablet-/Raumprofile"}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => setShowCreateProfile(true)} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`} data-testid="create-profile-btn">
+              <Plus size={14} /> {isLcars ? "PROFIL" : "Profil erstellen"}
+            </button>
+          </div>
+
+          {showCreateProfile && (
+            <div className={`${cardClass} mb-4`} data-testid="create-profile-form">
+              <h4 className={`text-xs font-bold mb-3 ${isLcars ? "text-[var(--lcars-orange)] tracking-wider" : "text-purple-200"}`}>
+                {isLcars ? "NEUES PROFIL" : "Neues Profil"}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <input placeholder="Profilname (z.B. Kinderzimmer Tablet)" value={newProfile.name}
+                  onChange={(e) => setNewProfile({...newProfile, name: e.target.value})}
+                  className={`${inputClass} w-full`} data-testid="profile-name" />
+                <select value={newProfile.room_id} onChange={(e) => setNewProfile({...newProfile, room_id: e.target.value})}
+                  className={`${inputClass} w-full`} data-testid="profile-room">
+                  <option value="">Raum wählen...</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <select value={newProfile.user_id} onChange={(e) => setNewProfile({...newProfile, user_id: e.target.value})}
+                  className={`${inputClass} w-full`} data-testid="profile-user">
+                  <option value="">Benutzer zuweisen...</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name || u.email} ({u.role})</option>)}
+                </select>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={newProfile.kiosk_mode}
+                      onChange={(e) => setNewProfile({...newProfile, kiosk_mode: e.target.checked})}
+                      className="w-4 h-4 accent-orange-500" />
+                    <span className="text-xs">{isLcars ? "KIOSK-MODUS" : "Kiosk-Modus"}</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={newProfile.child_mode}
+                      onChange={(e) => setNewProfile({...newProfile, child_mode: e.target.checked})}
+                      className="w-4 h-4 accent-purple-500" />
+                    <span className="text-xs">{isLcars ? "KINDERMODUS" : "Kindermodus"}</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={async () => {
+                  if (!newProfile.name || !newProfile.room_id) return toast.error("Name und Raum eingeben");
+                  try {
+                    await axios.post(`${API}/smarthome/profiles`, newProfile);
+                    toast.success("Profil erstellt");
+                    setShowCreateProfile(false);
+                    setNewProfile({ name: "", room_id: "", user_id: "", kiosk_mode: false, child_mode: false });
+                    fetchData();
+                  } catch (e) { toast.error("Fehler"); }
+                }} className={btnClass} data-testid="profile-save"><Check size={16} /> Erstellen</button>
+                <button onClick={() => setShowCreateProfile(false)} className="p-2 text-red-400"><X size={16} /></button>
+              </div>
+            </div>
+          )}
+
+          {/* Profile List */}
+          <div className="space-y-3">
+            {profiles.map(profile => {
+              const room = rooms.find(r => r.id === profile.room_id);
+              const assignedUser = users.find(u => u.id === profile.user_id);
+              return (
+                <div key={profile.id} className={cardClass} data-testid={`profile-${profile.id}`}>
+                  <div className="flex items-center gap-3">
+                    <House size={20} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold text-sm ${isLcars ? "tracking-wider" : ""}`}>{isLcars ? profile.name.toUpperCase() : profile.name}</span>
+                        {profile.kiosk_mode && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/30 text-amber-400 font-bold">KIOSK</span>}
+                        {profile.child_mode && <span className="text-[10px] px-2 py-0.5 rounded bg-purple-900/30 text-purple-400 font-bold">KIND</span>}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Raum: {room?.name || "?"} | Benutzer: {assignedUser?.name || assignedUser?.email || "Nicht zugewiesen"}
+                      </div>
+                    </div>
+                    <a href={`/kiosk?profile=${profile.id}`} target="_blank"
+                      className={`text-xs px-3 py-1 rounded ${isLcars ? "bg-[var(--lcars-blue)]/20 text-[var(--lcars-blue)] hover:bg-[var(--lcars-blue)]/30" : "bg-purple-900/30 text-purple-400 hover:bg-purple-900/50"}`}
+                      data-testid={`preview-profile-${profile.id}`}>
+                      {isLcars ? "VORSCHAU" : "Vorschau"}
+                    </a>
+                    <button onClick={async () => {
+                      try { await axios.delete(`${API}/smarthome/profiles/${profile.id}`); toast.success("Gelöscht"); fetchData(); } catch { toast.error("Fehler"); }
+                    }} className="p-2 text-red-400 hover:bg-red-900/30 rounded" data-testid={`delete-profile-${profile.id}`}>
+                      <Trash size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {profiles.length === 0 && (
+              <div className={`${cardClass} text-center py-8`}>
+                <House size={48} className={`mx-auto mb-3 ${isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"}`} />
+                <p className="text-sm text-gray-400 mb-2">Keine Profile erstellt</p>
+                <p className="text-xs text-gray-600">Erstelle ein Profil um den Kiosk-Modus für ein Tablet zu aktivieren.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Kiosk Mode Info */}
+          <div className={`p-4 rounded-lg text-xs space-y-1 ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20" : "bg-purple-950/30 border border-purple-800/30"}`}>
+            <div className={`font-bold mb-2 ${isLcars ? "text-[var(--lcars-salmon)] tracking-wider" : "text-purple-200"}`}>
+              {isLcars ? "KIOSK-MODUS ANLEITUNG" : "Kiosk-Modus Anleitung"}
+            </div>
+            <div className="text-gray-400 space-y-1">
+              <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>1.</span> Profil erstellen (Raum + Benutzer + Kiosk/Kindermodus)</p>
+              <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>2.</span> Geräte-Freigaben für den Benutzer setzen (Tab "Freigaben")</p>
+              <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>3.</span> Auf dem Tablet: Einloggen als zugewiesener Benutzer → <code className={isLcars ? "text-[var(--lcars-blue)]" : "text-purple-400"}>/kiosk</code> aufrufen</p>
+              <p><span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>4.</span> Optional: Browser-Kiosk-Modus aktivieren (F11 / Fully Kiosk Browser)</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ==================== AUDIT TAB ==================== */}
       {activeTab === "audit" && (
         <div>
