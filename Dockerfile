@@ -24,9 +24,9 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend/ /app/backend/
 
 # Copy and build frontend
-COPY frontend/package.json frontend/yarn.lock /app/frontend/
+COPY frontend/package.json /app/frontend/
 WORKDIR /app/frontend
-RUN yarn install --frozen-lockfile
+RUN yarn install
 COPY frontend/ /app/frontend/
 RUN yarn build
 
