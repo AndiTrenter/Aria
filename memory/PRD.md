@@ -104,6 +104,30 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
   - Kiosk-Modus Anleitung (4 Schritte)
 - [x] Backend: `/api/smarthome/profiles` (CRUD), `/api/smarthome/my-profile`, `/api/smarthome/scene-templates`, `/api/smarthome/execute-scene`
 
+### Phase 5 — Admin-Konsolidierung & Benutzer-Raumzuweisung (DONE 2026-04-13)
+- [x] Alle Admin-Funktionen unter `/admin` konsolidiert (8 Tabs)
+  - BENUTZER: Erstellen/Bearbeiten mit Raum-Zuweisung + Tab-Sichtbarkeit
+  - RÄUME: Erstellen/Löschen, zeigt zugewiesene Benutzer
+  - GERÄTE: Liste, Raum-Zuweisung, Kritisch-Markierung, Raumfilter
+  - FREIGABEN: Erweiterte Geräte-Freigaben pro Benutzer (überschreibt Raumzuweisung)
+  - PROFILE: Kiosk-Profile CRUD
+  - AUDIT-LOG: Aktivitätsprotokoll
+  - DIENSTE: Service-Verwaltung
+  - EINSTELLUNGEN: KI-Config, Wetter, Home Assistant
+- [x] Benutzer-Raumzuweisung (assigned_rooms)
+  - Mehrere Räume pro Benutzer zuweisbar
+  - Raum-Zuweisung bestimmt Geräte-Sichtbarkeit im Smart Home Tab
+  - User-Liste zeigt zugewiesene Räume als Badges
+  - Räume-Tab zeigt zugewiesene Benutzer pro Raum
+- [x] Tab-Sichtbarkeit pro Benutzer (visible_tabs)
+  - Admin konfiguriert welche Menüpunkte jeder User sieht
+  - 9 konfigurierbare Tabs (Dashboard, Smart Home, Automationen, Health, Chat, Wetter, Konto, Logs, Kiosk)
+  - Navigation filtert automatisch nach Benutzer-Einstellung
+  - Admin-Tab immer nur für Admin/Superadmin sichtbar
+- [x] SH-ADMIN aus Sidebar entfernt (alles unter /admin)
+- [x] Backend: UserCreate/UserUpdate mit assigned_rooms + visible_tabs
+- [x] Backend: Dashboard-API filtert Räume nach assigned_rooms
+
 ## Offene Aufgaben
 
 ### P1 — Graceful Handling Offline Home Assistant
