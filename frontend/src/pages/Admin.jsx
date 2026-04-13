@@ -169,6 +169,10 @@ const Admin = () => {
                   <input type="password" placeholder="Passwort" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={inputClass} data-testid="new-user-password" />
                   <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className={inputClass} data-testid="new-user-role">
                     <option value="user">Benutzer</option>
+                    <option value="erwachsener">Erwachsener</option>
+                    <option value="kind">Kind</option>
+                    <option value="gast">Gast</option>
+                    <option value="wandtablet">Wandtablet</option>
                     <option value="admin">Admin</option>
                     <option value="readonly">Nur Lesen</option>
                   </select>

@@ -13,6 +13,8 @@ import Logs from "@/pages/Logs";
 import Account from "@/pages/Account";
 import Chat from "@/pages/Chat";
 import Weather from "@/pages/Weather";
+import SmartHome from "@/pages/SmartHome";
+import SmartHomeAdmin from "@/pages/SmartHomeAdmin";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import LcarsLayout from "@/components/LcarsLayout";
 
@@ -222,6 +224,8 @@ const AppRouter = () => {
         <Route path="/weather" element={<ProtectedRoute><LcarsLayout><Weather /></LcarsLayout></ProtectedRoute>} />
         <Route path="/logs" element={<ProtectedRoute><LcarsLayout><Logs /></LcarsLayout></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><LcarsLayout><Account /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/smarthome" element={<ProtectedRoute><LcarsLayout><SmartHome /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/smarthome/admin" element={<ProtectedRoute><LcarsLayout><SmartHomeAdmin /></LcarsLayout></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,91 +1,74 @@
 # Aria Dashboard v2.0 - PRD
 
 ## Problemstellung
-Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS & Disney Themes, Sprachsteuerung und KI-Chat.
+Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS & Disney Themes, Sprachsteuerung, KI-Chat und Smart Home Verwaltung via Home Assistant.
 
 ## Architektur
 - **Backend**: FastAPI + Motor (Async MongoDB) + PyJWT + OpenAI SDK (direkt)
+- **Smart Home Module**: `/app/backend/smarthome.py` (separates Modul)
 - **Frontend**: React + Tailwind CSS + Phosphor Icons + Web Speech API
 - **Deployment**: Docker Multi-Stage Build -> GitHub Actions -> Unraid GHCR
-- **Keine externen Abhängigkeiten** zu Emergent oder Drittanbieter-Plattformen
+- **MongoDB**: 4.4 (für CPUs ohne AVX)
 
-## Implementiert (Alles DONE)
+## Implementiert
 
-### Kern-Features
-- JWT Auth System, Admin Panel, Setup Wizard
+### Phase 1 — Smart Home (DONE 2026-04-13)
+- **Smart-Home-Tab** (`/smarthome`): Raumansicht mit Geräte-Widgets
+  - Geräte-Widgets: Licht (Toggle+Brightness), Schalter, Thermostat (+/-), Rollladen (Auf/Stop/Zu), Sensor (nur Anzeige), Kamera, Schloss
+  - Raum-Tabs mit Geräteanzahl
+  - HA-Verbindungsstatus (Verbunden/Offline/Nicht konfiguriert)
+  - Auto-Refresh alle 10s
+  - Kritische Geräte mit rotem Badge
+- **Smart Home Admin** (`/smarthome/admin`): 3 Tabs
+  - RÄUME: Erstellen, Löschen, Geräte zuweisen
+  - GERÄTE: Liste aller Geräte, Raum-Zuweisung, Kritisch markieren
+  - FREIGABEN: Pro Benutzer + Gerät (sichtbar/steuerbar/automation/voice), Bulk-Freigabe pro Raum
+- **Backend** (`smarthome.py`):
+  - Räume CRUD, Geräte CRUD, Permissions CRUD
+  - HA Sync (importiert alle Entitäten aus HA)
+  - HA State Sync (nur Status-Updates)
+  - Device Control mit serverseitiger Rechteprüfung
+  - Kritische Geräte: nur Admin darf steuern
+  - Dashboard-API: gefiltert nach Benutzer-Rechten
+- **Erweiterte Rollen**: superadmin, admin, erwachsener, user, kind, gast, wandtablet, readonly
+- **Datenmodell (MongoDB)**:
+  - `rooms`: {id, name, icon, order}
+  - `devices`: {entity_id, display_name, room_id, device_type, domain, critical, ha_state, ha_attributes}
+  - `device_permissions`: {user_id, entity_id, visible, controllable, automation_allowed, voice_allowed}
+  - `room_profiles`: {id, name, room_id, user_id, kiosk_mode, allowed_widgets}
+
+### Kern-Features (Vorher implementiert)
+- JWT Auth, Admin Panel, Setup Wizard
 - 4 Dienste: CaseDesk AI, ForgePilot, Nextcloud, Unraid
 - System Diagnostik: CPU, RAM, Disk, Netzwerk, Docker-Container
-- Hybrid AI Chat (GPT-4o + CaseDesk Routing, Sessions)
-- Kontoverknüpfung (Account Linking)
-- Wetter-Tab (OpenWeatherMap, 3-Tage-Vorhersage)
-- Admin Settings (OpenAI Key, Wetter Key+Stadt)
-- Live-Uhrzeit mit Stardate
-- Sticky Menüs (Header + Sidebar)
+- Hybrid AI Chat (GPT-4o + CaseDesk + Live-Daten von Wetter/System/HA)
+- Wetter-Tab (OpenWeatherMap, PLZ-Support, Wetter-Bilder)
+- Home Assistant Integration (Admin-Config, Sprach+Chat-Steuerung)
+- LCARS + Disney Themes mit Animationen
+- Voice Assistant "Aria" (Wake Word)
+- MongoDB Retry-Logik, Docker-Compose 4.4
 
-### LCARS Theme (Star Trek TNG)
-- Authentisches Design: Sidebar, Header-Caps, Footer-Bars
-- Antonio Font, LCARS-Farbpalette
-- Energie-Fluss-Animationen: Header-Bar, Sidebar, Footer, Card-Borders
-- Ambient Scan-Line, Cap-Pulse
+## Offene Phasen (Lastenheft)
 
-### Disney Theme
-- Sternen-Hintergrund mit Floating Stars
-- Feenstaub-Klick-Effekt (8 Partikel pro Klick)
-- Button-Shine, Header-Shimmer, Card-Hover-Glow
-- Cinzel + Quicksand Fonts, Glasmorphismus
+### Phase 2 — Sprachsteuerung + Rechteprüfung
+- [ ] Sprachbefehle gegen Benutzer-Rechte prüfen (vor Ausführung)
+- [ ] Kritische Geräte: PIN-Abfrage
+- [ ] Audit-Log für alle Smart-Home-Aktionen
 
-### Sprachsteuerung
-- Wake Word "Aria" via Web Speech API
-- Spracheingabe -> GPT-4o -> Sprachausgabe (TTS)
-- Visuelles Feedback: Waveform, Status-Anzeige
+### Phase 3 — Automations-Builder
+- [ ] Sprachgesteuerte Automations-Erstellung via GPT → HA YAML
+- [ ] Validierung: nur erlaubte Geräte, Sicherheitsklassifizierung
+- [ ] Freigabeworkflow (Modus A/B/C)
 
-### Globales Layout (LcarsLayout) - DONE 2026-04-11
-- Einheitliche Navigation (Sidebar + Header) über alle Seiten
-- Alle Seiten (Dashboard, Admin, Health, Chat, Weather, Account, Logs) nutzen LcarsLayout
-- Keine doppelten Header/Sidebars mehr
-- Disney Theme: Top-Navigation Bar
-- LCARS Theme: Sidebar + Header-Bar
-
-### Deployment-Robustheit - DONE 2026-04-11
-- MongoDB Retry-Logik: Backend wartet bis zu 60s auf MongoDB (30 Versuche × 2s)
-- Graceful Degradation: Server crasht nicht mehr wenn MongoDB kurz nicht erreichbar
-- Docker-Compose: MongoDB 4.4 (für CPUs ohne AVX) + Healthcheck + depends_on
-- Healthcheck: start_period auf 60s erhöht für langsame Container-Starts
-
-### Home Assistant Integration - DONE 2026-04-12
-- Admin-Einstellungen: HA URL + Long-Lived Access Token Konfiguration
-- Schritt-für-Schritt Anleitung wo der Token in HA zu finden ist
-- "Verbindung testen" Button mit Live-Status (VERBUNDEN/OFFLINE)
-- Geräte-Erkennung: Zeigt Anzahl erkannter Smart Home Geräte nach Domain
-- GPT-gestützte Befehlserkennung: Natürliche Sprache → HA Service Calls
-- Unterstützte Domains: light, switch, climate, cover, media_player, scene, script, fan, lock, vacuum
-- Voice Assistant: "Aria, mach das Licht im Wohnzimmer aus" → HA-Aktion
-- Chat-Integration: Smart Home Keywords werden automatisch an HA geroutet
-- Logging: Alle ausgeführten HA-Befehle werden in der Datenbank protokolliert
-
-### Intelligenter Chat mit Live-Daten - DONE 2026-04-12
-- Chat erkennt automatisch Kontext aus der Frage (Wetter, System, Docker, HA)
-- Wetter-Keywords → holt aktuelle Wetterdaten + 24h Vorhersage von OpenWeatherMap
-- System-Keywords → holt CPU, RAM, Disk-Auslastung + Docker Container Status
-- HA-Keywords → holt Smart Home Geräte-Status
-- Echtzeitdaten werden als Kontext an GPT übergeben für natürliche Antworten
-- Chat-UI zeigt "Aria AI + Live-Daten" Badge wenn Echtzeitdaten genutzt wurden
-- HA-Aktionsbefehle (Licht an/aus etc.) werden direkt ausgeführt
-- Automatische Erkennung von PLZ-Formaten (4718 Holderbank, CH / 4718,CH)
-- Fallback: PLZ → Stadtname wenn PLZ nicht gefunden
-
-## Offene Aufgaben (Backlog P2)
-- [ ] Chat: Server-Status-Awareness (Docker-Daten)
-- [ ] Health: SMART, Disk-Temps via Unraid API
-- [ ] Benachrichtigungen/Alerts
-- [ ] Mobile-Optimierung
-- [ ] Zentraler Logs Viewer Verbesserungen
+### Phase 4 — Kiosk-/Zimmer-Tablet-Modus
+- [ ] Kiosk-Modus / Vollbild für Zimmer-Tablets
+- [ ] Vorlagen (Gute Nacht, Aufstehen, Lernen)
+- [ ] Kindermodus mit vereinfachter UI
 
 ## API Endpoints
-- Auth: POST /login, GET /me, POST /logout
-- Services: GET /, POST /{id}/link, DELETE /{id}/link
-- Health: GET /, /system, /docker, /services
-- Admin: users CRUD, GET/PUT settings
-- Chat: POST /, GET /sessions, GET /history/{sid}, DELETE /sessions/{sid}
+- Auth: POST /login, GET /me
+- Smart Home: GET/POST /smarthome/rooms, GET/POST /smarthome/devices, GET/PUT /smarthome/permissions, POST /smarthome/sync, POST /smarthome/control, GET /smarthome/dashboard
+- Health: GET /system, /docker, /services
+- Chat: POST /, GET /sessions
 - Weather: GET /
-- Dashboard: GET /stats, Logs: GET /
+- Admin: users CRUD, settings

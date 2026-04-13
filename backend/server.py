@@ -33,6 +33,8 @@ except Exception:
     docker_client = None
     DOCKER_AVAILABLE = False
 
+import smarthome
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -94,7 +96,11 @@ async def require_admin(request: Request) -> dict:
 class UserRole(str, Enum):
     SUPERADMIN = "superadmin"
     ADMIN = "admin"
+    ERWACHSENER = "erwachsener"
     USER = "user"
+    KIND = "kind"
+    GAST = "gast"
+    WANDTABLET = "wandtablet"
     READONLY = "readonly"
 
 class ThemeType(str, Enum):
@@ -165,6 +171,7 @@ async def lifespan(app: FastAPI):
         await db.logs.create_index("timestamp")
         await db.chat_messages.create_index("session_id")
         await db.chat_messages.create_index("user_id")
+        await smarthome.create_indexes()
     except Exception as e:
         logger.warning(f"Index creation failed: {e}")
     
@@ -1157,3 +1164,7 @@ async def root():
     return {"message": "Aria Dashboard API", "version": "2.0"}
 
 app.include_router(api_router)
+
+# Initialize Smart Home module (after all functions are defined)
+smarthome.init(db, get_current_user, require_admin, get_ha_settings)
+app.include_router(smarthome.router)

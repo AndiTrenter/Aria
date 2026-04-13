@@ -16,6 +16,7 @@ const LcarsLayout = ({ children }) => {
 
   const navItems = [
     { path: "/", shortLabel: "DASH" },
+    { path: "/smarthome", shortLabel: "HOME" },
     { path: "/health", shortLabel: "HEALTH" },
     { path: "/chat", shortLabel: "CHAT" },
     { path: "/weather", shortLabel: "WETTER" },
@@ -23,6 +24,7 @@ const LcarsLayout = ({ children }) => {
     { path: "/logs", shortLabel: "LOGS" },
   ];
   if (user?.role === "admin" || user?.role === "superadmin") {
+    navItems.push({ path: "/smarthome/admin", shortLabel: "SH-ADMIN" });
     navItems.push({ path: "/admin", shortLabel: "ADMIN" });
   }
 
