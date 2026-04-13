@@ -78,14 +78,51 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [x] Backend-Modul: `/app/backend/automations.py`
 - [x] Frontend: `/app/frontend/src/pages/Automations.jsx`
 
-### Phase 4 — Kiosk-/Zimmer-Tablet-Modus
-- [ ] Kiosk-Modus / Vollbild für Zimmer-Tablets
-- [ ] Vorlagen (Gute Nacht, Aufstehen, Lernen)
-- [ ] Kindermodus mit vereinfachter UI
+### Phase 4 — Kiosk-/Zimmer-Tablet-Modus (DONE 2026-04-13)
+- [x] Kiosk-Modus / Vollbild für Zimmer-Tablets (`/kiosk`)
+  - Vollbild-Layout ohne LCARS-Sidebar
+  - Live-Uhr mit Datum (deutsch)
+  - Geräte-Grid mit Touch-optimierten Buttons
+  - Szenen-Buttons für Raum-Aktionen
+  - Auto-Refresh der Gerätezustände (8s)
+  - Admin-Vorschau via `/kiosk?profile=xxx`
+  - Profil-Selektor für Admins ohne eigenes Profil
+- [x] Vorlagen (Gute Nacht, Aufstehen, Lernen, Spielen, Filmabend)
+  - 5 Default-Szenen-Templates mit Icons
+  - Domain-basiertes Geräte-Matching (Filter)
+  - Szenen-Ausführung mit HA API + Rechteprüfung
+- [x] Kindermodus mit vereinfachter UI
+  - Größere Buttons/Texte (min-h-140px, text-base)
+  - Freundliche Überschrift "Was möchtest du tun?"
+  - Kein Exit-Button (Kind kann Kiosk nicht verlassen)
+  - Mikrofon-Button ausgeblendet
+- [x] Smart Home Admin: Profile-Tab (CRUD)
+  - Profil erstellen (Name, Raum, Benutzer, Kiosk/Kindermodus)
+  - Profilliste mit KIOSK/KIND Badges
+  - Vorschau-Link mit Profil-ID
+  - Profil löschen
+  - Kiosk-Modus Anleitung (4 Schritte)
+- [x] Backend: `/api/smarthome/profiles` (CRUD), `/api/smarthome/my-profile`, `/api/smarthome/scene-templates`, `/api/smarthome/execute-scene`
+
+## Offene Aufgaben
+
+### P1 — Graceful Handling Offline Home Assistant
+- [ ] UI zeigt sauberen Offline-Status statt Fehler wenn HA nicht erreichbar
+- [ ] Sync-Button disabled mit Hinweis
+- [ ] Smart Home Tab: "HA nicht verbunden" Overlay statt Crash
+
+### P2 — Mobile-Optimierungen
+- [ ] Smart Home + Admin UIs für Touch/Mobile optimieren
+- [ ] Responsive Layouts für kleinere Bildschirme
+
+### P3 — SMART/Disk-Temperaturen
+- [ ] Disk-Temperaturen im System Health diagnostik
 
 ## API Endpoints
 - Auth: POST /login, GET /me
 - Smart Home: GET/POST /smarthome/rooms, GET/POST /smarthome/devices, GET/PUT /smarthome/permissions, POST /smarthome/sync, POST /smarthome/control, GET /smarthome/dashboard
+- Profiles: GET/POST/PUT/DELETE /smarthome/profiles, GET /smarthome/my-profile, GET /smarthome/scene-templates, POST /smarthome/execute-scene
+- Automations: GET/POST /automations, PUT /automations/{id}/approve
 - Health: GET /system, /docker, /services
 - Chat: POST /, GET /sessions
 - Weather: GET /
