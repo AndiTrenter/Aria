@@ -88,6 +88,9 @@ const Admin = () => {
   const [haUrl, setHaUrl] = useState("");
   const [haToken, setHaToken] = useState("");
   const [haStatus, setHaStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState(null);
+  const [haTesting, setHaTesting] = useState(false);
 
   const isLcars = theme === "startrek";
   const cardClass = isLcars ? "lcars-card" : "disney-card";
@@ -123,10 +126,21 @@ const Admin = () => {
   };
 
   const checkHaStatus = async () => {
+    setHaTesting(true);
     try {
       const { data } = await axios.get(`${API}/ha/status`);
       setHaStatus(data);
-    } catch { setHaStatus(null); }
+      if (data.connected) {
+        toast.success("Home Assistant verbunden!");
+      } else {
+        toast.error(data.message || "Home Assistant nicht erreichbar");
+      }
+    } catch (e) {
+      setHaStatus(null);
+      toast.error("Verbindungstest fehlgeschlagen");
+    } finally {
+      setHaTesting(false);
+    }
   };
 
   useEffect(() => { checkHaStatus(); }, [settings]);
@@ -284,13 +298,36 @@ const Admin = () => {
     if (weatherApiKey) payload.weather_api_key = weatherApiKey;
     if (haUrl) payload.ha_url = haUrl;
     if (haToken) payload.ha_token = haToken;
-    if (Object.keys(payload).length === 0) return toast.error("Keine Änderungen");
+    if (Object.keys(payload).length === 0) {
+      toast.error("Keine Änderungen eingegeben");
+      setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
+      return;
+    }
+    setSaving(true);
+    setSaveResult(null);
     try {
       await axios.put(`${API}/admin/settings`, payload);
-      toast.success("Gespeichert");
+      const saved = [];
+      if (payload.openai_api_key) saved.push("OpenAI Key");
+      if (payload.weather_city) saved.push("Standort");
+      if (payload.weather_api_key) saved.push("Wetter Key");
+      if (payload.ha_url) saved.push("HA URL");
+      if (payload.ha_token) saved.push("HA Token");
+      const msg = `Gespeichert: ${saved.join(", ")}`;
+      toast.success(msg);
+      setSaveResult({ type: "success", msg });
       setApiKeyInput(""); setWeatherApiKey(""); setWeatherCity(""); setHaUrl(""); setHaToken("");
-      fetchAll(); checkHaStatus();
-    } catch { toast.error("Fehler beim Speichern"); }
+      fetchAll();
+      if (payload.ha_url || payload.ha_token) {
+        setTimeout(() => checkHaStatus(), 500);
+      }
+    } catch (e) {
+      const msg = "Fehler beim Speichern der Einstellungen";
+      toast.error(msg);
+      setSaveResult({ type: "error", msg });
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ==================== DERIVED DATA ====================
@@ -852,12 +889,29 @@ const Admin = () => {
                 {settings.ha_token || "Token nicht konfiguriert"}
               </div>
               <input type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJhb..." className={`${inputClass} w-full`} data-testid="ha-token-input" />
-              <button onClick={checkHaStatus} className={`${btnClass} text-xs`} data-testid="ha-test-button">{isLcars ? "TESTEN" : "Verbindung testen"}</button>
+              <button onClick={checkHaStatus} disabled={haTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="ha-test-button">
+                {haTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
+                {haTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
+              </button>
+              {haStatus && !haTesting && (
+                <div className={`p-3 rounded-lg text-sm font-bold ${haStatus.connected ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`} data-testid="ha-test-result">
+                  {haStatus.connected ? "Verbindung erfolgreich!" : `Nicht erreichbar: ${haStatus.message || "Offline"}`}
+                </div>
+              )}
             </div>
           </div>
 
-          <button onClick={handleSaveSettings} className={`${btnClass} w-full`} data-testid="save-all-settings-button">
-            {isLcars ? "ALLE EINSTELLUNGEN SPEICHERN" : "Alle Einstellungen speichern"}
+          {/* Save Result Banner */}
+          {saveResult && (
+            <div className={`p-4 rounded-lg text-sm font-bold text-center ${saveResult.type === "success" ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`} data-testid="save-result-banner">
+              {saveResult.type === "success" ? <Check size={18} weight="bold" className="inline mr-2" /> : <X size={18} weight="bold" className="inline mr-2" />}
+              {saveResult.msg}
+            </div>
+          )}
+
+          <button onClick={handleSaveSettings} disabled={saving} className={`${btnClass} w-full flex items-center justify-center gap-2`} data-testid="save-all-settings-button">
+            {saving ? <ArrowClockwise size={16} className="animate-spin" /> : null}
+            {saving ? (isLcars ? "SPEICHERE..." : "Speichere...") : (isLcars ? "ALLE EINSTELLUNGEN SPEICHERN" : "Alle Einstellungen speichern")}
           </button>
         </div>
       )}
