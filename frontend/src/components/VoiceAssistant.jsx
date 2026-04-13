@@ -58,7 +58,18 @@ const VoiceAssistant = () => {
       
       if (isHaCommand) {
         try {
-          const { data: haResult } = await axios.post(`${API}/ha/command`, { command: text });
+          const { data: haResult } = await axios.post(`${API}/ha/command`, { command: text, source: "voice" });
+          if (haResult.action === "denied") {
+            setError(haResult.message);
+            speak(haResult.message);
+            return;
+          }
+          if (haResult.action === "pin_required") {
+            const msg = "Dieses Gerät ist als kritisch markiert. Bitte verwende die App um deinen PIN einzugeben.";
+            setError(msg);
+            speak(msg);
+            return;
+          }
           if (haResult.success) {
             setResponse(haResult.message);
             speak(haResult.message);

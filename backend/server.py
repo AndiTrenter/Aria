@@ -262,6 +262,40 @@ async def update_theme(request: Request, theme: str = Body(..., embed=True)):
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"theme": theme}})
     return {"theme": theme}
 
+@api_router.put("/auth/pin")
+async def set_pin(request: Request, body: dict = Body(...)):
+    """Set or update user PIN for critical device access."""
+    user = await get_current_user(request)
+    pin = body.get("pin", "")
+    if not pin or len(pin) < 4 or len(pin) > 8 or not pin.isdigit():
+        raise HTTPException(400, "PIN muss 4-8 Ziffern haben")
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"pin": pin}})
+    return {"success": True, "message": "PIN gesetzt"}
+
+@api_router.post("/auth/verify-pin")
+async def verify_pin(request: Request, body: dict = Body(...)):
+    """Verify user PIN."""
+    user = await get_current_user(request)
+    pin = body.get("pin", "")
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not user_doc or not user_doc.get("pin"):
+        return {"valid": False, "message": "Kein PIN gesetzt"}
+    return {"valid": pin == user_doc["pin"]}
+
+# ==================== AUDIT LOG ====================
+
+@api_router.get("/audit-log")
+async def get_audit_log(request: Request, limit: int = 100, log_type: str = None):
+    """Get Smart Home audit log."""
+    await require_admin(request)
+    query = {}
+    if log_type:
+        query["type"] = log_type
+    else:
+        query["type"] = {"$in": ["ha_command", "ha_denied", "device_control", "permission_changed", "room_created", "ha_sync"]}
+    logs = await db.logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    return logs
+
 # ==================== ADMIN - USERS ====================
 
 @api_router.get("/admin/users")
@@ -750,8 +784,8 @@ async def chat_route(message: ChatMessage, request: Request):
         ha_url, ha_token = await get_ha_settings()
         if ha_url and ha_token:
             try:
-                ha_result = await ha_command(request, {"command": message.message})
-                if ha_result.get("success"):
+                ha_result = await ha_command(request, {"command": message.message, "source": "chat"})
+                if ha_result.get("success") or ha_result.get("action") == "denied":
                     session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
                     now = datetime.now(timezone.utc).isoformat()
                     await db.chat_messages.insert_many([
@@ -1060,10 +1094,11 @@ async def ha_entities(request: Request):
 
 @api_router.post("/ha/command")
 async def ha_command(request: Request, body: dict = Body(...)):
-    """Execute a Home Assistant command parsed from natural language via GPT."""
+    """Execute a Home Assistant command with permission checks."""
     user = await get_current_user(request)
     url, token = await get_ha_settings()
     command_text = body.get("command", "")
+    pin = body.get("pin", "")
     
     if not url or not token:
         return {"success": False, "message": "Home Assistant nicht konfiguriert. Bitte URL und Token in den Admin-Einstellungen hinterlegen."}
@@ -1072,8 +1107,10 @@ async def ha_command(request: Request, body: dict = Body(...)):
     if not api_key or not OPENAI_AVAILABLE:
         return {"success": False, "message": "OpenAI API-Key fehlt. Wird benötigt um Sprachbefehle zu verstehen."}
     
-    # Get available entities for context
-    entities = []
+    is_admin = user["role"] in ["superadmin", "admin"]
+    
+    # Get entities filtered by user permissions
+    all_entities = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as http_client:
             resp = await http_client.get(f"{url}/api/states", headers={"Authorization": f"Bearer {token}"})
@@ -1082,11 +1119,26 @@ async def ha_command(request: Request, body: dict = Body(...)):
                     eid = e.get("entity_id", "")
                     domain = eid.split(".")[0] if "." in eid else ""
                     if domain in ("light", "switch", "climate", "cover", "media_player", "scene", "script", "fan", "lock", "vacuum", "automation"):
-                        entities.append({"id": eid, "name": e.get("attributes", {}).get("friendly_name", eid), "state": e.get("state")})
+                        all_entities.append({"id": eid, "name": e.get("attributes", {}).get("friendly_name", eid), "state": e.get("state")})
     except Exception as e:
         logger.warning(f"Could not fetch HA entities: {e}")
     
-    entity_list = "\n".join([f"- {e['id']} ({e['name']}, aktuell: {e['state']})" for e in entities[:80]])
+    # Filter entities by user permissions (voice_allowed)
+    if not is_admin:
+        from smarthome import get_user_permissions
+        perms = await get_user_permissions(user["id"])
+        allowed_entities = []
+        for ent in all_entities:
+            perm = perms.get(ent["id"], {})
+            if perm.get("voice_allowed", False) or perm.get("controllable", False):
+                allowed_entities.append(ent)
+        
+        if not allowed_entities:
+            return {"success": False, "message": "Du hast keine Geräte freigegeben. Bitte den Admin kontaktieren."}
+    else:
+        allowed_entities = all_entities
+    
+    entity_list = "\n".join([f"- {e['id']} ({e['name']}, aktuell: {e['state']})" for e in allowed_entities[:80]])
     
     # Use GPT to parse the command
     try:
@@ -1096,7 +1148,7 @@ async def ha_command(request: Request, body: dict = Body(...)):
             messages=[
                 {"role": "system", "content": f"""Du bist ein Smart Home Controller. Analysiere den Benutzerbefehl und gib eine JSON-Antwort zurück.
 
-Verfügbare Geräte:
+Verfügbare Geräte (NUR diese darf der Benutzer steuern):
 {entity_list}
 
 Antworte NUR mit einem JSON-Objekt in diesem Format:
@@ -1109,7 +1161,9 @@ Für Statusabfragen:
 {{"action": "query", "entity_id": "light.wohnzimmer", "response_text": "Das Licht im Wohnzimmer ist aktuell an."}}
 
 Services: turn_on, turn_off, toggle, set_temperature, open_cover, close_cover, lock, unlock
-Wenn der Befehl unklar ist oder kein passendes Gerät gefunden wird:
+WICHTIG: Wenn das Gerät NICHT in der Liste steht, antworte mit:
+{{"action": "denied", "response_text": "Du hast keine Berechtigung für dieses Gerät."}}
+Wenn der Befehl unklar ist:
 {{"action": "unknown", "response_text": "Ich konnte kein passendes Gerät finden..."}}"""},
                 {"role": "user", "content": command_text}
             ],
@@ -1118,7 +1172,6 @@ Wenn der Befehl unklar ist oder kein passendes Gerät gefunden wird:
         
         import json
         raw = parse_response.choices[0].message.content.strip()
-        # Extract JSON from markdown code blocks if present
         if "```" in raw:
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -1127,14 +1180,41 @@ Wenn der Befehl unklar ist oder kein passendes Gerät gefunden wird:
         
         parsed = json.loads(raw)
         
-        if parsed.get("action") == "unknown" or parsed.get("action") == "query":
-            return {"success": True, "message": parsed.get("response_text", ""), "action": parsed.get("action")}
+        if parsed.get("action") in ("unknown", "query", "denied"):
+            # Log denied attempts
+            if parsed.get("action") == "denied":
+                await db.logs.insert_one({"type": "ha_denied", "user_id": user["id"], "user_email": user.get("email", ""), "command": command_text, "timestamp": datetime.now(timezone.utc).isoformat()})
+            return {"success": parsed.get("action") != "denied", "message": parsed.get("response_text", ""), "action": parsed.get("action")}
         
         if parsed.get("action") == "call_service":
             domain = parsed.get("domain", "")
             service = parsed.get("service", "")
             entity_id = parsed.get("entity_id", "")
             data = parsed.get("data", {})
+            
+            # Server-side permission check (hard enforcement)
+            if not is_admin:
+                from smarthome import check_device_access
+                has_access = await check_device_access(user, entity_id, "controllable")
+                if not has_access:
+                    await db.logs.insert_one({"type": "ha_denied", "user_id": user["id"], "user_email": user.get("email", ""), "entity_id": entity_id, "command": command_text, "reason": "no_permission", "timestamp": datetime.now(timezone.utc).isoformat()})
+                    return {"success": False, "message": f"Zugriff verweigert. Du hast keine Berechtigung für {entity_id}.", "action": "denied"}
+            
+            # Critical device check
+            from smarthome import db as sh_db
+            device = await db.devices.find_one({"entity_id": entity_id}, {"_id": 0})
+            if device and device.get("critical"):
+                if not is_admin:
+                    # Check if user has a PIN set
+                    user_doc = await db.users.find_one({"email": user["email"]})
+                    user_pin = user_doc.get("pin") if user_doc else None
+                    if user_pin:
+                        if not pin or pin != user_pin:
+                            await db.logs.insert_one({"type": "ha_denied", "user_id": user["id"], "user_email": user.get("email", ""), "entity_id": entity_id, "command": command_text, "reason": "pin_required", "timestamp": datetime.now(timezone.utc).isoformat()})
+                            return {"success": False, "message": "Dieses Gerät ist als kritisch markiert. Bitte PIN eingeben.", "action": "pin_required", "entity_id": entity_id}
+                    else:
+                        await db.logs.insert_one({"type": "ha_denied", "user_id": user["id"], "user_email": user.get("email", ""), "entity_id": entity_id, "command": command_text, "reason": "critical_no_admin", "timestamp": datetime.now(timezone.utc).isoformat()})
+                        return {"success": False, "message": "Dieses Gerät ist als kritisch markiert. Nur Admins dürfen es steuern.", "action": "denied"}
             
             service_data = {"entity_id": entity_id}
             service_data.update(data)
@@ -1146,7 +1226,16 @@ Wenn der Befehl unklar ist oder kein passendes Gerät gefunden wird:
                     json=service_data
                 )
                 if resp.status_code in (200, 201):
-                    await db.logs.insert_one({"type": "ha_command", "user_id": str(user.get("_id", "")), "command": command_text, "entity": entity_id, "service": f"{domain}.{service}", "timestamp": datetime.now(timezone.utc).isoformat()})
+                    await db.logs.insert_one({
+                        "type": "ha_command",
+                        "user_id": user["id"],
+                        "user_email": user.get("email", ""),
+                        "command": command_text,
+                        "entity_id": entity_id,
+                        "service": f"{domain}.{service}",
+                        "source": body.get("source", "chat"),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
                     return {"success": True, "message": parsed.get("response_text", f"{service} für {entity_id} ausgeführt."), "action": "executed"}
                 else:
                     return {"success": False, "message": f"Home Assistant Fehler: {resp.status_code} - {resp.text[:200]}"}

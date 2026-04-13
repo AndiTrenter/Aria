@@ -50,10 +50,15 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 
 ## Offene Phasen (Lastenheft)
 
-### Phase 2 — Sprachsteuerung + Rechteprüfung
-- [ ] Sprachbefehle gegen Benutzer-Rechte prüfen (vor Ausführung)
-- [ ] Kritische Geräte: PIN-Abfrage
-- [ ] Audit-Log für alle Smart-Home-Aktionen
+### Phase 2 — Sprachsteuerung + Rechteprüfung (DONE 2026-04-13)
+- [x] Sprachbefehle werden gegen Benutzer-Rechte geprüft (voice_allowed + controllable)
+- [x] GPT bekommt NUR freigegebene Geräte als Kontext (Nicht-Admins)
+- [x] Server-seitige Doppel-Prüfung: GPT-Parse + Hard-Check in ha_command
+- [x] Kritische Geräte: PIN-System (4-8 Ziffern, im Konto-Bereich setzbar)
+- [x] PIN-Dialog im Smart Home Tab für kritische Geräte
+- [x] Voice Assistant: "Zugriff verweigert" + "PIN erforderlich" Antworten
+- [x] Audit-Log Tab in SH-Admin (ha_command, ha_denied, device_control, permission_changed, ha_sync)
+- [x] Alle Zugriffe (erlaubt + verweigert) werden geloggt
 
 ### Phase 3 — Automations-Builder
 - [ ] Sprachgesteuerte Automations-Erstellung via GPT → HA YAML

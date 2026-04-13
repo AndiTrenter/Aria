@@ -42,6 +42,24 @@ const Account = () => {
   const btnClass = isLcars ? "lcars-button" : "disney-button";
   const inputClass = isLcars ? "lcars-input" : "disney-input";
 
+  const [pinInput, setPinInput] = useState("");
+  const [pinSaved, setPinSaved] = useState(false);
+
+  const handleSavePin = async () => {
+    if (!pinInput || pinInput.length < 4 || pinInput.length > 8 || !/^\d+$/.test(pinInput)) {
+      toast.error("PIN muss 4-8 Ziffern haben");
+      return;
+    }
+    try {
+      await axios.put(`${API}/auth/pin`, { pin: pinInput });
+      toast.success("PIN gespeichert");
+      setPinInput("");
+      setPinSaved(true);
+    } catch (e) {
+      toast.error("Fehler beim Speichern");
+    }
+  };
+
   return (
     <div className="p-6 max-w-3xl" data-testid="account-page">
       {/* Page Title */}
@@ -88,6 +106,30 @@ const Account = () => {
             <div className="text-2xl mb-2">&#127984;</div>
             <div className="font-bold">Disney</div>
             <div className="text-xs text-gray-400">Magical Theme</div>
+          </button>
+        </div>
+      </div>
+
+      {/* PIN for critical devices */}
+      <div className={`${cardClass} mb-6`}>
+        <h3 className={isLcars ? "text-sm tracking-widest mb-4" : "font-bold mb-4"}>
+          {isLcars ? "SICHERHEITS-PIN" : "Sicherheits-PIN"}
+        </h3>
+        <p className={`text-xs mb-3 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+          {isLcars ? "PIN FÜR KRITISCHE SMART HOME GERÄTE (SCHLÖSSER, ALARM, ETC.)" : "PIN für kritische Smart Home Geräte (Schlösser, Alarm, etc.)"}
+        </p>
+        <div className="flex gap-3">
+          <input
+            type="password"
+            placeholder="4-8 Ziffern"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            className={`${inputClass} w-40`}
+            maxLength={8}
+            data-testid="pin-input"
+          />
+          <button onClick={handleSavePin} className={btnClass} data-testid="pin-save">
+            {isLcars ? "PIN SETZEN" : "PIN setzen"}
           </button>
         </div>
       </div>

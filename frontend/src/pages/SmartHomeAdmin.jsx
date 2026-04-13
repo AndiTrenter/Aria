@@ -40,6 +40,8 @@ const SmartHomeAdmin = () => {
   const [editingDevice, setEditingDevice] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
+  const [auditLogs, setAuditLogs] = useState([]);
+
   const isLcars = theme === "startrek";
   const cardClass = isLcars ? "lcars-card" : "disney-card";
   const btnClass = isLcars ? "lcars-button" : "disney-button";
@@ -56,6 +58,13 @@ const SmartHomeAdmin = () => {
       setDevices(devicesRes.data);
       setUsers(usersRes.data);
     } catch (e) { console.error(e); }
+  };
+
+  const fetchAuditLog = async () => {
+    try {
+      const { data } = await axios.get(`${API}/audit-log?limit=50`);
+      setAuditLogs(data);
+    } catch {}
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -153,6 +162,7 @@ const SmartHomeAdmin = () => {
     { id: "rooms", label: isLcars ? "RÄUME" : "Räume" },
     { id: "devices", label: isLcars ? "GERÄTE" : "Geräte" },
     { id: "permissions", label: isLcars ? "FREIGABEN" : "Freigaben" },
+    { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
   ];
 
   const roomDevices = selectedRoom ? devices.filter(d => d.room_id === selectedRoom) : [];
@@ -450,6 +460,66 @@ const SmartHomeAdmin = () => {
               {isLcars ? "BENUTZER AUSWÄHLEN" : "Wähle einen Benutzer aus"}
             </div>
           )}
+        </div>
+      )}
+      {/* ==================== AUDIT TAB ==================== */}
+      {activeTab === "audit" && (
+        <div>
+          <div className="flex items-center gap-3 mb-4">
+            <span className={`text-sm ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+              {isLcars ? "SMART HOME AKTIVITÄTSPROTOKOLL" : "Smart Home Aktivitätsprotokoll"}
+            </span>
+            <div className="flex-1" />
+            <button onClick={fetchAuditLog} className={`${btnClass} py-1 px-3 text-xs`} data-testid="audit-refresh">
+              <ArrowClockwise size={14} />
+            </button>
+          </div>
+          {auditLogs.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <button onClick={fetchAuditLog} className={btnClass}>
+                {isLcars ? "LOGS LADEN" : "Logs laden"}
+              </button>
+            </div>
+          )}
+          <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            {auditLogs.map((log, i) => (
+              <div key={i} className={`flex items-center gap-3 p-3 rounded-lg text-sm ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20" : "bg-purple-950/30 border border-purple-800/20"}`} data-testid={`audit-entry-${i}`}>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  log.type === "ha_command" || log.type === "device_control" ? "bg-green-500"
+                  : log.type === "ha_denied" ? "bg-red-500"
+                  : log.type === "ha_sync" ? "bg-blue-500"
+                  : log.type === "permission_changed" ? "bg-yellow-500"
+                  : "bg-gray-500"
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-bold text-xs ${
+                      log.type === "ha_denied" ? "text-red-400" : isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200"
+                    }`}>
+                      {log.type === "ha_command" ? "Befehl ausgeführt"
+                        : log.type === "ha_denied" ? "Zugriff verweigert"
+                        : log.type === "device_control" ? "Gerät gesteuert"
+                        : log.type === "permission_changed" ? "Freigabe geändert"
+                        : log.type === "room_created" ? "Raum erstellt"
+                        : log.type === "ha_sync" ? "HA Sync"
+                        : log.type}
+                    </span>
+                    {log.user_email && <span className="text-xs text-gray-500">{log.user_email}</span>}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {log.entity_id && <span>{log.entity_id} </span>}
+                    {log.command && <span>"{log.command}" </span>}
+                    {log.service && <span>({log.service}) </span>}
+                    {log.reason && <span className="text-red-400">[{log.reason}] </span>}
+                    {log.imported && <span>{log.imported} Geräte importiert</span>}
+                  </div>
+                </div>
+                <div className="text-[10px] text-gray-600 whitespace-nowrap">
+                  {log.timestamp ? new Date(log.timestamp).toLocaleString('de-DE') : ""}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -177,14 +177,16 @@ const SmartHome = () => {
     }
   };
 
-  const handleControl = async (entityId, service, data) => {
+  const [pinDialog, setPinDialog] = useState(null); // {entityId, service, data}
+  const [pinInput, setPinInput] = useState("");
+
+  const handleControl = async (entityId, service, data, pin) => {
     try {
       const { data: result } = await axios.post(`${API}/smarthome/control`, {
-        entity_id: entityId, service, data
+        entity_id: entityId, service, data, pin
       });
       if (result.success) {
         toast.success(result.message);
-        // Quick state refresh
         setTimeout(async () => {
           await axios.post(`${API}/smarthome/sync/states`);
           fetchDashboard();
@@ -193,8 +195,22 @@ const SmartHome = () => {
         toast.error(result.message);
       }
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Steuerung fehlgeschlagen");
+      const detail = e.response?.data?.detail || "Steuerung fehlgeschlagen";
+      if (detail.includes("Kritisches Gerät") || detail.includes("kritisch")) {
+        // Show PIN dialog
+        setPinDialog({ entityId, service, data });
+        setPinInput("");
+      } else {
+        toast.error(detail);
+      }
     }
+  };
+
+  const handlePinSubmit = async () => {
+    if (!pinDialog) return;
+    await handleControl(pinDialog.entityId, pinDialog.service, pinDialog.data, pinInput);
+    setPinDialog(null);
+    setPinInput("");
   };
 
   const cardClass = isLcars ? "lcars-card" : "disney-card";
@@ -331,6 +347,41 @@ const SmartHome = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* PIN Dialog */}
+      {pinDialog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" data-testid="pin-dialog">
+          <div className={`${isLcars ? "lcars-card" : "disney-card"} p-8 max-w-sm w-full mx-4`}>
+            <div className="flex items-center gap-3 mb-4">
+              <Lightning size={24} className={isLcars ? "text-[var(--lcars-salmon)]" : "text-red-400"} />
+              <h3 className={`font-bold ${isLcars ? "text-[var(--lcars-orange)] tracking-wider text-sm" : "text-purple-200"}`}>
+                {isLcars ? "KRITISCHES GERÄT" : "Kritisches Gerät"}
+              </h3>
+            </div>
+            <p className={`text-sm mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+              Dieses Gerät benötigt eine PIN-Bestätigung.
+            </p>
+            <input
+              type="password"
+              placeholder="PIN eingeben..."
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              className={`${isLcars ? "lcars-input" : "disney-input"} w-full mb-4`}
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+              data-testid="pin-dialog-input"
+            />
+            <div className="flex gap-3">
+              <button onClick={handlePinSubmit} className={`flex-1 ${isLcars ? "lcars-button" : "disney-button"}`} data-testid="pin-dialog-confirm">
+                {isLcars ? "BESTÄTIGEN" : "Bestätigen"}
+              </button>
+              <button onClick={() => { setPinDialog(null); setPinInput(""); }} className="flex-1 px-4 py-2 rounded bg-gray-700 text-gray-300 hover:bg-gray-600">
+                {isLcars ? "ABBRECHEN" : "Abbrechen"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

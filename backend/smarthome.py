@@ -454,7 +454,13 @@ async def control_device(request: Request, body: dict = Body(...)):
     if device.get("critical"):
         pin = body.get("pin")
         if user["role"] not in ["superadmin", "admin"]:
-            raise HTTPException(403, "Kritisches Gerät — nur Admin darf steuern")
+            user_doc = await db.users.find_one({"email": user["email"]})
+            user_pin = user_doc.get("pin") if user_doc else None
+            if user_pin:
+                if not pin or pin != user_pin:
+                    raise HTTPException(403, "Kritisches Gerät — PIN erforderlich")
+            else:
+                raise HTTPException(403, "Kritisches Gerät — nur Admin darf steuern oder PIN setzen")
     
     ha_url, ha_token = await get_ha_settings()
     if not ha_url or not ha_token:
