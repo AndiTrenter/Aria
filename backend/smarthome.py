@@ -686,6 +686,7 @@ async def smarthome_dashboard(request: Request):
     all_devices = await db.devices.find({}, {"_id": 0}).to_list(500)
     
     is_admin = user["role"] in ["superadmin", "admin"]
+    assigned_rooms = user.get("assigned_rooms", [])
     perms = {} if is_admin else await get_user_permissions(user["id"])
     
     # Build room-device structure
@@ -694,20 +695,30 @@ async def smarthome_dashboard(request: Request):
     
     for dev in all_devices:
         eid = dev["entity_id"]
-        
-        if not is_admin:
-            perm = perms.get(eid, {})
-            if not perm.get("visible", False):
-                continue
-            dev["_perm"] = {
-                "controllable": perm.get("controllable", False),
-                "automation_allowed": perm.get("automation_allowed", False),
-                "voice_allowed": perm.get("voice_allowed", False),
-            }
-        else:
-            dev["_perm"] = {"controllable": True, "automation_allowed": True, "voice_allowed": True}
-        
         rid = dev.get("room_id")
+        
+        if is_admin:
+            dev["_perm"] = {"controllable": True, "automation_allowed": True, "voice_allowed": True}
+        else:
+            # Room assignment grants visibility: user sees devices in assigned rooms
+            if rid and assigned_rooms and rid in assigned_rooms:
+                perm = perms.get(eid, {})
+                dev["_perm"] = {
+                    "controllable": perm.get("controllable", True),
+                    "automation_allowed": perm.get("automation_allowed", False),
+                    "voice_allowed": perm.get("voice_allowed", True),
+                }
+            elif perms.get(eid, {}).get("visible", False):
+                # Fallback: explicit device-level permission
+                perm = perms[eid]
+                dev["_perm"] = {
+                    "controllable": perm.get("controllable", False),
+                    "automation_allowed": perm.get("automation_allowed", False),
+                    "voice_allowed": perm.get("voice_allowed", False),
+                }
+            else:
+                continue
+        
         if rid:
             if rid not in room_map:
                 room_map[rid] = []
@@ -717,6 +728,10 @@ async def smarthome_dashboard(request: Request):
     
     result_rooms = []
     for room in rooms:
+        if not is_admin and assigned_rooms and room["id"] not in assigned_rooms:
+            # Skip rooms not assigned to user (unless they have device-level perms)
+            if room["id"] not in room_map:
+                continue
         devices = room_map.get(room["id"], [])
         if is_admin or devices:
             room["devices"] = devices

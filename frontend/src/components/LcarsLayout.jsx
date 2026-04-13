@@ -14,18 +14,27 @@ const LcarsLayout = ({ children }) => {
     return () => clearInterval(timer);
   }, []);
 
-  const navItems = [
-    { path: "/", shortLabel: "DASH" },
-    { path: "/smarthome", shortLabel: "HOME" },
-    { path: "/automations", shortLabel: "AUTO" },
-    { path: "/health", shortLabel: "HEALTH" },
-    { path: "/chat", shortLabel: "CHAT" },
-    { path: "/weather", shortLabel: "WETTER" },
-    { path: "/account", shortLabel: "KONTO" },
-    { path: "/logs", shortLabel: "LOGS" },
-  ];
-  if (user?.role === "admin" || user?.role === "superadmin") {
-    navItems.push({ path: "/smarthome/admin", shortLabel: "SH-ADMIN" });
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const visibleTabs = user?.visible_tabs || ["dash", "home", "chat", "weather", "account"];
+
+  const TAB_MAP = {
+    dash: { path: "/", shortLabel: "DASH" },
+    home: { path: "/smarthome", shortLabel: "HOME" },
+    auto: { path: "/automations", shortLabel: "AUTO" },
+    health: { path: "/health", shortLabel: "HEALTH" },
+    chat: { path: "/chat", shortLabel: "CHAT" },
+    weather: { path: "/weather", shortLabel: "WETTER" },
+    account: { path: "/account", shortLabel: "KONTO" },
+    logs: { path: "/logs", shortLabel: "LOGS" },
+  };
+
+  const navItems = [];
+  for (const tabId of ["dash", "home", "auto", "health", "chat", "weather", "account", "logs"]) {
+    if (isAdmin || visibleTabs.includes(tabId)) {
+      navItems.push(TAB_MAP[tabId]);
+    }
+  }
+  if (isAdmin) {
     navItems.push({ path: "/admin", shortLabel: "ADMIN" });
   }
 

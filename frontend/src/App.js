@@ -14,7 +14,6 @@ import Account from "@/pages/Account";
 import Chat from "@/pages/Chat";
 import Weather from "@/pages/Weather";
 import SmartHome from "@/pages/SmartHome";
-import SmartHomeAdmin from "@/pages/SmartHomeAdmin";
 import Automations from "@/pages/Automations";
 import KioskMode from "@/pages/KioskMode";
 import VoiceAssistant from "@/components/VoiceAssistant";
@@ -227,7 +226,6 @@ const AppRouter = () => {
         <Route path="/logs" element={<ProtectedRoute><LcarsLayout><Logs /></LcarsLayout></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><LcarsLayout><Account /></LcarsLayout></ProtectedRoute>} />
         <Route path="/smarthome" element={<ProtectedRoute><LcarsLayout><SmartHome /></LcarsLayout></ProtectedRoute>} />
-        <Route path="/smarthome/admin" element={<ProtectedRoute><LcarsLayout><SmartHomeAdmin /></LcarsLayout></ProtectedRoute>} />
         <Route path="/automations" element={<ProtectedRoute><LcarsLayout><Automations /></LcarsLayout></ProtectedRoute>} />
         <Route path="/kiosk" element={<ProtectedRoute><KioskMode /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />

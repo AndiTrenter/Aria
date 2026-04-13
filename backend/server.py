@@ -82,7 +82,7 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="User not found")
         if not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="User is deactivated")
-        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {})}
+        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS)}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -117,12 +117,17 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+ALL_TABS = ["dash", "home", "auto", "health", "chat", "weather", "account", "logs", "kiosk"]
+DEFAULT_TABS = ["dash", "home", "chat", "weather", "account"]
+
 class UserCreate(BaseModel):
     email: str
     password: str
     name: str
     role: UserRole = UserRole.USER
     theme: ThemeType = ThemeType.STARTREK
+    assigned_rooms: List[str] = []
+    visible_tabs: List[str] = []
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -131,6 +136,8 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     permissions: Optional[Dict[str, bool]] = None
     allowed_services: Optional[List[str]] = None
+    assigned_rooms: Optional[List[str]] = None
+    visible_tabs: Optional[List[str]] = None
 
 class ServiceLinkRequest(BaseModel):
     service_id: str
@@ -246,7 +253,7 @@ async def login(request: LoginRequest, response: Response):
     
     await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": datetime.now(timezone.utc).isoformat()})
     
-    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "access_token": access_token}
+    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "access_token": access_token}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -315,14 +322,15 @@ async def create_user(user_data: UserCreate, request: Request):
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
     
-    user_doc = {"email": user_data.email.lower(), "password_hash": hash_password(user_data.password), "name": user_data.name, "role": user_data.role.value, "theme": user_data.theme.value, "is_active": True, "allowed_services": [], "service_accounts": {}, "permissions": {"chat": True, "logs": False, "health": False, "admin": False}, "created_at": datetime.now(timezone.utc).isoformat()}
+    user_doc = {"email": user_data.email.lower(), "password_hash": hash_password(user_data.password), "name": user_data.name, "role": user_data.role.value, "theme": user_data.theme.value, "is_active": True, "allowed_services": [], "service_accounts": {}, "permissions": {"chat": True, "logs": False, "health": False, "admin": False}, "assigned_rooms": user_data.assigned_rooms, "visible_tabs": user_data.visible_tabs or DEFAULT_TABS, "created_at": datetime.now(timezone.utc).isoformat()}
     result = await db.users.insert_one(user_doc)
     return {"id": str(result.inserted_id), "email": user_data.email.lower(), "name": user_data.name, "role": user_data.role.value}
 
 @api_router.put("/admin/users/{user_id}")
-async def update_user(user_id: str, user_data: UserUpdate, request: Request):
+async def update_user(user_id: str, request: Request, body: dict = Body(...)):
     await require_admin(request)
-    update_fields = {k: v for k, v in user_data.model_dump().items() if v is not None}
+    allowed_fields = {"name", "role", "theme", "is_active", "permissions", "allowed_services", "assigned_rooms", "visible_tabs"}
+    update_fields = {k: v for k, v in body.items() if k in allowed_fields and v is not None}
     if not update_fields:
         raise HTTPException(status_code=400, detail="No update data")
     result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
