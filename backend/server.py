@@ -34,6 +34,7 @@ except Exception:
     DOCKER_AVAILABLE = False
 
 import smarthome
+import automations
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -172,6 +173,7 @@ async def lifespan(app: FastAPI):
         await db.chat_messages.create_index("session_id")
         await db.chat_messages.create_index("user_id")
         await smarthome.create_indexes()
+        await automations.create_indexes()
     except Exception as e:
         logger.warning(f"Index creation failed: {e}")
     
@@ -1257,3 +1259,7 @@ app.include_router(api_router)
 # Initialize Smart Home module (after all functions are defined)
 smarthome.init(db, get_current_user, require_admin, get_ha_settings)
 app.include_router(smarthome.router)
+
+# Initialize Automations module
+automations.init(db, get_current_user, require_admin, get_ha_settings, get_llm_api_key)
+app.include_router(automations.router)

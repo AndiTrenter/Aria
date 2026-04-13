@@ -60,10 +60,23 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [x] Audit-Log Tab in SH-Admin (ha_command, ha_denied, device_control, permission_changed, ha_sync)
 - [x] Alle Zugriffe (erlaubt + verweigert) werden geloggt
 
-### Phase 3 — Automations-Builder
-- [ ] Sprachgesteuerte Automations-Erstellung via GPT → HA YAML
-- [ ] Validierung: nur erlaubte Geräte, Sicherheitsklassifizierung
-- [ ] Freigabeworkflow (Modus A/B/C)
+### Phase 3 — Automations-Builder (DONE 2026-04-13)
+- [x] Sprachgesteuerte Automations-Erstellung via GPT → HA YAML
+  - Voice-Command-Input mit Beispiel-Vorschlägen
+  - GPT-4o parsed Befehl in strukturiertes Trigger/Actions Format
+  - Automatische HA YAML Generierung
+- [x] Validierung: nur erlaubte Geräte, Sicherheitsklassifizierung
+  - Prüft: Automation-Berechtigung pro Gerät, kritische Geräte, bereichsübergreifend
+  - Severity: ok / warning / blocked
+- [x] Freigabeworkflow (3 Modi)
+  - Modus A (Entwurf): User erstellt, sieht Preview + Validierung
+  - Modus B (Auto-Freigabe): Wenn alle Geräte erlaubt + nicht kritisch → auto-approved
+  - Modus C (Admin-Freigabe): Kritische/bereichsübergreifende Automationen → pending
+- [x] Admin kann Automationen genehmigen/ablehnen
+- [x] "In HA aktivieren" Button pushed Automation per HA API
+- [x] Automations-Seite mit Expand-Details (Trigger, Actions, YAML, Validation)
+- [x] Backend-Modul: `/app/backend/automations.py`
+- [x] Frontend: `/app/frontend/src/pages/Automations.jsx`
 
 ### Phase 4 — Kiosk-/Zimmer-Tablet-Modus
 - [ ] Kiosk-Modus / Vollbild für Zimmer-Tablets

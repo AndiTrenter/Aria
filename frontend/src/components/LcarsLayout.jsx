@@ -17,6 +17,7 @@ const LcarsLayout = ({ children }) => {
   const navItems = [
     { path: "/", shortLabel: "DASH" },
     { path: "/smarthome", shortLabel: "HOME" },
+    { path: "/automations", shortLabel: "AUTO" },
     { path: "/health", shortLabel: "HEALTH" },
     { path: "/chat", shortLabel: "CHAT" },
     { path: "/weather", shortLabel: "WETTER" },
