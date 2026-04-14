@@ -762,8 +762,11 @@ async def gather_context(msg_lower: str, request: Request) -> str:
         except Exception:
             pass
     
-    # Home Assistant context
-    ha_keywords = ["smart home", "home assistant", "geräte", "haus", "zuhause", "sensor", "automation"]
+    # Home Assistant context - always load if HA is connected and user mentions anything HA-related
+    ha_keywords = ["smart home", "home assistant", "geräte", "haus", "zuhause", "sensor", "automation",
+                   "licht", "lampe", "fernseh", "tv", "heizung", "rollladen", "schalter", "steckdose",
+                   "erstelle", "szene", "wakeword", "routine", "wenn", "dann", "einschalten", "ausschalten",
+                   "dimmen", "temperatur", "klima", "ventilator", "musik", "medien"]
     if any(w in msg_lower for w in ha_keywords):
         try:
             ha_url, ha_token = await get_ha_settings()
@@ -832,27 +835,8 @@ async def chat_route(message: ChatMessage, request: Request):
                 logger.warning(f"HA command via chat failed: {e}")
     
     if not target:
-        if any(w in msg_lower for w in ["dokument", "fall", "case", "akte", "pdf", "scan"]):
-            target = "casedesk"
-        elif any(w in msg_lower for w in ["projekt", "code", "agent", "entwickl", "build", "git"]):
+        if any(w in msg_lower for w in ["projekt", "code", "agent", "entwickl", "build", "git"]):
             target = "forgepilot"
-    
-    # Route to CaseDesk if targeted
-    if target == "casedesk":
-        service_account = user.get("service_accounts", {}).get("casedesk", {})
-        try:
-            service = await db.services.find_one({"id": "casedesk"})
-            if service:
-                async with httpx.AsyncClient(timeout=10.0) as http_client:
-                    resp = await http_client.post(
-                        f"{service['url']}{service.get('api_base', '/api')}/chat",
-                        json={"message": message.message, "user": service_account.get("username", user["email"])},
-                    )
-                    if resp.status_code == 200:
-                        await db.logs.insert_one({"type": "chat", "user_id": user["id"], "message": message.message[:200], "routed_to": "casedesk", "timestamp": datetime.now(timezone.utc).isoformat()})
-                        return {"response": resp.json().get("response", resp.text), "routed_to": "casedesk", "session_id": message.session_id}
-        except Exception as e:
-            logger.warning(f"CaseDesk routing failed: {e}")
     
     # AI Chat with GPT + enriched context from services
     api_key = await get_llm_api_key()
@@ -873,23 +857,37 @@ async def chat_route(message: ChatMessage, request: Request):
     try:
         openai_client = AsyncOpenAI(api_key=api_key)
         
-        system_prompt = """Du bist Aria, der zentrale persönliche Assistent von Andreas. Du bist sein erster Ansprechpartner für ALLES. Du hast VOLLEN ZUGRIFF auf alle verbundenen Dienste:
+        system_prompt = """Du bist Aria, der zentrale persönliche Assistent von Andreas. Du bist sein erster Ansprechpartner für ALLES. Du hast VOLLEN ZUGRIFF auf alle verbundenen Dienste und entscheidest SELBST welchen Dienst du nutzt.
 
-- **CaseDesk AI**: Du hast direkten Zugriff auf alle Dokumente, E-Mails, Fälle, Aufgaben und den Kalender. Wenn Daten aus CaseDesk in den Echtzeitdaten stehen, NUTZE SIE DIREKT. Fasse Dokumente zusammen, beantworte Fragen zu E-Mails, erstelle Termine und Aufgaben.
-- **Home Assistant**: Du steuerst Smart-Home-Geräte (Lichter, Heizung, Rollläden).
-- **System**: Du hast Zugriff auf Server-Diagnostik (CPU, RAM, Docker-Container).
-- **Wetter**: Du kennst das aktuelle Wetter.
+VERBUNDENE DIENSTE:
+- **CaseDesk AI**: Dokumente, E-Mails, Fälle, Aufgaben, Kalender. Du kannst lesen, suchen, zusammenfassen UND neue Einträge erstellen.
+- **Home Assistant**: Smart-Home-Geräte steuern UND Automationen erstellen. Du kannst Lichter, Heizung, Rollläden, TV, Medien etc. steuern und neue Automationen anlegen.
+- **System**: Server-Diagnostik (CPU, RAM, Docker-Container).
+- **Wetter**: Aktuelles Wetter und Vorhersage.
 
 REGELN:
-1. Wenn dir Echtzeitdaten zur Verfügung gestellt werden, NUTZE SIE. Sage NIEMALS "ich habe keinen Zugriff" wenn Daten vorhanden sind.
-2. Wenn CaseDesk-Dokumente in den Daten stehen, fasse deren Inhalt direkt zusammen. Du HAST Zugriff.
-3. Antworte auf Deutsch, sei hilfreich, direkt und präzise.
-4. Du kannst Aktionen in CaseDesk ausführen (Termine, Aufgaben, Fälle erstellen) — nutze die [AKTION:...] Tags.
+1. Wenn Echtzeitdaten vorhanden sind, NUTZE SIE DIREKT. Sage NIEMALS "ich habe keinen Zugriff".
+2. Du HAST Zugriff auf CaseDesk-Dokumente — fasse sie zusammen wenn sie in den Daten stehen.
+3. Du kannst Home Assistant Automationen ERSTELLEN — nutze dafür [AKTION:HA_AUTOMATION].
+4. Du kannst Geräte STEUERN — nutze [AKTION:HA_STEUERUNG].
+5. Antworte auf Deutsch, hilfreich, direkt und präzise.
 
-CASEDESK-AKTIONEN (füge diese Tags in deine Antwort ein um Aktionen auszuführen):
+AKTIONEN (füge diese Tags in deine Antwort ein):
+
+CaseDesk:
 - Kalendereinträge: [AKTION:KALENDER] {"title":"...", "description":"...", "start_date":"YYYY-MM-DDTHH:MM:SS", "end_date":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
 - Aufgaben: [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
-- Fälle: [AKTION:FALL] {"title":"...", "description":"..."}"""
+- Fälle: [AKTION:FALL] {"title":"...", "description":"..."}
+
+Home Assistant:
+- Gerät steuern: [AKTION:HA_STEUERUNG] {"entity_id":"light.wohnzimmer", "service":"turn_on", "data":{}}
+- Automation erstellen: [AKTION:HA_AUTOMATION] {"alias":"Fernsehschauen","description":"TV an, Licht aus","trigger":[{"trigger":"state","entity_id":"input_boolean.fernsehschauen","to":"on"}],"action":[{"action":"light.turn_off","target":{"entity_id":"light.wohnzimmer"}},{"action":"media_player.turn_on","target":{"entity_id":"media_player.tv"}}]}
+
+BEISPIEL Automation-Erstellung:
+User: "Erstelle eine Automation: Wenn Fernsehschauen aktiv, TV an und Licht aus"
+Deine Antwort: "Ich erstelle die Automation 'Fernsehschauen'... [AKTION:HA_AUTOMATION] {...}"
+
+Denke MIT: Wenn der User eine Szene oder Automation beschreibt, überlege welche Geräte betroffen sind (basierend auf den HA-Daten) und erstelle die passende Automation."""
         
         if live_context:
             system_prompt += f"\n\nAKTUELLE ECHTZEITDATEN:\n{live_context}"
@@ -909,37 +907,124 @@ CASEDESK-AKTIONEN (füge diese Tags in deine Antwort ein um Aktionen auszuführe
         
         response_text = response.choices[0].message.content
         
-        # Parse and execute CaseDesk action tags from GPT response
+        # Parse and execute action tags from GPT response
         import re as _re
+        import json as _json
         action_results = []
         
-        action_patterns = {
+        # CaseDesk actions
+        cd_action_patterns = {
             "KALENDER": "create_event",
             "AUFGABE": "create_task",
             "FALL": "create_case",
         }
         
-        for tag_name, action_type in action_patterns.items():
+        for tag_name, action_type in cd_action_patterns.items():
             pattern = rf'\[AKTION:{tag_name}\]\s*(\{{[^}}]+\}})'
             matches = _re.findall(pattern, response_text)
             for match in matches:
                 try:
-                    import json as _json
                     action_data = _json.loads(match)
                     result = await casedesk.execute_casedesk_action(action_type, action_data)
                     action_results.append(result)
-                    # Remove the action tag from the visible response
-                    response_text = response_text.replace(f"[AKTION:{tag_name}] {match}", "").strip()
                     response_text = _re.sub(rf'\[AKTION:{tag_name}\]\s*\{{[^}}]+\}}', '', response_text).strip()
                     if result.get("success"):
                         response_text += f"\n\n{result['message']}"
                     else:
                         response_text += f"\n\nFehler: {result.get('message', 'Unbekannt')}"
                 except Exception as e:
-                    logger.error(f"CaseDesk action parse error: {e}")
+                    logger.error(f"CaseDesk action error: {e}")
+        
+        # HA Device Control actions
+        ha_ctrl_pattern = r'\[AKTION:HA_STEUERUNG\]\s*(\{[^}]+\})'
+        ha_ctrl_matches = _re.findall(ha_ctrl_pattern, response_text)
+        for match in ha_ctrl_matches:
+            try:
+                ctrl_data = _json.loads(match)
+                ha_url, ha_token = await get_ha_settings()
+                if ha_url and ha_token:
+                    entity_id = ctrl_data.get("entity_id", "")
+                    domain = entity_id.split(".")[0] if "." in entity_id else ""
+                    service = ctrl_data.get("service", "toggle")
+                    svc_data = {"entity_id": entity_id}
+                    svc_data.update(ctrl_data.get("data", {}))
+                    async with httpx.AsyncClient(timeout=10.0) as hc:
+                        resp = await hc.post(f"{ha_url}/api/services/{domain}/{service}",
+                            headers={"Authorization": f"Bearer {ha_token}", "Content-Type": "application/json"},
+                            json=svc_data)
+                        if resp.status_code in (200, 201):
+                            action_results.append({"success": True, "message": f"{service} für {entity_id} ausgeführt."})
+                        else:
+                            action_results.append({"success": False, "message": f"HA Fehler: {resp.status_code}"})
+                response_text = _re.sub(r'\[AKTION:HA_STEUERUNG\]\s*\{[^}]+\}', '', response_text).strip()
+            except Exception as e:
+                logger.error(f"HA control action error: {e}")
+        
+        # HA Automation creation
+        ha_auto_pattern = r'\[AKTION:HA_AUTOMATION\]\s*(\{[\s\S]*?\}(?:\s*\})?)'
+        ha_auto_matches = _re.findall(ha_auto_pattern, response_text)
+        for match in ha_auto_matches:
+            try:
+                # Clean up the JSON (GPT sometimes adds trailing text)
+                clean_match = match.strip()
+                # Find the balanced JSON
+                depth = 0
+                end_idx = 0
+                for i, ch in enumerate(clean_match):
+                    if ch == '{': depth += 1
+                    elif ch == '}': depth -= 1
+                    if depth == 0:
+                        end_idx = i + 1
+                        break
+                clean_json = clean_match[:end_idx]
+                auto_data = _json.loads(clean_json)
+                
+                ha_url, ha_token = await get_ha_settings()
+                if ha_url and ha_token:
+                    # Create the automation in HA via REST API
+                    automation_config = {
+                        "alias": auto_data.get("alias", "Aria Automation"),
+                        "description": auto_data.get("description", "Erstellt von Aria"),
+                        "trigger": auto_data.get("trigger", []),
+                        "condition": auto_data.get("condition", []),
+                        "action": auto_data.get("action", []),
+                        "mode": auto_data.get("mode", "single"),
+                    }
+                    
+                    # Generate a unique ID
+                    auto_id = f"aria_{uuid.uuid4().hex[:12]}"
+                    
+                    async with httpx.AsyncClient(timeout=15.0) as hc:
+                        # Create automation via HA REST API
+                        resp = await hc.post(f"{ha_url}/api/config/automation/config/{auto_id}",
+                            headers={"Authorization": f"Bearer {ha_token}", "Content-Type": "application/json"},
+                            json=automation_config)
+                        
+                        if resp.status_code in (200, 201):
+                            action_results.append({"success": True, "message": f"Automation '{auto_data.get('alias')}' in Home Assistant erstellt!"})
+                            await db.logs.insert_one({
+                                "type": "ha_automation_created", "user_id": user["id"],
+                                "automation_id": auto_id, "alias": auto_data.get("alias"),
+                                "timestamp": datetime.now(timezone.utc).isoformat()
+                            })
+                        else:
+                            err_text = resp.text[:200]
+                            action_results.append({"success": False, "message": f"HA Automation Fehler: {resp.status_code} - {err_text}"})
+                            logger.error(f"HA automation creation failed: {resp.status_code} {err_text}")
+                
+                response_text = response_text.replace(f"[AKTION:HA_AUTOMATION] {match}", "").strip()
+                response_text = _re.sub(r'\[AKTION:HA_AUTOMATION\]\s*\{[\s\S]*?\}(?:\s*\})?', '', response_text).strip()
+                
+                for ar in action_results:
+                    if ar.get("message") and ar["message"] not in response_text:
+                        response_text += f"\n\n{'✅' if ar.get('success') else '❌'} {ar['message']}"
+            except _json.JSONDecodeError as e:
+                logger.error(f"HA automation JSON parse error: {e}, raw: {match[:200]}")
+            except Exception as e:
+                logger.error(f"HA automation action error: {e}")
         
         # Clean up any remaining action tags
-        response_text = _re.sub(r'\[AKTION:\w+\]\s*\{[^}]+\}', '', response_text).strip()
+        response_text = _re.sub(r'\[AKTION:\w+\]\s*\{[^}]*\}', '', response_text).strip()
         
         # Store messages
         now = datetime.now(timezone.utc).isoformat()

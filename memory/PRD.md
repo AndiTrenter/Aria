@@ -128,6 +128,31 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [x] Backend: UserCreate/UserUpdate mit assigned_rooms + visible_tabs
 - [x] Backend: Dashboard-API filtert Räume nach assigned_rooms
 
+
+### Phase 6 — Aria als zentraler KI-Hub (DONE 2026-04-14)
+- [x] CaseDesk AI Integration
+  - Dokumente, E-Mails, Fälle, Aufgaben, Kalender lesen
+  - Dokumente durchsuchen und zusammenfassen
+  - Aufgaben, Termine, Fälle in CaseDesk erstellen via Chat
+  - Admin-Einstellungen: URL, Login, Passwort + Verbindungstest
+  - Backend: `/app/backend/casedesk.py` (eigenes Modul)
+- [x] Intelligentes Service-Routing
+  - GPT entscheidet selbst welchen Dienst es nutzt
+  - CaseDesk wird bei JEDER Frage abgefragt wenn verbunden
+  - HA-Geräte werden bei Smart-Home-bezogenen Fragen geladen
+  - Erweiterter System-Prompt: Aria = zentraler Assistent mit vollem Zugriff
+- [x] HA Automations-Erstellung via Chat
+  - User beschreibt Automation in natürlicher Sprache
+  - GPT erstellt HA-kompatible Automation-Config
+  - Automation wird direkt via HA REST API (`/api/config/automation/config/`) erstellt
+  - Action-Tags: [AKTION:HA_AUTOMATION], [AKTION:HA_STEUERUNG]
+- [x] CaseDesk Action-Tags: [AKTION:KALENDER], [AKTION:AUFGABE], [AKTION:FALL]
+- [x] Verbesserte Admin-Einstellungen
+  - Settings vorbelegt mit gespeicherten Werten
+  - Klare Rückmeldungen (Inline-Banner + Toast)
+  - Trailing-Slash Fix für URLs
+  - HA + CaseDesk Verbindungstests mit Status-Badge
+
 ## Offene Aufgaben
 
 ### P1 — Graceful Handling Offline Home Assistant
@@ -142,12 +167,18 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### P3 — SMART/Disk-Temperaturen
 - [ ] Disk-Temperaturen im System Health diagnostik
 
+### P4 — Weitere Dienst-Integrationen
+- [ ] ForgePilot Integration (Code/Projekte)
+- [ ] Nextcloud Integration (Dateien/Kalender)
+- [ ] Dienst-übergreifende Aktionen
+
 ## API Endpoints
 - Auth: POST /login, GET /me
 - Smart Home: GET/POST /smarthome/rooms, GET/POST /smarthome/devices, GET/PUT /smarthome/permissions, POST /smarthome/sync, POST /smarthome/control, GET /smarthome/dashboard
 - Profiles: GET/POST/PUT/DELETE /smarthome/profiles, GET /smarthome/my-profile, GET /smarthome/scene-templates, POST /smarthome/execute-scene
 - Automations: GET/POST /automations, PUT /automations/{id}/approve
+- CaseDesk: GET /casedesk/status, POST /casedesk/search/emails, GET /casedesk/emails, /cases, /tasks, /events, /documents
 - Health: GET /system, /docker, /services
-- Chat: POST /, GET /sessions
+- Chat: POST / (mit auto-routing zu HA/CaseDesk/System/Wetter)
 - Weather: GET /
-- Admin: users CRUD, settings
+- Admin: users CRUD, settings (inkl. HA, CaseDesk, Wetter, OpenAI Konfiguration)
