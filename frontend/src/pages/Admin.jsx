@@ -112,7 +112,11 @@ const Admin = () => {
       setDevices(devicesR.data);
       setProfiles(profilesR.data);
       setServices(servicesR.data);
-      setSettings(settingsR.data);
+      const s = settingsR.data;
+      setSettings(s);
+      // Pre-fill non-sensitive settings
+      if (s.ha_url) setHaUrl(s.ha_url);
+      if (s.weather_city) setWeatherCity(s.weather_city);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -125,25 +129,28 @@ const Admin = () => {
     } catch {}
   };
 
-  const checkHaStatus = async () => {
-    setHaTesting(true);
+  const checkHaStatus = async (silent = false) => {
+    if (!silent) setHaTesting(true);
     try {
       const { data } = await axios.get(`${API}/ha/status`);
       setHaStatus(data);
-      if (data.connected) {
-        toast.success("Home Assistant verbunden!");
-      } else {
-        toast.error(data.message || "Home Assistant nicht erreichbar");
+      if (!silent) {
+        if (data.connected) {
+          toast.success("Home Assistant verbunden!");
+        } else {
+          toast.error(data.message || "Home Assistant nicht erreichbar");
+        }
       }
     } catch (e) {
       setHaStatus(null);
-      toast.error("Verbindungstest fehlgeschlagen");
+      if (!silent) toast.error("Verbindungstest fehlgeschlagen");
     } finally {
-      setHaTesting(false);
+      if (!silent) setHaTesting(false);
     }
   };
 
-  useEffect(() => { checkHaStatus(); }, [settings]);
+  // Silent auto-check on page load
+  useEffect(() => { checkHaStatus(true); }, [settings]);
 
   // ==================== USER HANDLERS ====================
   const resetUserForm = () => {
@@ -319,7 +326,7 @@ const Admin = () => {
       setApiKeyInput(""); setWeatherApiKey(""); setWeatherCity(""); setHaUrl(""); setHaToken("");
       fetchAll();
       if (payload.ha_url || payload.ha_token) {
-        setTimeout(() => checkHaStatus(), 500);
+        setTimeout(() => checkHaStatus(false), 500);
       }
     } catch (e) {
       const msg = "Fehler beim Speichern der Einstellungen";
@@ -865,9 +872,26 @@ const Admin = () => {
               <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}`}>{isLcars ? "WETTER" : "Wetter-Konfiguration"}</h3>
             </div>
             <div className="space-y-3">
-              <input type="text" value={weatherCity} onChange={(e) => setWeatherCity(e.target.value)} placeholder={settings.weather_city || "z.B. Holderbank,CH"} className={`${inputClass} w-full`} data-testid="weather-city-input" />
-              {settings.weather_city && <span className="text-xs text-gray-500">Aktuell: {settings.weather_city}</span>}
-              <input type="password" value={weatherApiKey} onChange={(e) => setWeatherApiKey(e.target.value)} placeholder="Wetter API-Key..." className={`${inputClass} w-full`} data-testid="weather-api-key-input" />
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "STANDORT (STADT ODER PLZ)" : "Standort (Stadt oder PLZ)"}
+                </label>
+                <input type="text" value={weatherCity} onChange={(e) => setWeatherCity(e.target.value)} placeholder="z.B. 4718 Holderbank, CH" className={`${inputClass} w-full`} data-testid="weather-city-input" />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "GESPEICHERTER WETTER-KEY" : "Gespeicherter Wetter-API-Key"}
+                </label>
+                <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                  {settings.weather_api_key || "Nicht konfiguriert"}
+                </div>
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "NEUER WETTER-KEY" : "Neuer Wetter-API-Key (leer = unverändert)"}
+                </label>
+                <input type="password" value={weatherApiKey} onChange={(e) => setWeatherApiKey(e.target.value)} placeholder="API Key..." className={`${inputClass} w-full`} data-testid="weather-api-key-input" />
+              </div>
             </div>
           </div>
 
@@ -883,13 +907,27 @@ const Admin = () => {
               )}
             </div>
             <div className="space-y-3">
-              <input type="text" value={haUrl} onChange={(e) => setHaUrl(e.target.value)} placeholder={settings.ha_url || "http://192.168.1.140:8123"} className={`${inputClass} w-full`} data-testid="ha-url-input" />
-              {settings.ha_url && <span className="text-xs text-gray-500">Aktuell: {settings.ha_url}</span>}
-              <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
-                {settings.ha_token || "Token nicht konfiguriert"}
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "HOME ASSISTANT URL" : "Home Assistant URL"}
+                </label>
+                <input type="text" value={haUrl} onChange={(e) => setHaUrl(e.target.value)} placeholder="http://192.168.x.x:8123" className={`${inputClass} w-full`} data-testid="ha-url-input" />
               </div>
-              <input type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJhb..." className={`${inputClass} w-full`} data-testid="ha-token-input" />
-              <button onClick={checkHaStatus} disabled={haTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="ha-test-button">
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "GESPEICHERTER TOKEN" : "Gespeicherter Token"}
+                </label>
+                <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                  {settings.ha_token || (isLcars ? "KEIN TOKEN GESPEICHERT" : "Kein Token gespeichert")}
+                </div>
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "NEUER TOKEN" : "Neuer Token (leer = unverändert)"}
+                </label>
+                <input type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJhb..." className={`${inputClass} w-full`} data-testid="ha-token-input" />
+              </div>
+              <button onClick={() => checkHaStatus(false)} disabled={haTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="ha-test-button">
                 {haTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
                 {haTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
               </button>
