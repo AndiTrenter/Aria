@@ -218,53 +218,82 @@ async def list_casedesk_documents(request: Request):
 # ==================== CHAT CONTEXT HELPER ====================
 
 async def get_casedesk_context(message: str) -> str:
-    """Build CaseDesk context for GPT chat based on user message."""
+    """Build CaseDesk context for GPT chat. Always searches if CaseDesk is connected."""
     url, email, pw = await get_casedesk_settings()
     if not url or not email or not pw:
         return ""
 
-    msg_lower = message.lower()
+    msg_lower = message.lower() if isinstance(message, str) else message
     context_parts = []
 
-    # Keywords that trigger CaseDesk queries
-    cd_keywords = ["casedesk", "email", "mail", "e-mail", "voser", "dokument",
-                   "fall", "fälle", "akte", "aufgabe", "task", "termin",
-                   "kalender", "nachricht", "schreiben", "brief"]
-
-    if not any(kw in msg_lower for kw in cd_keywords):
-        return ""
+    # Build search query from the message
+    stop_words = {"was", "ist", "die", "der", "das", "von", "vom", "letzte", "letzten",
+                 "kannst", "du", "mir", "sagen", "zeig", "zeige", "hol", "hole", "such",
+                 "suche", "finde", "fasse", "zusammen", "kurz", "bündig", "bitte", "mich",
+                 "ein", "eine", "einen", "einem", "einer", "und", "oder", "aber", "den",
+                 "dem", "des", "für", "mit", "bei", "wie", "wer", "wann", "wo", "warum",
+                 "hat", "habe", "haben", "sind", "sein", "wird", "werden", "nicht", "auch",
+                 "noch", "schon", "doch", "mal", "nur", "sehr", "ganz", "alle", "alles",
+                 "mein", "meine", "meinen", "meinem", "dein", "deine", "welche", "welcher"}
+    
+    words = [w.strip("?!.,;:\"'()") for w in message.split()
+             if w.strip("?!.,;:\"'()").lower() not in stop_words and len(w.strip("?!.,;:\"'()")) > 2]
+    search_query = " ".join(words[:6]) if words else message[:60]
 
     try:
-        # Search emails if message mentions email/mail/person names
-        email_keywords = ["email", "mail", "e-mail", "nachricht", "schreiben", "brief"]
-        if any(kw in msg_lower for kw in email_keywords) or any(
-            word for word in msg_lower.split() if len(word) > 3 and word[0].isupper()
-        ):
-            # Extract search terms (remove common words)
-            stop_words = {"was", "ist", "die", "der", "das", "von", "vom", "letzte",
-                         "letzten", "email", "mail", "e-mail", "nachricht", "inhalt",
-                         "besagt", "steht", "drin", "in", "an", "den", "dem", "des",
-                         "eine", "ein", "einen", "kannst", "du", "mir", "sagen", "zeig",
-                         "zeige", "hol", "hole", "such", "suche", "finde"}
-            words = [w.strip("?!.,;:") for w in message.split() if w.strip("?!.,;:").lower() not in stop_words and len(w) > 2]
-            search_query = " ".join(words[:5]) if words else message[:50]
+        # 1. ALWAYS search documents (most important for CaseDesk)
+        doc_data, doc_err = await casedesk_request("GET", "/documents")
+        if doc_data and not doc_err:
+            docs = doc_data if isinstance(doc_data, list) else []
+            # Filter documents matching the query
+            matching_docs = []
+            for doc in docs:
+                doc_text = " ".join([
+                    str(doc.get("display_name", "")),
+                    str(doc.get("original_filename", "")),
+                    str(doc.get("ai_summary", "")),
+                    str(doc.get("ocr_text", ""))[:1000],
+                    " ".join(doc.get("tags", [])),
+                    str(doc.get("document_type", "")),
+                    str(doc.get("sender", "")),
+                ]).lower()
+                if any(w.lower() in doc_text for w in words if len(w) > 2):
+                    matching_docs.append(doc)
 
-            data, err = await casedesk_request("POST", "/emails/search", json={"query": search_query})
-            if data and not err:
-                results = data.get("results", [])
-                if results:
-                    context_parts.append(f"\n--- CaseDesk E-Mails (Suche: '{search_query}') ---")
-                    for em in results[:5]:
-                        ctx = f"Von: {em.get('from_name', em.get('from_address', '?'))}"
-                        ctx += f" | Betreff: {em.get('subject', '?')}"
-                        ctx += f" | Datum: {em.get('date', em.get('received_at', '?'))[:10]}"
-                        body = em.get('body_text', em.get('ai_summary', ''))
-                        if body:
-                            ctx += f"\nInhalt: {body[:500]}"
-                        context_parts.append(ctx)
+            if matching_docs:
+                context_parts.append(f"\n--- CaseDesk Dokumente (Treffer: {len(matching_docs)}) ---")
+                for doc in matching_docs[:5]:
+                    ctx = f"Dokument: {doc.get('display_name', doc.get('original_filename', '?'))}"
+                    if doc.get('document_type'):
+                        ctx += f" | Typ: {doc['document_type']}"
+                    if doc.get('sender'):
+                        ctx += f" | Absender: {doc['sender']}"
+                    if doc.get('document_date'):
+                        ctx += f" | Datum: {str(doc['document_date'])[:10]}"
+                    if doc.get('ai_summary'):
+                        ctx += f"\nZusammenfassung: {doc['ai_summary'][:800]}"
+                    if doc.get('ocr_text'):
+                        ctx += f"\nInhalt: {doc['ocr_text'][:1500]}"
+                    context_parts.append(ctx)
 
-        # Fetch tasks if mentioned
-        if any(kw in msg_lower for kw in ["aufgabe", "task", "todo", "frist"]):
+        # 2. Search emails
+        email_data, email_err = await casedesk_request("POST", "/emails/search", json={"query": search_query})
+        if email_data and not email_err:
+            results = email_data.get("results", [])
+            if results:
+                context_parts.append(f"\n--- CaseDesk E-Mails (Treffer: {len(results)}) ---")
+                for em in results[:5]:
+                    ctx = f"Von: {em.get('from_name', em.get('from_address', '?'))}"
+                    ctx += f" | Betreff: {em.get('subject', '?')}"
+                    ctx += f" | Datum: {str(em.get('date', em.get('received_at', '?')))[:10]}"
+                    body = em.get('body_text', em.get('ai_summary', ''))
+                    if body:
+                        ctx += f"\nInhalt: {body[:600]}"
+                    context_parts.append(ctx)
+
+        # 3. Fetch tasks
+        task_keywords = ["aufgabe", "task", "todo", "frist", "erledigen", "offen", "pending"]
+        if any(kw in msg_lower for kw in task_keywords):
             data, err = await casedesk_request("GET", "/tasks")
             if data and not err:
                 tasks = data if isinstance(data, list) else []
@@ -272,10 +301,12 @@ async def get_casedesk_context(message: str) -> str:
                 if open_tasks:
                     context_parts.append("\n--- CaseDesk Offene Aufgaben ---")
                     for t in open_tasks:
-                        context_parts.append(f"- {t.get('title', '?')} (Frist: {t.get('due_date', 'keine')[:10] if t.get('due_date') else 'keine'}, Priorität: {t.get('priority', '?')})")
+                        due = str(t['due_date'])[:10] if t.get('due_date') else 'keine'
+                        context_parts.append(f"- {t.get('title', '?')} (Frist: {due}, Priorität: {t.get('priority', '?')})")
 
-        # Fetch cases if mentioned
-        if any(kw in msg_lower for kw in ["fall", "fälle", "akte", "akten", "vorgang"]):
+        # 4. Fetch cases
+        case_keywords = ["fall", "fälle", "akte", "akten", "vorgang", "case"]
+        if any(kw in msg_lower for kw in case_keywords):
             data, err = await casedesk_request("GET", "/cases")
             if data and not err:
                 cases = data if isinstance(data, list) else []
@@ -284,8 +315,9 @@ async def get_casedesk_context(message: str) -> str:
                     for c in cases[:10]:
                         context_parts.append(f"- {c.get('title', '?')} (Status: {c.get('status', '?')}, Ref: {c.get('reference_number', '-')})")
 
-        # Fetch calendar if mentioned
-        if any(kw in msg_lower for kw in ["termin", "kalender", "event", "datum"]):
+        # 5. Fetch calendar
+        cal_keywords = ["termin", "kalender", "event", "datum", "wann", "nächster"]
+        if any(kw in msg_lower for kw in cal_keywords):
             data, err = await casedesk_request("GET", "/events")
             if data and not err:
                 events = data if isinstance(data, list) else []

@@ -786,18 +786,15 @@ async def gather_context(msg_lower: str, request: Request) -> str:
         except Exception:
             pass
     
-    # CaseDesk context
-    cd_keywords = ["casedesk", "email", "mail", "e-mail", "dokument", "fall", "fälle", "akte",
-                   "aufgabe", "task", "termin", "kalender", "nachricht", "schreiben", "brief",
-                   "korrespondenz", "voser", "rechnung", "mahnung", "versicherung", "krankenkasse",
-                   "erstelle", "anlegen", "eintrag", "eintragen", "notier", "erinnerung"]
-    if any(w in msg_lower for w in cd_keywords):
-        try:
+    # CaseDesk context - ALWAYS query if connected (Aria is the central assistant)
+    try:
+        cd_url, cd_email, cd_pw = await casedesk.get_casedesk_settings()
+        if cd_url and cd_email and cd_pw:
             cd_context = await casedesk.get_casedesk_context(msg_lower)
             if cd_context:
                 context_parts.append(cd_context)
-        except Exception as e:
-            logger.warning(f"CaseDesk context failed: {e}")
+    except Exception as e:
+        logger.warning(f"CaseDesk context failed: {e}")
 
     if context_parts:
         return "\n\n".join(context_parts)
@@ -876,16 +873,23 @@ async def chat_route(message: ChatMessage, request: Request):
     try:
         openai_client = AsyncOpenAI(api_key=api_key)
         
-        system_prompt = """Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud), Smart Home (Home Assistant) und allgemeinen IT-Themen. Du kannst auch Smart-Home-Geräte wie Lichter, Heizungen und Rollläden steuern. Antworte auf Deutsch, sei hilfreich und präzise.
+        system_prompt = """Du bist Aria, der zentrale persönliche Assistent von Andreas. Du bist sein erster Ansprechpartner für ALLES. Du hast VOLLEN ZUGRIFF auf alle verbundenen Dienste:
 
-WICHTIG: Wenn dir Echtzeitdaten zur Verfügung gestellt werden, nutze diese für deine Antwort. Gib die Daten in einer freundlichen, natürlichen Art wieder — nicht als Rohdaten-Dump.
+- **CaseDesk AI**: Du hast direkten Zugriff auf alle Dokumente, E-Mails, Fälle, Aufgaben und den Kalender. Wenn Daten aus CaseDesk in den Echtzeitdaten stehen, NUTZE SIE DIREKT. Fasse Dokumente zusammen, beantworte Fragen zu E-Mails, erstelle Termine und Aufgaben.
+- **Home Assistant**: Du steuerst Smart-Home-Geräte (Lichter, Heizung, Rollläden).
+- **System**: Du hast Zugriff auf Server-Diagnostik (CPU, RAM, Docker-Container).
+- **Wetter**: Du kennst das aktuelle Wetter.
 
-CASEDESK-AKTIONEN: Du bist mit CaseDesk AI verbunden und kannst folgende Aktionen DIREKT ausführen:
-- Kalendereinträge erstellen: Antworte mit [AKTION:KALENDER] {"title":"...", "description":"...", "start_date":"YYYY-MM-DDTHH:MM:SS", "end_date":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
-- Aufgaben erstellen: Antworte mit [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
-- Fälle/Akten erstellen: Antworte mit [AKTION:FALL] {"title":"...", "description":"..."}
+REGELN:
+1. Wenn dir Echtzeitdaten zur Verfügung gestellt werden, NUTZE SIE. Sage NIEMALS "ich habe keinen Zugriff" wenn Daten vorhanden sind.
+2. Wenn CaseDesk-Dokumente in den Daten stehen, fasse deren Inhalt direkt zusammen. Du HAST Zugriff.
+3. Antworte auf Deutsch, sei hilfreich, direkt und präzise.
+4. Du kannst Aktionen in CaseDesk ausführen (Termine, Aufgaben, Fälle erstellen) — nutze die [AKTION:...] Tags.
 
-Wenn der Benutzer dich bittet, einen Termin, eine Aufgabe oder einen Fall zu erstellen, führe die Aktion AUS indem du den [AKTION:...] Tag in deine Antwort einfügst. Bestätige dem Benutzer danach was du erstellt hast."""
+CASEDESK-AKTIONEN (füge diese Tags in deine Antwort ein um Aktionen auszuführen):
+- Kalendereinträge: [AKTION:KALENDER] {"title":"...", "description":"...", "start_date":"YYYY-MM-DDTHH:MM:SS", "end_date":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
+- Aufgaben: [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
+- Fälle: [AKTION:FALL] {"title":"...", "description":"..."}"""
         
         if live_context:
             system_prompt += f"\n\nAKTUELLE ECHTZEITDATEN:\n{live_context}"
