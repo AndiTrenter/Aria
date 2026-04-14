@@ -91,6 +91,12 @@ const Admin = () => {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState(null);
   const [haTesting, setHaTesting] = useState(false);
+  // CaseDesk
+  const [cdUrl, setCdUrl] = useState("");
+  const [cdEmail, setCdEmail] = useState("");
+  const [cdPassword, setCdPassword] = useState("");
+  const [cdStatus, setCdStatus] = useState(null);
+  const [cdTesting, setCdTesting] = useState(false);
 
   const isLcars = theme === "startrek";
   const cardClass = isLcars ? "lcars-card" : "disney-card";
@@ -117,6 +123,8 @@ const Admin = () => {
       // Pre-fill non-sensitive settings
       if (s.ha_url) setHaUrl(s.ha_url);
       if (s.weather_city) setWeatherCity(s.weather_city);
+      if (s.casedesk_url) setCdUrl(s.casedesk_url);
+      if (s.casedesk_email) setCdEmail(s.casedesk_email);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -150,7 +158,20 @@ const Admin = () => {
   };
 
   // Silent auto-check on page load
-  useEffect(() => { checkHaStatus(true); }, [settings]);
+  useEffect(() => { checkHaStatus(true); checkCdStatus(true); }, [settings]);
+
+  const checkCdStatus = async (silent = false) => {
+    if (!silent) setCdTesting(true);
+    try {
+      const { data } = await axios.get(`${API}/casedesk/status`);
+      setCdStatus(data);
+      if (!silent) {
+        if (data.connected) toast.success("CaseDesk verbunden!");
+        else toast.error(data.message || "CaseDesk nicht erreichbar");
+      }
+    } catch { setCdStatus(null); if (!silent) toast.error("CaseDesk-Test fehlgeschlagen"); }
+    finally { if (!silent) setCdTesting(false); }
+  };
 
   // ==================== USER HANDLERS ====================
   const resetUserForm = () => {
@@ -305,6 +326,9 @@ const Admin = () => {
     if (weatherApiKey) payload.weather_api_key = weatherApiKey;
     if (haUrl) payload.ha_url = haUrl;
     if (haToken) payload.ha_token = haToken;
+    if (cdUrl) payload.casedesk_url = cdUrl;
+    if (cdEmail) payload.casedesk_email = cdEmail;
+    if (cdPassword) payload.casedesk_password = cdPassword;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
@@ -320,6 +344,9 @@ const Admin = () => {
       if (payload.weather_api_key) saved.push("Wetter Key");
       if (payload.ha_url) saved.push("HA URL");
       if (payload.ha_token) saved.push("HA Token");
+      if (payload.casedesk_url) saved.push("CaseDesk URL");
+      if (payload.casedesk_email) saved.push("CaseDesk E-Mail");
+      if (payload.casedesk_password) saved.push("CaseDesk Passwort");
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
@@ -327,6 +354,9 @@ const Admin = () => {
       fetchAll();
       if (payload.ha_url || payload.ha_token) {
         setTimeout(() => checkHaStatus(false), 500);
+      }
+      if (payload.casedesk_url || payload.casedesk_email || payload.casedesk_password) {
+        setTimeout(() => checkCdStatus(false), 500);
       }
     } catch (e) {
       const msg = "Fehler beim Speichern der Einstellungen";
@@ -934,6 +964,59 @@ const Admin = () => {
               {haStatus && !haTesting && (
                 <div className={`p-3 rounded-lg text-sm font-bold ${haStatus.connected ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`} data-testid="ha-test-result">
                   {haStatus.connected ? "Verbindung erfolgreich!" : `Nicht erreichbar: ${haStatus.message || "Offline"}`}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* CaseDesk Config */}
+          <div className={cardClass} data-testid="settings-casedesk">
+            <div className="flex items-center gap-3 mb-4">
+              <Gear size={20} className={isLcars ? "text-[var(--lcars-gold)]" : "text-amber-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-gold)]" : "font-bold text-purple-200"}`}>{isLcars ? "CASEDESK AI" : "CaseDesk AI"}</h3>
+              {cdStatus && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${cdStatus.connected ? "bg-green-900/50 text-green-400" : "bg-red-900/50 text-red-400"}`}>
+                  {cdStatus.connected ? "VERBUNDEN" : "OFFLINE"}
+                </span>
+              )}
+            </div>
+            <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+              {isLcars ? "VERBINDE ARIA MIT CASEDESK FÜR E-MAILS, DOKUMENTE, FÄLLE UND KALENDER." : "Verbinde Aria mit CaseDesk für E-Mails, Dokumente, Fälle und Kalender."}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "CASEDESK URL" : "CaseDesk URL"}
+                </label>
+                <input type="text" value={cdUrl} onChange={(e) => setCdUrl(e.target.value)} placeholder="http://192.168.x.x:9090" className={`${inputClass} w-full`} data-testid="cd-url-input" />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "CASEDESK E-MAIL" : "CaseDesk Login E-Mail"}
+                </label>
+                <input type="text" value={cdEmail} onChange={(e) => setCdEmail(e.target.value)} placeholder="admin@example.com" className={`${inputClass} w-full`} data-testid="cd-email-input" />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "GESPEICHERTES PASSWORT" : "Gespeichertes Passwort"}
+                </label>
+                <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                  {settings.casedesk_password || (isLcars ? "NICHT GESPEICHERT" : "Nicht gespeichert")}
+                </div>
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "NEUES PASSWORT" : "Neues Passwort (leer = unverändert)"}
+                </label>
+                <input type="password" value={cdPassword} onChange={(e) => setCdPassword(e.target.value)} placeholder="Passwort..." className={`${inputClass} w-full`} data-testid="cd-password-input" />
+              </div>
+              <button onClick={() => checkCdStatus(false)} disabled={cdTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="cd-test-button">
+                {cdTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
+                {cdTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
+              </button>
+              {cdStatus && !cdTesting && (
+                <div className={`p-3 rounded-lg text-sm font-bold ${cdStatus.connected ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`} data-testid="cd-test-result">
+                  {cdStatus.connected ? "CaseDesk verbunden!" : `Nicht erreichbar: ${cdStatus.message || "Offline"}`}
                 </div>
               )}
             </div>

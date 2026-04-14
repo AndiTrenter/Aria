@@ -35,6 +35,7 @@ except Exception:
 
 import smarthome
 import automations
+import casedesk
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -654,7 +655,7 @@ async def get_settings(request: Request):
     for s in settings:
         key = s["key"]
         val = s.get("value", "")
-        if key in ("openai_api_key", "weather_api_key", "ha_token") and val:
+        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password") and val:
             result[key] = val[:8] + "..." + val[-4:] if len(val) > 12 else val
         else:
             result[key] = val
@@ -664,7 +665,7 @@ async def get_settings(request: Request):
 async def update_settings(request: Request, settings: dict = Body(...)):
     await require_admin(request)
     for key, value in settings.items():
-        if key in ("openai_api_key", "weather_api_key", "ha_token") and value and "..." in value:
+        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password") and value and "..." in value:
             continue
         await db.settings.update_one({"key": key}, {"$set": {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
     return {"message": "Settings updated"}
@@ -771,6 +772,18 @@ async def gather_context(msg_lower: str, request: Request) -> str:
         except Exception:
             pass
     
+    # CaseDesk context
+    cd_keywords = ["casedesk", "email", "mail", "e-mail", "dokument", "fall", "fälle", "akte",
+                   "aufgabe", "task", "termin", "kalender", "nachricht", "schreiben", "brief",
+                   "korrespondenz", "voser", "rechnung", "mahnung", "versicherung", "krankenkasse"]
+    if any(w in msg_lower for w in cd_keywords):
+        try:
+            cd_context = await casedesk.get_casedesk_context(msg_lower)
+            if cd_context:
+                context_parts.append(cd_context)
+        except Exception as e:
+            logger.warning(f"CaseDesk context failed: {e}")
+
     if context_parts:
         return "\n\n".join(context_parts)
     return ""
@@ -1271,3 +1284,7 @@ app.include_router(smarthome.router)
 # Initialize Automations module
 automations.init(db, get_current_user, require_admin, get_ha_settings, get_llm_api_key)
 app.include_router(automations.router)
+
+# Initialize CaseDesk module
+casedesk.init(db, get_current_user, require_admin)
+app.include_router(casedesk.router)
