@@ -789,7 +789,8 @@ async def gather_context(msg_lower: str, request: Request) -> str:
     # CaseDesk context
     cd_keywords = ["casedesk", "email", "mail", "e-mail", "dokument", "fall", "fälle", "akte",
                    "aufgabe", "task", "termin", "kalender", "nachricht", "schreiben", "brief",
-                   "korrespondenz", "voser", "rechnung", "mahnung", "versicherung", "krankenkasse"]
+                   "korrespondenz", "voser", "rechnung", "mahnung", "versicherung", "krankenkasse",
+                   "erstelle", "anlegen", "eintrag", "eintragen", "notier", "erinnerung"]
     if any(w in msg_lower for w in cd_keywords):
         try:
             cd_context = await casedesk.get_casedesk_context(msg_lower)
@@ -877,7 +878,14 @@ async def chat_route(message: ChatMessage, request: Request):
         
         system_prompt = """Du bist Aria, ein intelligenter Assistent für ein Unraid-Server-Dashboard. Du hilfst bei Fragen zu Serververwaltung, Docker-Containern, Dokumentenmanagement (CaseDesk), Entwicklung (ForgePilot), Cloud-Speicher (Nextcloud), Smart Home (Home Assistant) und allgemeinen IT-Themen. Du kannst auch Smart-Home-Geräte wie Lichter, Heizungen und Rollläden steuern. Antworte auf Deutsch, sei hilfreich und präzise.
 
-WICHTIG: Wenn dir Echtzeitdaten zur Verfügung gestellt werden, nutze diese für deine Antwort. Gib die Daten in einer freundlichen, natürlichen Art wieder — nicht als Rohdaten-Dump."""
+WICHTIG: Wenn dir Echtzeitdaten zur Verfügung gestellt werden, nutze diese für deine Antwort. Gib die Daten in einer freundlichen, natürlichen Art wieder — nicht als Rohdaten-Dump.
+
+CASEDESK-AKTIONEN: Du bist mit CaseDesk AI verbunden und kannst folgende Aktionen DIREKT ausführen:
+- Kalendereinträge erstellen: Antworte mit [AKTION:KALENDER] {"title":"...", "description":"...", "start_date":"YYYY-MM-DDTHH:MM:SS", "end_date":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
+- Aufgaben erstellen: Antworte mit [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
+- Fälle/Akten erstellen: Antworte mit [AKTION:FALL] {"title":"...", "description":"..."}
+
+Wenn der Benutzer dich bittet, einen Termin, eine Aufgabe oder einen Fall zu erstellen, führe die Aktion AUS indem du den [AKTION:...] Tag in deine Antwort einfügst. Bestätige dem Benutzer danach was du erstellt hast."""
         
         if live_context:
             system_prompt += f"\n\nAKTUELLE ECHTZEITDATEN:\n{live_context}"
@@ -896,6 +904,38 @@ WICHTIG: Wenn dir Echtzeitdaten zur Verfügung gestellt werden, nutze diese für
         )
         
         response_text = response.choices[0].message.content
+        
+        # Parse and execute CaseDesk action tags from GPT response
+        import re as _re
+        action_results = []
+        
+        action_patterns = {
+            "KALENDER": "create_event",
+            "AUFGABE": "create_task",
+            "FALL": "create_case",
+        }
+        
+        for tag_name, action_type in action_patterns.items():
+            pattern = rf'\[AKTION:{tag_name}\]\s*(\{{[^}}]+\}})'
+            matches = _re.findall(pattern, response_text)
+            for match in matches:
+                try:
+                    import json as _json
+                    action_data = _json.loads(match)
+                    result = await casedesk.execute_casedesk_action(action_type, action_data)
+                    action_results.append(result)
+                    # Remove the action tag from the visible response
+                    response_text = response_text.replace(f"[AKTION:{tag_name}] {match}", "").strip()
+                    response_text = _re.sub(rf'\[AKTION:{tag_name}\]\s*\{{[^}}]+\}}', '', response_text).strip()
+                    if result.get("success"):
+                        response_text += f"\n\n{result['message']}"
+                    else:
+                        response_text += f"\n\nFehler: {result.get('message', 'Unbekannt')}"
+                except Exception as e:
+                    logger.error(f"CaseDesk action parse error: {e}")
+        
+        # Clean up any remaining action tags
+        response_text = _re.sub(r'\[AKTION:\w+\]\s*\{[^}]+\}', '', response_text).strip()
         
         # Store messages
         now = datetime.now(timezone.utc).isoformat()

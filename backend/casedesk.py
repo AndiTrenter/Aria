@@ -300,3 +300,49 @@ async def get_casedesk_context(message: str) -> str:
     if context_parts:
         return "\n".join(context_parts)
     return ""
+
+
+async def execute_casedesk_action(action_type: str, data: dict) -> dict:
+    """Execute a CaseDesk action (create task, event, send email)."""
+    url, email, pw = await get_casedesk_settings()
+    if not url:
+        return {"success": False, "message": "CaseDesk nicht konfiguriert"}
+
+    if action_type == "create_task":
+        result, err = await casedesk_request("POST", "/tasks",
+            data={"title": data.get("title", ""), "description": data.get("description", ""),
+                  "priority": data.get("priority", "medium"), "due_date": data.get("due_date", "")})
+        if err:
+            # Try JSON format
+            result, err = await casedesk_request("POST", "/tasks",
+                json={"title": data.get("title", ""), "description": data.get("description", ""),
+                      "priority": data.get("priority", "medium"), "due_date": data.get("due_date")})
+        if result and not err:
+            return {"success": True, "message": f"Aufgabe '{data.get('title')}' in CaseDesk erstellt."}
+        return {"success": False, "message": f"Aufgabe konnte nicht erstellt werden: {err}"}
+
+    elif action_type == "create_event":
+        result, err = await casedesk_request("POST", "/events",
+            data={"title": data.get("title", ""), "description": data.get("description", ""),
+                  "start_date": data.get("start_date", ""), "end_date": data.get("end_date", ""),
+                  "all_day": str(data.get("all_day", False)).lower()})
+        if err:
+            result, err = await casedesk_request("POST", "/events",
+                json={"title": data.get("title", ""), "description": data.get("description", ""),
+                      "start_date": data.get("start_date"), "end_date": data.get("end_date"),
+                      "all_day": data.get("all_day", False)})
+        if result and not err:
+            return {"success": True, "message": f"Kalendereintrag '{data.get('title')}' in CaseDesk erstellt."}
+        return {"success": False, "message": f"Kalendereintrag konnte nicht erstellt werden: {err}"}
+
+    elif action_type == "create_case":
+        result, err = await casedesk_request("POST", "/cases",
+            data={"title": data.get("title", ""), "description": data.get("description", "")})
+        if err:
+            result, err = await casedesk_request("POST", "/cases",
+                json={"title": data.get("title", ""), "description": data.get("description", "")})
+        if result and not err:
+            return {"success": True, "message": f"Fall '{data.get('title')}' in CaseDesk erstellt."}
+        return {"success": False, "message": f"Fall konnte nicht erstellt werden: {err}"}
+
+    return {"success": False, "message": f"Unbekannte Aktion: {action_type}"}
