@@ -875,7 +875,7 @@ REGELN:
 AKTIONEN (füge diese Tags in deine Antwort ein):
 
 CaseDesk:
-- Kalendereinträge: [AKTION:KALENDER] {"title":"...", "description":"...", "start_date":"YYYY-MM-DDTHH:MM:SS", "end_date":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
+- Kalendereinträge: [AKTION:KALENDER] {"title":"...", "description":"...", "start_time":"YYYY-MM-DDTHH:MM:SS", "end_time":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
 - Aufgaben: [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
 - Fälle: [AKTION:FALL] {"title":"...", "description":"..."}
 

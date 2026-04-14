@@ -341,38 +341,52 @@ async def execute_casedesk_action(action_type: str, data: dict) -> dict:
         return {"success": False, "message": "CaseDesk nicht konfiguriert"}
 
     if action_type == "create_task":
-        result, err = await casedesk_request("POST", "/tasks",
-            data={"title": data.get("title", ""), "description": data.get("description", ""),
-                  "priority": data.get("priority", "medium"), "due_date": data.get("due_date", "")})
-        if err:
-            # Try JSON format
-            result, err = await casedesk_request("POST", "/tasks",
-                json={"title": data.get("title", ""), "description": data.get("description", ""),
-                      "priority": data.get("priority", "medium"), "due_date": data.get("due_date")})
+        payload = {
+            "title": data.get("title", "Neue Aufgabe"),
+            "description": data.get("description", ""),
+            "priority": data.get("priority", "medium"),
+            "status": "todo",
+        }
+        # due_date must be ISO datetime
+        if data.get("due_date"):
+            dd = data["due_date"]
+            if "T" not in dd:
+                dd += "T09:00:00"
+            payload["due_date"] = dd
+        result, err = await casedesk_request("POST", "/tasks", json=payload)
         if result and not err:
             return {"success": True, "message": f"Aufgabe '{data.get('title')}' in CaseDesk erstellt."}
         return {"success": False, "message": f"Aufgabe konnte nicht erstellt werden: {err}"}
 
     elif action_type == "create_event":
-        result, err = await casedesk_request("POST", "/events",
-            data={"title": data.get("title", ""), "description": data.get("description", ""),
-                  "start_date": data.get("start_date", ""), "end_date": data.get("end_date", ""),
-                  "all_day": str(data.get("all_day", False)).lower()})
-        if err:
-            result, err = await casedesk_request("POST", "/events",
-                json={"title": data.get("title", ""), "description": data.get("description", ""),
-                      "start_date": data.get("start_date"), "end_date": data.get("end_date"),
-                      "all_day": data.get("all_day", False)})
+        # EventCreate needs start_time and end_time as ISO datetime strings
+        start = data.get("start_date") or data.get("start_time", "")
+        end = data.get("end_date") or data.get("end_time", "")
+        if start and "T" not in start:
+            start += "T09:00:00"
+        if not end and start:
+            # Default: 1 hour after start
+            end = start.replace("T09:00:00", "T10:00:00") if "T09:00:00" in start else start
+        payload = {
+            "title": data.get("title", "Neuer Termin"),
+            "description": data.get("description", ""),
+            "start_time": start,
+            "end_time": end,
+            "all_day": data.get("all_day", False),
+        }
+        result, err = await casedesk_request("POST", "/events", json=payload)
         if result and not err:
             return {"success": True, "message": f"Kalendereintrag '{data.get('title')}' in CaseDesk erstellt."}
         return {"success": False, "message": f"Kalendereintrag konnte nicht erstellt werden: {err}"}
 
     elif action_type == "create_case":
-        result, err = await casedesk_request("POST", "/cases",
-            data={"title": data.get("title", ""), "description": data.get("description", "")})
-        if err:
-            result, err = await casedesk_request("POST", "/cases",
-                json={"title": data.get("title", ""), "description": data.get("description", "")})
+        payload = {
+            "title": data.get("title", "Neuer Fall"),
+            "description": data.get("description", ""),
+            "reference_number": data.get("reference_number"),
+            "tags": data.get("tags", []),
+        }
+        result, err = await casedesk_request("POST", "/cases", json=payload)
         if result and not err:
             return {"success": True, "message": f"Fall '{data.get('title')}' in CaseDesk erstellt."}
         return {"success": False, "message": f"Fall konnte nicht erstellt werden: {err}"}
