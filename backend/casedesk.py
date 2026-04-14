@@ -48,26 +48,47 @@ async def get_casedesk_token():
     # Login
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # CaseDesk uses Form-based login
             resp = await client.post(
                 f"{url}/api/auth/login",
-                data={"email": email, "password": pw}
+                data={"email": email, "password": pw},
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
             )
             if resp.status_code == 200:
                 data = resp.json()
                 token = data.get("access_token")
                 if token:
-                    # Cache for 12 hours
-                    expires = datetime.now(timezone.utc).isoformat().replace(
-                        datetime.now(timezone.utc).strftime("%H"),
-                        str(int(datetime.now(timezone.utc).strftime("%H")) + 12).zfill(2)
-                    )
                     await db.settings.update_one(
                         {"key": "casedesk_token_cache"},
                         {"$set": {"value": token, "expires_at": "2099-01-01T00:00:00"}},
                         upsert=True
                     )
                     return token, None
-            return None, f"CaseDesk Login fehlgeschlagen (HTTP {resp.status_code})"
+            elif resp.status_code == 422:
+                # Try JSON format as fallback
+                resp2 = await client.post(
+                    f"{url}/api/auth/login",
+                    json={"email": email, "password": pw}
+                )
+                if resp2.status_code == 200:
+                    data = resp2.json()
+                    token = data.get("access_token")
+                    if token:
+                        await db.settings.update_one(
+                            {"key": "casedesk_token_cache"},
+                            {"$set": {"value": token, "expires_at": "2099-01-01T00:00:00"}},
+                            upsert=True
+                        )
+                        return token, None
+                # Log the actual error
+                try:
+                    err_detail = resp.json().get("detail", resp.text[:200])
+                except Exception:
+                    err_detail = resp.text[:200]
+                logger.error(f"CaseDesk 422 error: {err_detail}")
+                return None, f"CaseDesk Login-Validierung fehlgeschlagen: {err_detail}"
+            else:
+                return None, f"CaseDesk Login fehlgeschlagen (HTTP {resp.status_code})"
     except Exception as e:
         logger.error(f"CaseDesk login error: {e}")
         return None, f"CaseDesk nicht erreichbar: {str(e)}"
