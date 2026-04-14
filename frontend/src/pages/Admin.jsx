@@ -350,7 +350,7 @@ const Admin = () => {
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
-      setApiKeyInput(""); setWeatherApiKey(""); setWeatherCity(""); setHaUrl(""); setHaToken("");
+      setApiKeyInput(""); setWeatherApiKey(""); setHaToken(""); setCdPassword("");
       fetchAll();
       if (payload.ha_url || payload.ha_token) {
         setTimeout(() => checkHaStatus(false), 500);
