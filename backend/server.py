@@ -662,13 +662,27 @@ async def get_settings(request: Request):
     return result
 
 @api_router.put("/admin/settings")
-async def update_settings(request: Request, settings: dict = Body(...)):
+async def update_settings(request: Request, payload: dict = Body(...)):
     await require_admin(request)
-    for key, value in settings.items():
-        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password") and value and "..." in value:
-            continue
-        await db.settings.update_one({"key": key}, {"$set": {"value": value, "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
-    return {"message": "Settings updated"}
+    try:
+        saved_keys = []
+        for key, value in payload.items():
+            # Skip masked values (already saved)
+            if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password") and value and "..." in value:
+                continue
+            # Ensure value is a string
+            str_value = str(value) if value is not None else ""
+            await db.settings.update_one(
+                {"key": key},
+                {"$set": {"value": str_value, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
+            saved_keys.append(key)
+        logger.info(f"Settings saved: {saved_keys}")
+        return {"message": "Settings updated", "saved": saved_keys}
+    except Exception as e:
+        logger.error(f"Settings save error: {e}")
+        raise HTTPException(status_code=500, detail=f"Speichern fehlgeschlagen: {str(e)}")
 
 async def get_llm_api_key() -> str:
     setting = await db.settings.find_one({"key": "openai_api_key"})

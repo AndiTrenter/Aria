@@ -359,7 +359,8 @@ const Admin = () => {
         setTimeout(() => checkCdStatus(false), 500);
       }
     } catch (e) {
-      const msg = "Fehler beim Speichern der Einstellungen";
+      const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
+      const msg = `Fehler beim Speichern: ${detail}`;
       toast.error(msg);
       setSaveResult({ type: "error", msg });
     } finally {
