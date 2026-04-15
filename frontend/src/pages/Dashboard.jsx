@@ -23,13 +23,14 @@ const Dashboard = () => {
     return h?.status || "unknown";
   };
 
-  // Build proxy URL: same origin as current page + /proxy/service_id/
+  // Build proxy URL: same origin + /api/proxy/service_id/ + auth token
   const getProxyUrl = (service) => {
     const origin = window.location.origin;
-    return `${origin}/proxy/${service.id}/`;
+    const token = localStorage.getItem("token") || "";
+    return `${origin}/api/proxy/${service.id}/?token=${encodeURIComponent(token)}`;
   };
 
-  // Check if user is on local network (simple heuristic)
+  // Check if user is on local network
   const isLocal = window.location.hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost|127\.)/);
 
   const getServiceUrl = (service) => {

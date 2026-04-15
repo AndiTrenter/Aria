@@ -379,7 +379,7 @@ async def get_services(request: Request):
         service["linked"] = service["id"] in service_accounts
         service["linked_username"] = service_accounts.get(service["id"], {}).get("username")
         # Add proxy URL for external access
-        service["proxy_url"] = f"/proxy/{service['id']}/"
+        service["proxy_url"] = f"/api/proxy/{service['id']}/"
     return all_services
 
 @api_router.post("/services/{service_id}/link")
@@ -417,11 +417,21 @@ async def delete_service(service_id: str, request: Request):
 
 # ==================== REVERSE PROXY ====================
 
-@app.api_route("/proxy/{service_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
+@api_router.api_route("/proxy/{service_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def reverse_proxy(service_id: str, path: str, request: Request):
     """Reverse proxy to internal services - enables external access via Aria."""
-    # Auth check
-    user = await get_current_user(request)
+    # Auth via query param token (for new-tab access) or header
+    token = request.query_params.get("token")
+    if token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            user_doc = await db.users.find_one({"_id": ObjectId(payload["user_id"])})
+            if not user_doc:
+                raise HTTPException(401, "Nicht autorisiert")
+        except Exception:
+            raise HTTPException(401, "Ungültiger Token")
+    else:
+        await get_current_user(request)
     
     service = await db.services.find_one({"id": service_id}, {"_id": 0})
     if not service:
@@ -472,13 +482,13 @@ async def reverse_proxy(service_id: str, path: str, request: Request):
             if "text/html" in content_type:
                 text = resp.text
                 # Rewrite absolute paths to go through proxy
-                text = text.replace(f'href="/', f'href="/proxy/{service_id}/')
-                text = text.replace(f"href='/", f"href='/proxy/{service_id}/")
-                text = text.replace(f'src="/', f'src="/proxy/{service_id}/')
-                text = text.replace(f"src='/", f"src='/proxy/{service_id}/")
-                text = text.replace(f'action="/', f'action="/proxy/{service_id}/')
+                text = text.replace(f'href="/', f'href="/api/proxy/{service_id}/')
+                text = text.replace(f"href='/", f"href='/api/proxy/{service_id}/")
+                text = text.replace(f'src="/', f'src="/api/proxy/{service_id}/')
+                text = text.replace(f"src='/", f"src='/api/proxy/{service_id}/")
+                text = text.replace(f'action="/', f'action="/api/proxy/{service_id}/')
                 # Fix absolute URLs to the service itself
-                text = text.replace(target_url, f"/proxy/{service_id}")
+                text = text.replace(target_url, f"/api/proxy/{service_id}")
                 return Response(content=text, status_code=resp.status_code, headers=resp_headers, media_type="text/html")
             
             return Response(content=resp.content, status_code=resp.status_code, headers=resp_headers, media_type=content_type)
