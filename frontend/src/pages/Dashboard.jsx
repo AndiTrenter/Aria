@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
-import { ArrowSquareOut, Circle } from "@phosphor-icons/react";
+import { ArrowSquareOut, Circle, Globe, House } from "@phosphor-icons/react";
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -21,6 +21,20 @@ const Dashboard = () => {
   const getServiceHealth = (serviceId) => {
     const h = healthData.find(h => h.id === serviceId);
     return h?.status || "unknown";
+  };
+
+  // Build proxy URL: same origin as current page + /proxy/service_id/
+  const getProxyUrl = (service) => {
+    const origin = window.location.origin;
+    return `${origin}/proxy/${service.id}/`;
+  };
+
+  // Check if user is on local network (simple heuristic)
+  const isLocal = window.location.hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost|127\.)/);
+
+  const getServiceUrl = (service) => {
+    // If on local network, use direct URL. If external, use proxy.
+    return isLocal ? service.url : getProxyUrl(service);
   };
 
   const isLcars = theme === "startrek";
@@ -81,9 +95,16 @@ const Dashboard = () => {
                   <span className={`text-[10px] font-bold tracking-wider ${health === "healthy" ? "text-green-400" : health === "offline" ? "text-red-400" : "text-yellow-400"}`}>
                     {health === "healthy" ? "ONLINE" : health === "offline" ? "OFFLINE" : "UNBEKANNT"}
                   </span>
-                  <a href={service.url} target="_blank" rel="noreferrer" className="lcars-button text-[10px] py-1 px-3 flex items-center gap-1" data-testid={`service-access-${service.id}`}>
-                    ZUGRIFF <ArrowSquareOut size={10} />
-                  </a>
+                  <div className="flex items-center gap-1">
+                    {!isLocal && (
+                      <span className="text-[9px] text-gray-500 mr-1" title="Zugriff über Aria-Proxy">
+                        <Globe size={10} className="inline" />
+                      </span>
+                    )}
+                    <a href={getServiceUrl(service)} target="_blank" rel="noreferrer" className="lcars-button text-[10px] py-1 px-3 flex items-center gap-1" data-testid={`service-access-${service.id}`}>
+                      ZUGRIFF <ArrowSquareOut size={10} />
+                    </a>
+                  </div>
                 </div>
               </div>
             );
@@ -100,9 +121,16 @@ const Dashboard = () => {
                 <span className={`text-xs font-bold ${health === "healthy" ? "text-green-400" : health === "offline" ? "text-red-400" : "text-yellow-400"}`}>
                   {health === "healthy" ? "ONLINE" : health === "offline" ? "OFFLINE" : "UNBEKANNT"}
                 </span>
-                <a href={service.url} target="_blank" rel="noreferrer" className="disney-button text-xs py-1.5 px-4" data-testid={`service-access-${service.id}`}>
-                  Zugriff <ArrowSquareOut size={12} className="inline ml-1" />
-                </a>
+                <div className="flex items-center gap-2">
+                  {!isLocal && (
+                    <span className="text-[10px] text-purple-500" title="Zugriff über Aria-Proxy">
+                      <Globe size={12} className="inline" />
+                    </span>
+                  )}
+                  <a href={getServiceUrl(service)} target="_blank" rel="noreferrer" className="disney-button text-xs py-1.5 px-4" data-testid={`service-access-${service.id}`}>
+                    Zugriff <ArrowSquareOut size={12} className="inline ml-1" />
+                  </a>
+                </div>
               </div>
             </div>
           );

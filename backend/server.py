@@ -378,6 +378,8 @@ async def get_services(request: Request):
     for service in all_services:
         service["linked"] = service["id"] in service_accounts
         service["linked_username"] = service_accounts.get(service["id"], {}).get("username")
+        # Add proxy URL for external access
+        service["proxy_url"] = f"/proxy/{service['id']}/"
     return all_services
 
 @api_router.post("/services/{service_id}/link")
@@ -412,6 +414,81 @@ async def delete_service(service_id: str, request: Request):
     await require_admin(request)
     await db.services.delete_one({"id": service_id})
     return {"message": "Service deleted"}
+
+# ==================== REVERSE PROXY ====================
+
+@app.api_route("/proxy/{service_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
+async def reverse_proxy(service_id: str, path: str, request: Request):
+    """Reverse proxy to internal services - enables external access via Aria."""
+    # Auth check
+    user = await get_current_user(request)
+    
+    service = await db.services.find_one({"id": service_id}, {"_id": 0})
+    if not service:
+        raise HTTPException(status_code=404, detail="Dienst nicht gefunden")
+    
+    target_url = service.get("url", "").rstrip("/")
+    if not target_url:
+        raise HTTPException(status_code=400, detail="Dienst-URL nicht konfiguriert")
+    
+    # Build target URL
+    full_url = f"{target_url}/{path}"
+    
+    # Forward query params
+    if request.url.query:
+        full_url += f"?{request.url.query}"
+    
+    # Forward headers (except host)
+    forward_headers = {}
+    for key, value in request.headers.items():
+        if key.lower() not in ("host", "connection", "transfer-encoding", "content-length"):
+            forward_headers[key] = value
+    
+    # Read body
+    body = await request.body()
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.request(
+                method=request.method,
+                url=full_url,
+                headers=forward_headers,
+                content=body if body else None,
+            )
+            
+            # Forward response headers (except some)
+            resp_headers = {}
+            for key, value in resp.headers.items():
+                if key.lower() not in ("transfer-encoding", "content-encoding", "content-length"):
+                    resp_headers[key] = value
+            
+            # Allow iframe embedding
+            resp_headers.pop("x-frame-options", None)
+            resp_headers.pop("X-Frame-Options", None)
+            resp_headers["Access-Control-Allow-Origin"] = "*"
+            
+            # Rewrite URLs in HTML responses to go through proxy
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" in content_type:
+                text = resp.text
+                # Rewrite absolute paths to go through proxy
+                text = text.replace(f'href="/', f'href="/proxy/{service_id}/')
+                text = text.replace(f"href='/", f"href='/proxy/{service_id}/")
+                text = text.replace(f'src="/', f'src="/proxy/{service_id}/')
+                text = text.replace(f"src='/", f"src='/proxy/{service_id}/")
+                text = text.replace(f'action="/', f'action="/proxy/{service_id}/')
+                # Fix absolute URLs to the service itself
+                text = text.replace(target_url, f"/proxy/{service_id}")
+                return Response(content=text, status_code=resp.status_code, headers=resp_headers, media_type="text/html")
+            
+            return Response(content=resp.content, status_code=resp.status_code, headers=resp_headers, media_type=content_type)
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail=f"Dienst '{service.get('name')}' nicht erreichbar")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail=f"Zeitüberschreitung bei '{service.get('name')}'")
+    except Exception as e:
+        logger.error(f"Proxy error for {service_id}: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
 
 # ==================== HEALTH ====================
 
