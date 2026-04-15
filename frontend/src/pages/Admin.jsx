@@ -97,6 +97,17 @@ const Admin = () => {
   const [cdPassword, setCdPassword] = useState("");
   const [cdStatus, setCdStatus] = useState(null);
   const [cdTesting, setCdTesting] = useState(false);
+  // Voice
+  const [defaultVoice, setDefaultVoice] = useState("nova");
+
+  const VOICE_OPTIONS = [
+    { id: "alloy", name: "Alloy", desc: "Neutral, freundlich" },
+    { id: "echo", name: "Echo", desc: "Warm, männlich" },
+    { id: "fable", name: "Fable", desc: "Erzählerisch, märchenhaft" },
+    { id: "nova", name: "Nova", desc: "Klar, weiblich" },
+    { id: "onyx", name: "Onyx", desc: "Tief, autoritär" },
+    { id: "shimmer", name: "Shimmer", desc: "Sanft, beruhigend" },
+  ];
 
   const isLcars = theme === "startrek";
   const cardClass = isLcars ? "lcars-card" : "disney-card";
@@ -125,6 +136,7 @@ const Admin = () => {
       if (s.weather_city) setWeatherCity(s.weather_city);
       if (s.casedesk_url) setCdUrl(s.casedesk_url);
       if (s.casedesk_email) setCdEmail(s.casedesk_email);
+      if (s.default_voice) setDefaultVoice(s.default_voice);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -329,6 +341,7 @@ const Admin = () => {
     if (cdUrl) payload.casedesk_url = cdUrl;
     if (cdEmail) payload.casedesk_email = cdEmail;
     if (cdPassword) payload.casedesk_password = cdPassword;
+    if (defaultVoice) payload.default_voice = defaultVoice;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
@@ -347,6 +360,7 @@ const Admin = () => {
       if (payload.casedesk_url) saved.push("CaseDesk URL");
       if (payload.casedesk_email) saved.push("CaseDesk E-Mail");
       if (payload.casedesk_password) saved.push("CaseDesk Passwort");
+      if (payload.default_voice) saved.push("Standard-Stimme");
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
@@ -1020,6 +1034,32 @@ const Admin = () => {
                   {cdStatus.connected ? "CaseDesk verbunden!" : `Nicht erreichbar: ${cdStatus.message || "Offline"}`}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Voice Default Settings */}
+          <div className={cardClass} data-testid="settings-voice">
+            <div className="flex items-center gap-3 mb-4">
+              <SpeakerHigh size={20} className={isLcars ? "text-[var(--lcars-mauve)]" : "text-pink-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-mauve)]" : "font-bold text-purple-200"}`}>{isLcars ? "ARIA STANDARD-STIMME" : "Aria Standard-Stimme"}</h3>
+            </div>
+            <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+              {isLcars ? "GLOBALE STANDARD-STIMME FÜR ALLE BENUTZER (KANN PRO BENUTZER UNTER KONTO ÜBERSCHRIEBEN WERDEN)." : "Globale Standard-Stimme für alle Benutzer (kann pro Benutzer unter Konto überschrieben werden)."}
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {VOICE_OPTIONS.map(v => (
+                <button key={v.id} onClick={() => setDefaultVoice(v.id)}
+                  className={`p-3 rounded-lg text-left transition-all ${
+                    defaultVoice === v.id
+                      ? isLcars ? "bg-[var(--lcars-mauve)]/15 border-2 border-[var(--lcars-mauve)]/50" : "bg-pink-600/20 border-2 border-pink-500/50"
+                      : isLcars ? "bg-[#0a0a14] border border-gray-800 hover:border-gray-600" : "bg-gray-900/30 border border-gray-700 hover:border-gray-500"
+                  }`}
+                  data-testid={`default-voice-${v.id}`}
+                >
+                  <span className={`text-sm font-bold ${defaultVoice === v.id ? (isLcars ? "text-[var(--lcars-mauve)]" : "text-pink-200") : "text-gray-400"}`}>{v.name}</span>
+                  <div className="text-[10px] text-gray-500">{v.desc}</div>
+                </button>
+              ))}
             </div>
           </div>
 

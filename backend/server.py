@@ -83,7 +83,7 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="User not found")
         if not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="User is deactivated")
-        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS)}
+        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "voice": user.get("voice", ""), "voice_pin": user.get("voice_pin", "")}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -489,6 +489,103 @@ async def reverse_proxy(service_id: str, path: str, request: Request):
     except Exception as e:
         logger.error(f"Proxy error for {service_id}: {e}")
         raise HTTPException(status_code=502, detail=str(e))
+
+# ==================== VOICE / TTS ====================
+
+VOICE_OPTIONS = [
+    {"id": "alloy", "name": "Alloy", "desc": "Neutral, freundlich"},
+    {"id": "echo", "name": "Echo", "desc": "Warm, männlich"},
+    {"id": "fable", "name": "Fable", "desc": "Erzählerisch, märchenhaft"},
+    {"id": "nova", "name": "Nova", "desc": "Klar, weiblich"},
+    {"id": "onyx", "name": "Onyx", "desc": "Tief, autoritär"},
+    {"id": "shimmer", "name": "Shimmer", "desc": "Sanft, beruhigend"},
+]
+
+@api_router.get("/voice/options")
+async def get_voice_options(request: Request):
+    await get_current_user(request)
+    # Get global default
+    default_doc = await db.settings.find_one({"key": "default_voice"})
+    default_voice = default_doc["value"] if default_doc and default_doc.get("value") else "nova"
+    return {"voices": VOICE_OPTIONS, "default_voice": default_voice}
+
+@api_router.put("/voice/user-settings")
+async def update_user_voice(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    update = {}
+    if "voice" in body:
+        update["voice"] = body["voice"]
+    if "voice_pin" in body:
+        update["voice_pin"] = body["voice_pin"]
+    if update:
+        await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": update})
+    return {"message": "Spracheinstellungen gespeichert"}
+
+@api_router.post("/voice/verify-pin")
+async def verify_voice_pin(request: Request, body: dict = Body(...)):
+    """Verify a voice PIN and return the user's identity."""
+    pin = body.get("pin", "")
+    if not pin:
+        raise HTTPException(400, "PIN erforderlich")
+    # Search all users for this PIN
+    user_doc = await db.users.find_one({"voice_pin": pin})
+    if not user_doc:
+        return {"verified": False, "message": "PIN nicht erkannt"}
+    return {
+        "verified": True,
+        "user_id": str(user_doc["_id"]),
+        "user_name": user_doc.get("name", user_doc.get("email", "")),
+        "user_role": user_doc.get("role", "user"),
+        "voice": user_doc.get("voice", ""),
+    }
+
+@api_router.post("/voice/tts")
+async def text_to_speech(request: Request, body: dict = Body(...)):
+    """Generate speech from text using OpenAI TTS."""
+    user = await get_current_user(request)
+    text = body.get("text", "")
+    voice = body.get("voice", "")
+    
+    if not text:
+        raise HTTPException(400, "Kein Text angegeben")
+    
+    # Determine voice: request param > user setting > global default
+    if not voice:
+        user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+        voice = user_doc.get("voice", "") if user_doc else ""
+    if not voice:
+        default_doc = await db.settings.find_one({"key": "default_voice"})
+        voice = default_doc["value"] if default_doc and default_doc.get("value") else "nova"
+    
+    # Get OpenAI API key
+    api_key = await get_llm_api_key()
+    if not api_key:
+        raise HTTPException(400, "OpenAI API Key nicht konfiguriert")
+    
+    # Truncate very long texts
+    if len(text) > 4000:
+        text = text[:4000] + "..."
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/audio/speech",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": "tts-1", "input": text, "voice": voice, "response_format": "mp3"}
+            )
+            if resp.status_code == 200:
+                return Response(content=resp.content, media_type="audio/mpeg",
+                    headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})
+            else:
+                logger.error(f"TTS error: {resp.status_code} {resp.text[:200]}")
+                raise HTTPException(resp.status_code, f"TTS Fehler: {resp.text[:200]}")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "TTS Zeitüberschreitung")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        raise HTTPException(500, f"TTS Fehler: {str(e)}")
 
 # ==================== HEALTH ====================
 

@@ -147,6 +147,31 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
   - Automation wird direkt via HA REST API (`/api/config/automation/config/`) erstellt
   - Action-Tags: [AKTION:HA_AUTOMATION], [AKTION:HA_STEUERUNG]
 - [x] CaseDesk Action-Tags: [AKTION:KALENDER], [AKTION:AUFGABE], [AKTION:FALL]
+
+### Phase 7 — Sprach-System Phase A (DONE 2026-04-15)
+- [x] Mikrofon-Button im Chat (Speech-to-Text via Web Speech API)
+  - Klick → Aufnahme → Transkription → Auto-Send als Chat-Nachricht
+  - Visuelles Feedback: rote Puls-Animation, "Aufnahme läuft..."
+  - Bei Spracheingabe: Antwort automatisch als Audio (TTS) abgespielt
+  - Bei Texteingabe: nur Text-Antwort (kein Audio)
+- [x] Text-to-Speech mit OpenAI TTS
+  - Backend: `POST /api/voice/tts` → streamt MP3 Audio
+  - 6 Stimmen: Alloy, Echo, Fable (märchenhaft), Nova, Onyx, Shimmer
+  - "Vorlesen" Button bei jeder Aria-Antwort im Chat
+- [x] Stimme pro Benutzer konfigurierbar
+  - Konto-Seite: Stimmenauswahl mit Vorschau-Button
+  - Sprach-PIN Eingabe für Voice-Identifikation
+  - Backend: `PUT /api/voice/user-settings`, `POST /api/voice/verify-pin`
+- [x] Admin: Globale Standard-Stimme in Einstellungen
+  - Default-Stimme für alle Benutzer (kann pro User überschrieben werden)
+- [x] Wake-Word "Aria" (VoiceAssistant.jsx, bestehend)
+  - Floating Mic Button (unten rechts)
+  - Wake-Word Detection → Listening → Processing → Speaking
+- [x] Temporäre PIN-basierte Sprechererkennung
+  - User setzt Sprach-PIN unter Konto
+  - Bei Sprachbefehl fragt Aria nach PIN
+  - PIN-Verifizierung identifiziert Benutzer
+
 - [x] Verbesserte Admin-Einstellungen
   - Settings vorbelegt mit gespeicherten Werten
   - Klare Rückmeldungen (Inline-Banner + Toast)
@@ -171,6 +196,13 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [ ] ForgePilot Integration (Code/Projekte)
 - [ ] Nextcloud Integration (Dateien/Kalender)
 - [ ] Dienst-übergreifende Aktionen
+
+### P5 — Sprach-System Phase B (Voice-ID)
+- [ ] Sprechererkennung mit Open-Source ML (resemblyzer/speechbrain)
+- [ ] Stimmabdruck-Training pro Benutzer (unter Konto)
+- [ ] Automatische Sprecher-Identifikation (wer spricht?)
+- [ ] Rechte-basierter Zugriff je nach erkannter Stimme
+- [ ] Läuft lokal auf Unraid (keine laufenden Kosten)
 
 ## API Endpoints
 - Auth: POST /login, GET /me

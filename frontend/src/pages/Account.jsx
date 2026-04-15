@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { User, Link as LinkIcon, Check, X, Eye, EyeSlash } from "@phosphor-icons/react";
+import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, Microphone } from "@phosphor-icons/react";
 
 const Account = () => {
   const { user, checkAuth } = useAuth();
@@ -11,6 +11,45 @@ const Account = () => {
   const [linkForm, setLinkForm] = useState({ service_id: "", username: "", password: "" });
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [showLinkPassword, setShowLinkPassword] = useState(false);
+
+  // Voice settings
+  const [voices, setVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState(user?.voice || "");
+  const [voicePin, setVoicePin] = useState("");
+  const [playingVoice, setPlayingVoice] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API}/services`).then(res => setServices(res.data)).catch(() => {});
+    axios.get(`${API}/voice/options`).then(res => {
+      setVoices(res.data.voices);
+      if (!selectedVoice) setSelectedVoice(res.data.default_voice);
+    }).catch(() => {});
+  }, []);
+
+  const previewVoice = async (voiceId) => {
+    try {
+      setPlayingVoice(voiceId);
+      const resp = await axios.post(`${API}/voice/tts`,
+        { text: "Hallo, ich bin Aria. So klinge ich mit dieser Stimme.", voice: voiceId },
+        { responseType: "blob" }
+      );
+      const url = URL.createObjectURL(resp.data);
+      const audio = new Audio(url);
+      audio.onended = () => { setPlayingVoice(null); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setPlayingVoice(null); };
+      await audio.play();
+    } catch { setPlayingVoice(null); toast.error("TTS nicht verfügbar"); }
+  };
+
+  const saveVoiceSettings = async () => {
+    const body = { voice: selectedVoice };
+    if (voicePin) body.voice_pin = voicePin;
+    try {
+      await axios.put(`${API}/voice/user-settings`, body);
+      toast.success("Spracheinstellungen gespeichert");
+      setVoicePin("");
+    } catch { toast.error("Fehler beim Speichern"); }
+  };
 
   useEffect(() => {
     axios.get(`${API}/services`).then(res => setServices(res.data)).catch(() => {});
@@ -132,6 +171,63 @@ const Account = () => {
             {isLcars ? "PIN SETZEN" : "PIN setzen"}
           </button>
         </div>
+      </div>
+
+      {/* Aria Stimme & Voice-PIN */}
+      <div className={`${cardClass} mb-6`}>
+        <h3 className={`${isLcars ? "text-sm tracking-widest mb-4 text-[var(--lcars-orange)]" : "font-bold mb-4"}`}>
+          <SpeakerHigh size={18} className="inline mr-2" />
+          {isLcars ? "ARIA STIMME" : "Aria Stimme"}
+        </h3>
+        <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+          {isLcars ? "WÄHLE DIE STIMME MIT DER ARIA MIT DIR SPRICHT." : "Wähle die Stimme mit der Aria mit dir spricht."}
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+          {voices.map(v => (
+            <button key={v.id} onClick={() => setSelectedVoice(v.id)}
+              className={`p-3 rounded-lg text-left transition-all ${
+                selectedVoice === v.id
+                  ? isLcars ? "bg-[var(--lcars-orange)]/15 border-2 border-[var(--lcars-orange)]/50" : "bg-purple-600/20 border-2 border-purple-500/50"
+                  : isLcars ? "bg-[#0a0a14] border border-gray-800 hover:border-gray-600" : "bg-gray-900/30 border border-gray-700 hover:border-gray-500"
+              }`}
+              data-testid={`voice-${v.id}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-sm font-bold ${selectedVoice === v.id ? (isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200") : "text-gray-400"}`}>
+                  {v.name}
+                </span>
+                <button onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
+                  className={`p-1 rounded ${isLcars ? "text-[var(--lcars-blue)] hover:bg-[var(--lcars-blue)]/10" : "text-purple-400 hover:bg-purple-800/30"}`}
+                  data-testid={`preview-voice-${v.id}`}
+                >
+                  <SpeakerHigh size={14} className={playingVoice === v.id ? "animate-pulse" : ""} />
+                </button>
+              </div>
+              <div className="text-[10px] text-gray-500">{v.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Voice PIN */}
+        <div className={`mt-4 pt-4 border-t ${isLcars ? "border-[var(--lcars-purple)]/20" : "border-purple-800/20"}`}>
+          <h4 className={`text-xs font-bold mb-2 ${isLcars ? "text-[var(--lcars-blue)] tracking-wider" : "text-purple-300"}`}>
+            <Microphone size={14} className="inline mr-1" />
+            {isLcars ? "SPRACH-PIN" : "Sprach-PIN"}
+          </h4>
+          <p className={`text-[10px] mb-2 ${isLcars ? "text-gray-500" : "text-purple-400"}`}>
+            {isLcars ? "SAGE DEINEN PIN WENN ARIA DANACH FRAGT, UM DICH ZU IDENTIFIZIEREN." : "Sage deinen PIN wenn Aria danach fragt, um dich zu identifizieren."}
+          </p>
+          <div className="flex gap-2 items-center">
+            <input type="password" value={voicePin} onChange={(e) => setVoicePin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder={user?.voice_pin ? "Neuer PIN (aktuell gesetzt)" : "4-6 Ziffern"}
+              className={`${inputClass} w-36`} maxLength={6} data-testid="voice-pin-input" />
+            {user?.voice_pin && <Check size={14} className="text-green-400" title="PIN gesetzt" />}
+          </div>
+        </div>
+
+        <button onClick={saveVoiceSettings} className={`${btnClass} mt-4`} data-testid="save-voice-settings">
+          {isLcars ? "STIMME SPEICHERN" : "Stimme speichern"}
+        </button>
       </div>
 
       {/* Linked Services */}
