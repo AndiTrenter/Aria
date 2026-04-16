@@ -226,6 +226,25 @@ async def get_casedesk_context(message: str) -> str:
     msg_lower = message.lower() if isinstance(message, str) else message
     context_parts = []
 
+    # Synonym expansion for better search
+    SYNONYMS = {
+        "gehalt": ["lohn", "lohnausweis", "salär", "einkommen", "verdienst", "jahresgehalt", "monatsgehalt", "lohnabrechnung", "gehaltsabrechnung"],
+        "lohn": ["gehalt", "lohnausweis", "salär", "einkommen", "verdienst", "lohnabrechnung"],
+        "lohnausweis": ["gehalt", "lohn", "jahresgehalt", "lohnabrechnung"],
+        "rechnung": ["faktura", "invoice", "mahnung", "zahlung", "quittung"],
+        "versicherung": ["police", "versicherungspolice", "prämie", "deckung", "krankenkasse"],
+        "krankenkasse": ["versicherung", "prämie", "grundversicherung", "kvg"],
+        "steuer": ["steuererklärung", "steuerrechnung", "steuern", "veranlagung", "quellensteuer"],
+        "vertrag": ["kontrakt", "vereinbarung", "abkommen", "mietvertrag", "arbeitsvertrag"],
+        "miete": ["mietvertrag", "mietzins", "wohnung", "mietverhältnis"],
+        "scheidung": ["scheidungsurteil", "trennung", "ehescheidung", "sorgerecht", "unterhalt"],
+        "unterhalt": ["alimente", "kindesunterhalt", "scheidung", "unterhaltszahlung"],
+        "kinder": ["kind", "kindesunterhalt", "sorgerecht", "obhut"],
+        "auto": ["fahrzeug", "fahrzeugausweis", "autoversicherung", "leasing"],
+        "bank": ["konto", "kontoauszug", "bankauszug", "iban"],
+        "arbeit": ["arbeitsvertrag", "kündigung", "arbeitszeugnis", "bewerbung"],
+    }
+
     # Build search query from the message
     stop_words = {"was", "ist", "die", "der", "das", "von", "vom", "letzte", "letzten",
                  "kannst", "du", "mir", "sagen", "zeig", "zeige", "hol", "hole", "such",
@@ -234,11 +253,25 @@ async def get_casedesk_context(message: str) -> str:
                  "dem", "des", "für", "mit", "bei", "wie", "wer", "wann", "wo", "warum",
                  "hat", "habe", "haben", "sind", "sein", "wird", "werden", "nicht", "auch",
                  "noch", "schon", "doch", "mal", "nur", "sehr", "ganz", "alle", "alles",
-                 "mein", "meine", "meinen", "meinem", "dein", "deine", "welche", "welcher"}
+                 "mein", "meine", "meinen", "meinem", "dein", "deine", "welche", "welcher",
+                 "hoch", "viel", "wieviel", "letztes", "letzter"}
     
     words = [w.strip("?!.,;:\"'()") for w in message.split()
              if w.strip("?!.,;:\"'()").lower() not in stop_words and len(w.strip("?!.,;:\"'()")) > 2]
-    search_query = " ".join(words[:6]) if words else message[:60]
+    
+    # Expand with synonyms
+    expanded_words = set(w.lower() for w in words)
+    for w in words:
+        wl = w.lower()
+        if wl in SYNONYMS:
+            expanded_words.update(SYNONYMS[wl])
+        # Also check partial matches
+        for key, syns in SYNONYMS.items():
+            if key in wl or wl in key:
+                expanded_words.add(key)
+                expanded_words.update(syns)
+    
+    search_query = " ".join(list(expanded_words)[:8]) if expanded_words else message[:60]
 
     try:
         # 1. ALWAYS search documents (most important for CaseDesk)
@@ -257,7 +290,7 @@ async def get_casedesk_context(message: str) -> str:
                     str(doc.get("document_type", "")),
                     str(doc.get("sender", "")),
                 ]).lower()
-                if any(w.lower() in doc_text for w in words if len(w) > 2):
+                if any(w in doc_text for w in expanded_words if len(w) > 2):
                     matching_docs.append(doc)
 
             if matching_docs:
