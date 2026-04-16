@@ -99,6 +99,9 @@ const Admin = () => {
   const [cdTesting, setCdTesting] = useState(false);
   // Voice
   const [defaultVoice, setDefaultVoice] = useState("nova");
+  // Telegram
+  const [telegramToken, setTelegramToken] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState(null);
 
   const VOICE_OPTIONS = [
     { id: "alloy", name: "Alloy", desc: "Neutral, freundlich" },
@@ -137,6 +140,7 @@ const Admin = () => {
       if (s.casedesk_url) setCdUrl(s.casedesk_url);
       if (s.casedesk_email) setCdEmail(s.casedesk_email);
       if (s.default_voice) setDefaultVoice(s.default_voice);
+      if (s.telegram_bot_token) setTelegramToken(s.telegram_bot_token);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -342,6 +346,7 @@ const Admin = () => {
     if (cdEmail) payload.casedesk_email = cdEmail;
     if (cdPassword) payload.casedesk_password = cdPassword;
     if (defaultVoice) payload.default_voice = defaultVoice;
+    if (telegramToken) payload.telegram_bot_token = telegramToken;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
@@ -361,6 +366,7 @@ const Admin = () => {
       if (payload.casedesk_email) saved.push("CaseDesk E-Mail");
       if (payload.casedesk_password) saved.push("CaseDesk Passwort");
       if (payload.default_voice) saved.push("Standard-Stimme");
+      if (payload.telegram_bot_token) saved.push("Telegram Bot");
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
@@ -1034,6 +1040,28 @@ const Admin = () => {
                   {cdStatus.connected ? "CaseDesk verbunden!" : `Nicht erreichbar: ${cdStatus.message || "Offline"}`}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Telegram Bot */}
+          <div className={cardClass} data-testid="settings-telegram">
+            <div className="flex items-center gap-3 mb-4">
+              <Gear size={20} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}`}>{isLcars ? "TELEGRAM BOT" : "Telegram Bot"}</h3>
+            </div>
+            <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
+              {isLcars ? "VERBINDE ARIA MIT TELEGRAM. BENUTZER KÖNNEN PER SPRACH-PIN CHATTEN." : "Verbinde Aria mit Telegram. Benutzer können per Sprach-PIN chatten."}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "BOT TOKEN (@BOTFATHER)" : "Bot Token (von @BotFather)"}
+                </label>
+                <input type="password" value={telegramToken} onChange={(e) => setTelegramToken(e.target.value)} placeholder="123456789:AAH..." className={`${inputClass} w-full`} data-testid="telegram-token-input" />
+              </div>
+              <div className={`p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-500" : "bg-purple-950/30 border border-purple-800/30 text-purple-400"}`}>
+                {isLcars ? "NACH DEM SPEICHERN STARTET DER BOT AUTOMATISCH. BENUTZER SENDEN /START AN @TRENTER_BOT UND MELDEN SICH MIT /PIN XXXXX AN." : "Nach dem Speichern startet der Bot automatisch. Benutzer senden /start an den Bot und melden sich mit /pin XXXXX an."}
+              </div>
             </div>
           </div>
 
