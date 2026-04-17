@@ -1582,6 +1582,7 @@ app.include_router(automations.router)
 
 # Initialize CaseDesk module
 casedesk.init(db, get_current_user, require_admin)
+casedesk.set_llm_key_func(get_llm_api_key)
 app.include_router(casedesk.router)
 
 # Initialize Telegram Bot module

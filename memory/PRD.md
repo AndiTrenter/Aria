@@ -178,6 +178,30 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
   - Trailing-Slash Fix für URLs
   - HA + CaseDesk Verbindungstests mit Status-Badge
 
+### Phase 8 — Telegram Bot + GPT-Suchinterpretation (DONE 2026-04-17)
+- [x] Telegram Bot Integration (`/app/backend/telegram_bot.py`)
+  - Long-Polling Bot für Telegram
+  - PIN-basierte Benutzeranmeldung (`/pin XXXX`)
+  - Voller Zugriff auf alle Aria-Dienste (CaseDesk, HA, Wetter)
+  - Aktions-Tags (Termine, Aufgaben, HA-Steuerung) funktionieren via Telegram
+  - Bot-Token konfigurierbar unter Admin → Einstellungen → Telegram Bot
+  - Auto-Start nach Token-Speicherung
+- [x] GPT als Suchinterpreter für CaseDesk
+  - GPT-4o-mini interpretiert Benutzeranfrage und generiert Suchbegriffe
+  - "Wie hoch war mein Gehalt?" → GPT liefert: Lohnausweis, Gehalt, Lohnabrechnung, Salär...
+  - Ersetzt starres Synonym-Mapping durch KI-Interpretation
+  - Fallback auf Keyword-Extraktion wenn GPT nicht verfügbar
+- [x] Refactoring: Chat-Logik als `process_chat_message()` extrahiert
+  - Wiederverwendbar für Web-Chat und Telegram
+  - System-Prompt und Action-Processing in eigene Funktionen
+- [x] Reverse-Proxy für externe Dienst-Zugriffe (`/api/proxy/{service_id}/`)
+
+### Phase 9 — Plex Mediathek (GEPLANT)
+- [ ] Plex-Integration: Cover-Grid + Detail-Seite
+- [ ] Filme/Serien/Musik durchsuchen
+- [ ] "In Plex abspielen" + Cast-Funktion
+- [ ] Neuer Tab "Mediathek" (Tab-Sichtbarkeit pro User)
+
 ## Offene Aufgaben
 
 ### P1 — Graceful Handling Offline Home Assistant

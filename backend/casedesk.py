@@ -217,8 +217,65 @@ async def list_casedesk_documents(request: Request):
 
 # ==================== CHAT CONTEXT HELPER ====================
 
+# Reference to get_llm_api_key - set by init or externally
+_get_llm_api_key = None
+
+def set_llm_key_func(func):
+    global _get_llm_api_key
+    _get_llm_api_key = func
+
+
+async def _gpt_interpret_search(user_message: str) -> list:
+    """Use GPT to interpret what the user is looking for and generate search terms."""
+    if not _get_llm_api_key:
+        return []
+    api_key = await _get_llm_api_key()
+    if not api_key:
+        return []
+
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post("https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": """Du bist ein Suchassistent. Der Benutzer stellt eine Frage und du musst die relevanten SUCHBEGRIFFE extrahieren, mit denen in einem Dokumentenmanagementsystem (E-Mails, PDFs, Rechnungen, Verträge, Lohnausweise etc.) gesucht werden soll.
+
+REGELN:
+- Gib NUR eine kommaseparierte Liste von Suchbegriffen zurück
+- Denke an Synonyme und verwandte Begriffe (z.B. "Gehalt" → auch "Lohnausweis, Lohnabrechnung, Salär")
+- Denke an Dokumenttypen die relevant sein könnten
+- Maximal 15 Begriffe
+- Keine Erklärungen, nur die Begriffe
+
+Beispiele:
+User: "Wie hoch war mein letztes Jahresgehalt?"
+Antwort: Lohnausweis, Gehalt, Lohnabrechnung, Jahresgehalt, Salär, Einkommen, 2025, 2024
+
+User: "Wieviel Unterhalt muss ich für meine Kinder zahlen?"
+Antwort: Unterhalt, Alimente, Kindesunterhalt, Scheidungsurteil, Scheidung, Sorgerecht, Unterhaltszahlung, Familiengericht
+
+User: "Hast du die Rechnung von der Garage?"
+Antwort: Rechnung, Garage, Auto, Fahrzeug, Reparatur, Werkstatt, Invoice, Faktura"""},
+                        {"role": "user", "content": user_message}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 100,
+                })
+            if resp.status_code == 200:
+                text = resp.json()["choices"][0]["message"]["content"].strip()
+                terms = [t.strip().lower() for t in text.split(",") if t.strip()]
+                logger.info(f"GPT search terms for '{user_message[:50]}': {terms}")
+                return terms
+    except Exception as e:
+        logger.warning(f"GPT search interpretation failed: {e}")
+    return []
+
+
 async def get_casedesk_context(message: str) -> str:
-    """Build CaseDesk context for GPT chat. Always searches if CaseDesk is connected."""
+    """Build CaseDesk context for GPT chat. Uses GPT to interpret search intent."""
     url, email, pw = await get_casedesk_settings()
     if not url or not email or not pw:
         return ""
@@ -226,52 +283,23 @@ async def get_casedesk_context(message: str) -> str:
     msg_lower = message.lower() if isinstance(message, str) else message
     context_parts = []
 
-    # Synonym expansion for better search
-    SYNONYMS = {
-        "gehalt": ["lohn", "lohnausweis", "salär", "einkommen", "verdienst", "jahresgehalt", "monatsgehalt", "lohnabrechnung", "gehaltsabrechnung"],
-        "lohn": ["gehalt", "lohnausweis", "salär", "einkommen", "verdienst", "lohnabrechnung"],
-        "lohnausweis": ["gehalt", "lohn", "jahresgehalt", "lohnabrechnung"],
-        "rechnung": ["faktura", "invoice", "mahnung", "zahlung", "quittung"],
-        "versicherung": ["police", "versicherungspolice", "prämie", "deckung", "krankenkasse"],
-        "krankenkasse": ["versicherung", "prämie", "grundversicherung", "kvg"],
-        "steuer": ["steuererklärung", "steuerrechnung", "steuern", "veranlagung", "quellensteuer"],
-        "vertrag": ["kontrakt", "vereinbarung", "abkommen", "mietvertrag", "arbeitsvertrag"],
-        "miete": ["mietvertrag", "mietzins", "wohnung", "mietverhältnis"],
-        "scheidung": ["scheidungsurteil", "trennung", "ehescheidung", "sorgerecht", "unterhalt"],
-        "unterhalt": ["alimente", "kindesunterhalt", "scheidung", "unterhaltszahlung"],
-        "kinder": ["kind", "kindesunterhalt", "sorgerecht", "obhut"],
-        "auto": ["fahrzeug", "fahrzeugausweis", "autoversicherung", "leasing"],
-        "bank": ["konto", "kontoauszug", "bankauszug", "iban"],
-        "arbeit": ["arbeitsvertrag", "kündigung", "arbeitszeugnis", "bewerbung"],
-    }
+    # Use GPT to interpret what the user is looking for
+    search_terms = await _gpt_interpret_search(message)
+    
+    # Fallback: basic word extraction if GPT fails
+    if not search_terms:
+        stop_words = {"was", "ist", "die", "der", "das", "von", "vom", "letzte", "letzten",
+                     "kannst", "du", "mir", "sagen", "zeig", "zeige", "hol", "hole", "such",
+                     "suche", "finde", "bitte", "mich", "ein", "eine", "und", "oder", "den",
+                     "dem", "des", "für", "mit", "bei", "wie", "wer", "wann", "wo", "warum",
+                     "hat", "habe", "haben", "sind", "sein", "wird", "werden", "nicht", "auch",
+                     "noch", "schon", "doch", "mal", "nur", "sehr", "ganz", "alle", "alles",
+                     "mein", "meine", "meinen", "dein", "deine", "welche", "welcher",
+                     "hoch", "viel", "wieviel", "letztes", "letzter"}
+        search_terms = [w.strip("?!.,;:\"'()").lower() for w in message.split()
+                       if w.strip("?!.,;:\"'()").lower() not in stop_words and len(w.strip("?!.,;:\"'()")) > 2]
 
-    # Build search query from the message
-    stop_words = {"was", "ist", "die", "der", "das", "von", "vom", "letzte", "letzten",
-                 "kannst", "du", "mir", "sagen", "zeig", "zeige", "hol", "hole", "such",
-                 "suche", "finde", "fasse", "zusammen", "kurz", "bündig", "bitte", "mich",
-                 "ein", "eine", "einen", "einem", "einer", "und", "oder", "aber", "den",
-                 "dem", "des", "für", "mit", "bei", "wie", "wer", "wann", "wo", "warum",
-                 "hat", "habe", "haben", "sind", "sein", "wird", "werden", "nicht", "auch",
-                 "noch", "schon", "doch", "mal", "nur", "sehr", "ganz", "alle", "alles",
-                 "mein", "meine", "meinen", "meinem", "dein", "deine", "welche", "welcher",
-                 "hoch", "viel", "wieviel", "letztes", "letzter"}
-    
-    words = [w.strip("?!.,;:\"'()") for w in message.split()
-             if w.strip("?!.,;:\"'()").lower() not in stop_words and len(w.strip("?!.,;:\"'()")) > 2]
-    
-    # Expand with synonyms
-    expanded_words = set(w.lower() for w in words)
-    for w in words:
-        wl = w.lower()
-        if wl in SYNONYMS:
-            expanded_words.update(SYNONYMS[wl])
-        # Also check partial matches
-        for key, syns in SYNONYMS.items():
-            if key in wl or wl in key:
-                expanded_words.add(key)
-                expanded_words.update(syns)
-    
-    search_query = " ".join(list(expanded_words)[:8]) if expanded_words else message[:60]
+    search_query = " ".join(search_terms[:8]) if search_terms else message[:60]
 
     try:
         # 1. ALWAYS search documents (most important for CaseDesk)
@@ -290,7 +318,7 @@ async def get_casedesk_context(message: str) -> str:
                     str(doc.get("document_type", "")),
                     str(doc.get("sender", "")),
                 ]).lower()
-                if any(w in doc_text for w in expanded_words if len(w) > 2):
+                if any(w in doc_text for w in search_terms if len(w) > 2):
                     matching_docs.append(doc)
 
             if matching_docs:
