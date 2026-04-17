@@ -213,18 +213,19 @@ def _thumb_url(thumb_path, base_url, token):
     if not thumb_path:
         return ""
     return f"/api/plex/image?path={thumb_path}"
-
-
 def _format_item(item, base_url, token):
     """Format a Plex metadata item for the frontend."""
     rating_key = item.get("ratingKey", "")
+    # Use actual thumb path from Plex (includes timestamp hash)
+    thumb_path = item.get("thumb", "")
+    art_path = item.get("art", "")
     return {
         "rating_key": rating_key,
         "title": item.get("title", ""),
         "type": item.get("type", ""),
         "year": item.get("year", ""),
-        "thumb": f"/api/plex/thumb/{rating_key}" if rating_key else "",
-        "art": f"/api/plex/art/{rating_key}" if rating_key else "",
+        "thumb": f"/api/plex/image?path={thumb_path}" if thumb_path else "",
+        "art": f"/api/plex/image?path={art_path}" if art_path else "",
         "rating": item.get("rating", 0),
         "view_count": item.get("viewCount", 0),
         "added_at": item.get("addedAt", 0),

@@ -110,7 +110,7 @@ const Mediathek = () => {
           {/* Poster */}
           <div className="w-48 flex-shrink-0">
             {detail.thumb ? (
-              <img src={`${API}${detail.thumb.replace('/api', '')}`} alt={detail.title} className="w-full rounded-xl shadow-lg" onError={(e) => e.target.style.display='none'} />
+              <img src={`${API}${detail.thumb.startsWith('/api') ? detail.thumb.substring(4) : detail.thumb}`} alt={detail.title} className="w-full rounded-xl shadow-lg" />
             ) : (
               <div className={`w-full h-72 rounded-xl flex items-center justify-center ${isLcars ? "bg-[#0a0a14]" : "bg-purple-950/50"}`}>
                 <TypeIcon type={detail.type} />
@@ -155,7 +155,7 @@ const Mediathek = () => {
                   {detail.roles.map((r, i) => (
                     <div key={i} className="flex-shrink-0 w-20 text-center">
                       <div className={`w-16 h-16 mx-auto rounded-full mb-1 flex items-center justify-center text-gray-600 text-lg ${isLcars ? "bg-[#0a0a14]" : "bg-purple-950/50"}`}>
-                        {r.thumb ? <img src={`${API}${r.thumb.replace('/api', '')}`} className="w-full h-full rounded-full object-cover" onError={(e) => e.target.style.display='none'} /> : r.name[0]}
+                      {r.thumb ? <img src={`${API}${r.thumb.startsWith('/api') ? r.thumb.substring(4) : r.thumb}`} className="w-full h-full rounded-full object-cover" alt={r.name} /> : r.name[0]}
                       </div>
                       <div className="text-[10px] font-bold truncate">{r.name}</div>
                       {r.role && <div className="text-[9px] text-gray-500 truncate">{r.role}</div>}
@@ -317,8 +317,7 @@ const MediaCard = ({ item, onClick, isLcars, cardBg, formatDuration }) => (
       {item.thumb ? (
         <img src={`${process.env.REACT_APP_BACKEND_URL}${item.thumb}`} alt={item.title}
           className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          loading="lazy"
-          onError={(e) => { e.target.style.display='none'; }} />
+          loading="lazy" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-gray-700">
           <FilmStrip size={32} />
