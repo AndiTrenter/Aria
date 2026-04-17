@@ -992,6 +992,64 @@ async def gather_context(msg_lower: str, request: Request) -> str:
     except Exception as e:
         logger.warning(f"CaseDesk context failed: {e}")
 
+    # Plex context - search media when user asks about films/series/music
+    plex_keywords = ["film", "filme", "movie", "serie", "serien", "staffel", "episode", "musik",
+                     "song", "album", "artist", "plex", "mediathek", "schauen", "gucken", "anschauen",
+                     "abspielen", "stream", "kino", "trailer", "neu auf plex", "weiterschauen",
+                     "empfehlung", "empfehlen", "was gibt", "was kann ich", "horror", "action",
+                     "comedy", "komödie", "thriller", "animation", "sci-fi", "fantasy", "drama"]
+    if any(w in msg_lower for w in plex_keywords):
+        try:
+            plex_url, plex_token = await plex.get_plex_settings()
+            if plex_url and plex_token:
+                plex_context = []
+                # Search if specific query
+                search_words = [w for w in msg_lower.split() if w not in {"film", "filme", "serie", "serien", "hast", "du", "gibt", "es", "was", "welche", "zeig", "mir", "den", "die", "das", "auf", "plex", "von", "einen", "kannst", "schauen", "gucken", "anschauen", "ich", "möchte", "will", "kann", "man"} and len(w) > 2]
+                if search_words:
+                    query = " ".join(search_words[:4])
+                    data, err = await plex.plex_request("/hubs/search", {"query": query, "limit": 10})
+                    if data and not err:
+                        results = []
+                        for hub in data.get("MediaContainer", {}).get("Hub", []):
+                            for item in hub.get("Metadata", []):
+                                title = item.get("title", "")
+                                year = item.get("year", "")
+                                mtype = item.get("type", "")
+                                summary = item.get("summary", "")[:200]
+                                rating = item.get("rating", "")
+                                results.append(f"- {title} ({year}) [{mtype}]{f' Rating: {rating}' if rating else ''}{f' | {summary}' if summary else ''}")
+                        if results:
+                            plex_context.append(f"--- Plex Suchergebnisse für '{query}' ---\n" + "\n".join(results[:8]))
+                
+                # Also get recently added and on-deck for general questions
+                if not search_words or any(w in msg_lower for w in ["neu", "zuletzt", "weiterschauen", "empfehlung", "was gibt", "was kann"]):
+                    recent_data, _ = await plex.plex_request("/library/recentlyAdded", {"X-Plex-Container-Size": "8"})
+                    if recent_data:
+                        items = recent_data.get("MediaContainer", {}).get("Metadata", [])
+                        if items:
+                            recent_list = [f"- {i.get('title', '')} ({i.get('year', '')}) [{i.get('type', '')}]" for i in items[:8]]
+                            plex_context.append("--- Zuletzt zu Plex hinzugefügt ---\n" + "\n".join(recent_list))
+                    
+                    deck_data, _ = await plex.plex_request("/library/onDeck")
+                    if deck_data:
+                        items = deck_data.get("MediaContainer", {}).get("Metadata", [])
+                        if items:
+                            deck_list = [f"- {i.get('grandparentTitle', '')} {i.get('title', '')} ({i.get('type', '')})" for i in items[:5]]
+                            plex_context.append("--- Weiterschauen (On Deck) ---\n" + "\n".join(deck_list))
+                
+                # Get libraries overview
+                lib_data, _ = await plex.plex_request("/library/sections")
+                if lib_data:
+                    dirs = lib_data.get("MediaContainer", {}).get("Directory", [])
+                    if dirs:
+                        lib_list = [f"- {d.get('title', '')}: {d.get('count', 0)} Einträge ({d.get('type', '')})" for d in dirs]
+                        plex_context.append("--- Plex Bibliotheken ---\n" + "\n".join(lib_list))
+                
+                if plex_context:
+                    context_parts.append("\n".join(plex_context))
+        except Exception as e:
+            logger.warning(f"Plex context failed: {e}")
+
     if context_parts:
         return "\n\n".join(context_parts)
     return ""
@@ -1062,6 +1120,7 @@ def _get_system_prompt():
 VERBUNDENE DIENSTE:
 - **CaseDesk AI**: Dokumente, E-Mails, Fälle, Aufgaben, Kalender. Du kannst lesen, suchen, zusammenfassen UND neue Einträge erstellen.
 - **Home Assistant**: Smart-Home-Geräte steuern UND Automationen erstellen.
+- **Plex Media Server**: Filme, Serien und Musik durchsuchen. Du kennst die Bibliothek und kannst Empfehlungen geben.
 - **System**: Server-Diagnostik (CPU, RAM, Docker-Container).
 - **Wetter**: Aktuelles Wetter und Vorhersage.
 

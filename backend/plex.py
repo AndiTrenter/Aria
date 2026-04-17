@@ -212,9 +212,13 @@ async def get_thumb_proxy(request: Request, rating_key: str, w: int = 300, h: in
 def _thumb_url(thumb_path, base_url, token):
     if not thumb_path:
         return ""
-    return f"/api/plex/image?path={thumb_path}"
+    from urllib.parse import quote
+    return f"/api/plex/image?path={quote(thumb_path, safe='')}"
+
+
 def _format_item(item, base_url, token):
     """Format a Plex metadata item for the frontend."""
+    from urllib.parse import quote
     rating_key = item.get("ratingKey", "")
     # Use actual thumb path from Plex (includes timestamp hash)
     thumb_path = item.get("thumb", "")
@@ -224,8 +228,8 @@ def _format_item(item, base_url, token):
         "title": item.get("title", ""),
         "type": item.get("type", ""),
         "year": item.get("year", ""),
-        "thumb": f"/api/plex/image?path={thumb_path}" if thumb_path else "",
-        "art": f"/api/plex/image?path={art_path}" if art_path else "",
+        "thumb": f"/api/plex/image?path={quote(thumb_path, safe='')}" if thumb_path else "",
+        "art": f"/api/plex/image?path={quote(art_path, safe='')}" if art_path else "",
         "rating": item.get("rating", 0),
         "view_count": item.get("viewCount", 0),
         "added_at": item.get("addedAt", 0),

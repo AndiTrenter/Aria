@@ -239,6 +239,15 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [ ] Rechte-basierter Zugriff je nach erkannter Stimme
 - [ ] Läuft lokal auf Unraid (keine laufenden Kosten)
 
+### P6 — Emailversand fixen von Aria
+- [ ] Chat: Wenn Aria eine E-Mail erstellt und User bestätigt, muss die Mail tatsächlich über CaseDesk SMTP gesendet werden
+- [ ] Prüfen ob CaseDesk eine Send-Email API hat
+- [ ] Falls nicht: Eigenen SMTP-Versand in Aria einbauen (Admin-Einstellungen)
+
+### P7 — ForgePilot Integration
+- [ ] Prüfen ob ForgePilot bereits als Dienst verbunden ist
+- [ ] API-Anbindung für Projekte/Code-Zugriff via Aria Chat
+
 ## API Endpoints
 - Auth: POST /login, GET /me
 - Smart Home: GET/POST /smarthome/rooms, GET/POST /smarthome/devices, GET/PUT /smarthome/permissions, POST /smarthome/sync, POST /smarthome/control, GET /smarthome/dashboard
