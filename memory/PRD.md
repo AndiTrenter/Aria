@@ -196,11 +196,22 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
   - System-Prompt und Action-Processing in eigene Funktionen
 - [x] Reverse-Proxy für externe Dienst-Zugriffe (`/api/proxy/{service_id}/`)
 
-### Phase 9 — Plex Mediathek (GEPLANT)
-- [ ] Plex-Integration: Cover-Grid + Detail-Seite
-- [ ] Filme/Serien/Musik durchsuchen
-- [ ] "In Plex abspielen" + Cast-Funktion
-- [ ] Neuer Tab "Mediathek" (Tab-Sichtbarkeit pro User)
+### Phase 9 — Plex Mediathek (DONE 2026-04-17)
+- [x] Plex Backend-Modul (`/app/backend/plex.py`)
+  - Libraries, Suche, Metadata, Recently Added, On Deck
+  - Thumbnail-Proxy (Token nicht im Browser exponiert)
+  - Serien: Staffeln + Episoden Navigation
+- [x] Mediathek Frontend (`/app/frontend/src/pages/Mediathek.jsx`)
+  - Cover-Grid Layout (Netflix-ähnlich)
+  - Bibliotheks-Filter (Filme, Serien, Musik)
+  - Suchfunktion über alle Bibliotheken
+  - Detail-Seite: Beschreibung, Bewertung, Cast, Genres, Auflösung
+  - "In Plex abspielen" Button
+  - Weiterschauen + Zuletzt hinzugefügt Sektionen
+  - Staffel/Episoden-Navigation für Serien
+- [x] Admin-Einstellungen: Plex URL + Token + Verbindungstest
+- [x] Navigation: MEDIA Tab (Sichtbarkeit pro User konfigurierbar)
+- [x] Neuer Tab "media" in ALL_TABS für User-Zuweisung
 
 ## Offene Aufgaben
 

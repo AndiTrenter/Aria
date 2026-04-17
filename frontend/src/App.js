@@ -16,6 +16,7 @@ import Weather from "@/pages/Weather";
 import SmartHome from "@/pages/SmartHome";
 import Automations from "@/pages/Automations";
 import KioskMode from "@/pages/KioskMode";
+import Mediathek from "@/pages/Mediathek";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import LcarsLayout from "@/components/LcarsLayout";
 
@@ -227,6 +228,7 @@ const AppRouter = () => {
         <Route path="/account" element={<ProtectedRoute><LcarsLayout><Account /></LcarsLayout></ProtectedRoute>} />
         <Route path="/smarthome" element={<ProtectedRoute><LcarsLayout><SmartHome /></LcarsLayout></ProtectedRoute>} />
         <Route path="/automations" element={<ProtectedRoute><LcarsLayout><Automations /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/mediathek" element={<ProtectedRoute><LcarsLayout><Mediathek /></LcarsLayout></ProtectedRoute>} />
         <Route path="/kiosk" element={<ProtectedRoute><KioskMode /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />

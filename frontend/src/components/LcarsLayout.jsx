@@ -24,12 +24,13 @@ const LcarsLayout = ({ children }) => {
     health: { path: "/health", shortLabel: "HEALTH" },
     chat: { path: "/chat", shortLabel: "CHAT" },
     weather: { path: "/weather", shortLabel: "WETTER" },
+    media: { path: "/mediathek", shortLabel: "MEDIA" },
     account: { path: "/account", shortLabel: "KONTO" },
     logs: { path: "/logs", shortLabel: "LOGS" },
   };
 
   const navItems = [];
-  for (const tabId of ["dash", "home", "auto", "health", "chat", "weather", "account", "logs"]) {
+  for (const tabId of ["dash", "home", "auto", "health", "chat", "weather", "media", "account", "logs"]) {
     if (isAdmin || visibleTabs.includes(tabId)) {
       navItems.push(TAB_MAP[tabId]);
     }

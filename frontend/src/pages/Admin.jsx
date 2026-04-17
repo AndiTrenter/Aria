@@ -32,6 +32,7 @@ const ALL_TABS = [
   { id: "health", label: "System Health" },
   { id: "chat", label: "Chat" },
   { id: "weather", label: "Wetter" },
+  { id: "media", label: "Mediathek" },
   { id: "account", label: "Konto" },
   { id: "logs", label: "Logs" },
   { id: "kiosk", label: "Kiosk" },
@@ -102,6 +103,11 @@ const Admin = () => {
   // Telegram
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramStatus, setTelegramStatus] = useState(null);
+  // Plex
+  const [plexUrl, setPlexUrl] = useState("");
+  const [plexToken, setPlexToken] = useState("");
+  const [plexStatus, setPlexStatus] = useState(null);
+  const [plexTesting, setPlexTesting] = useState(false);
 
   const VOICE_OPTIONS = [
     { id: "alloy", name: "Alloy", desc: "Neutral, freundlich" },
@@ -141,6 +147,7 @@ const Admin = () => {
       if (s.casedesk_email) setCdEmail(s.casedesk_email);
       if (s.default_voice) setDefaultVoice(s.default_voice);
       if (s.telegram_bot_token) setTelegramToken(s.telegram_bot_token);
+      if (s.plex_url) setPlexUrl(s.plex_url);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -174,7 +181,20 @@ const Admin = () => {
   };
 
   // Silent auto-check on page load
-  useEffect(() => { checkHaStatus(true); checkCdStatus(true); }, [settings]);
+  useEffect(() => { checkHaStatus(true); checkCdStatus(true); checkPlexStatus(true); }, [settings]);
+
+  const checkPlexStatus = async (silent = false) => {
+    if (!silent) setPlexTesting(true);
+    try {
+      const { data } = await axios.get(`${API}/plex/status`);
+      setPlexStatus(data);
+      if (!silent) {
+        if (data.connected) toast.success(`Plex verbunden: ${data.name}`);
+        else toast.error("Plex nicht erreichbar");
+      }
+    } catch { setPlexStatus(null); if (!silent) toast.error("Plex-Test fehlgeschlagen"); }
+    finally { if (!silent) setPlexTesting(false); }
+  };
 
   const checkCdStatus = async (silent = false) => {
     if (!silent) setCdTesting(true);
@@ -347,6 +367,8 @@ const Admin = () => {
     if (cdPassword) payload.casedesk_password = cdPassword;
     if (defaultVoice) payload.default_voice = defaultVoice;
     if (telegramToken) payload.telegram_bot_token = telegramToken;
+    if (plexUrl) payload.plex_url = plexUrl;
+    if (plexToken) payload.plex_token = plexToken;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
@@ -367,6 +389,8 @@ const Admin = () => {
       if (payload.casedesk_password) saved.push("CaseDesk Passwort");
       if (payload.default_voice) saved.push("Standard-Stimme");
       if (payload.telegram_bot_token) saved.push("Telegram Bot");
+      if (payload.plex_url) saved.push("Plex URL");
+      if (payload.plex_token) saved.push("Plex Token");
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
@@ -377,6 +401,9 @@ const Admin = () => {
       }
       if (payload.casedesk_url || payload.casedesk_email || payload.casedesk_password) {
         setTimeout(() => checkCdStatus(false), 500);
+      }
+      if (payload.plex_url || payload.plex_token) {
+        setTimeout(() => checkPlexStatus(false), 500);
       }
     } catch (e) {
       const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
@@ -1045,6 +1072,54 @@ const Admin = () => {
 
           {/* Telegram Bot */}
           <div className={cardClass} data-testid="settings-telegram">
+
+          {/* Plex */}
+          </div>
+          <div className={cardClass} data-testid="settings-plex">
+            <div className="flex items-center gap-3 mb-4">
+              <Gear size={20} className={isLcars ? "text-[var(--lcars-gold)]" : "text-yellow-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-gold)]" : "font-bold text-purple-200"}`}>{isLcars ? "PLEX MEDIA SERVER" : "Plex Media Server"}</h3>
+              {plexStatus && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${plexStatus.connected ? "bg-green-900/50 text-green-400" : "bg-red-900/50 text-red-400"}`}>
+                  {plexStatus.connected ? `VERBUNDEN (${plexStatus.name})` : "OFFLINE"}
+                </span>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "PLEX URL" : "Plex Server URL"}
+                </label>
+                <input type="text" value={plexUrl} onChange={(e) => setPlexUrl(e.target.value)} placeholder="http://192.168.x.x:32400" className={`${inputClass} w-full`} data-testid="plex-url-input" />
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "GESPEICHERTER TOKEN" : "Gespeicherter Plex Token"}
+                </label>
+                <div className={`p-2 rounded text-sm ${isLcars ? "bg-[#0a0a14] text-gray-400 border border-[var(--lcars-purple)]/30" : "bg-purple-950/50 text-purple-300"}`}>
+                  {settings.plex_token || (isLcars ? "NICHT GESPEICHERT" : "Nicht gespeichert")}
+                </div>
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${isLcars ? "text-gray-400 tracking-wider" : "text-purple-300"}`}>
+                  {isLcars ? "NEUER TOKEN" : "Neuer Plex Token (leer = unverändert)"}
+                </label>
+                <input type="password" value={plexToken} onChange={(e) => setPlexToken(e.target.value)} placeholder="X-Plex-Token..." className={`${inputClass} w-full`} data-testid="plex-token-input" />
+              </div>
+              <button onClick={() => checkPlexStatus(false)} disabled={plexTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="plex-test-button">
+                {plexTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
+                {plexTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
+              </button>
+              {plexStatus && !plexTesting && (
+                <div className={`p-3 rounded-lg text-sm font-bold ${plexStatus.connected ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`}>
+                  {plexStatus.connected ? `Plex verbunden: ${plexStatus.name} (v${plexStatus.version})` : "Nicht erreichbar"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Telegram Bot */}
+          <div className={cardClass} data-testid="settings-telegram-block">
             <div className="flex items-center gap-3 mb-4">
               <Gear size={20} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
               <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}`}>{isLcars ? "TELEGRAM BOT" : "Telegram Bot"}</h3>

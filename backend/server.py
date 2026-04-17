@@ -37,6 +37,7 @@ import smarthome
 import automations
 import casedesk
 import telegram_bot
+import plex
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-ALL_TABS = ["dash", "home", "auto", "health", "chat", "weather", "account", "logs", "kiosk"]
+ALL_TABS = ["dash", "home", "auto", "health", "chat", "weather", "media", "account", "logs", "kiosk"]
 DEFAULT_TABS = ["dash", "home", "chat", "weather", "account"]
 
 class UserCreate(BaseModel):
@@ -840,7 +841,7 @@ async def get_settings(request: Request):
     for s in settings:
         key = s["key"]
         val = s.get("value", "")
-        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token") and val:
+        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token") and val:
             result[key] = val[:8] + "..." + val[-4:] if len(val) > 12 else val
         else:
             result[key] = val
@@ -853,7 +854,7 @@ async def update_settings(request: Request, payload: dict = Body(...)):
         saved_keys = []
         for key, value in payload.items():
             # Skip masked values (already saved)
-            if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token") and value and "..." in value:
+            if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token") and value and "..." in value:
                 continue
             # Ensure value is a string
             str_value = str(value) if value is not None else ""
@@ -1584,6 +1585,10 @@ app.include_router(automations.router)
 casedesk.init(db, get_current_user, require_admin)
 casedesk.set_llm_key_func(get_llm_api_key)
 app.include_router(casedesk.router)
+
+# Initialize Plex module
+plex.init(db, get_current_user)
+app.include_router(plex.router)
 
 # Initialize Telegram Bot module
 telegram_bot.init(db, get_ha_settings, get_llm_api_key)
