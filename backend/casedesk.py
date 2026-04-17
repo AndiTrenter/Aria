@@ -28,6 +28,8 @@ async def get_casedesk_settings():
     email_doc = await db.settings.find_one({"key": "casedesk_email"})
     pw_doc = await db.settings.find_one({"key": "casedesk_password"})
     url = url_doc["value"].rstrip("/") if url_doc and url_doc.get("value") else ""
+    if url and not url.startswith("http"):
+        url = f"http://{url}"
     email = email_doc["value"] if email_doc and email_doc.get("value") else ""
     pw = pw_doc["value"] if pw_doc and pw_doc.get("value") else ""
     return url, email, pw

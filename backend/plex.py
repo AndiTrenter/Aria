@@ -23,6 +23,9 @@ async def get_plex_settings():
     url_doc = await db.settings.find_one({"key": "plex_url"})
     token_doc = await db.settings.find_one({"key": "plex_token"})
     url = url_doc["value"].rstrip("/") if url_doc and url_doc.get("value") else ""
+    # Auto-prepend http:// if missing
+    if url and not url.startswith("http"):
+        url = f"http://{url}"
     token = token_doc["value"] if token_doc and token_doc.get("value") and "..." not in token_doc["value"] else ""
     return url, token
 

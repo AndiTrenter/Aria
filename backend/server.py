@@ -1366,6 +1366,8 @@ async def get_ha_settings():
     url_doc = await db.settings.find_one({"key": "ha_url"})
     token_doc = await db.settings.find_one({"key": "ha_token"})
     url = url_doc["value"].rstrip("/") if url_doc and url_doc.get("value") else ""
+    if url and not url.startswith("http"):
+        url = f"http://{url}"
     token = token_doc["value"] if token_doc and token_doc.get("value") else ""
     return url, token
 
