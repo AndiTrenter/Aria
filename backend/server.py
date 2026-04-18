@@ -1090,7 +1090,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         gpt_messages.append({"role": "user", "content": user_message})
         
         response = await openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.4-mini",
             messages=gpt_messages,
             temperature=0.7,
             max_tokens=1000,
@@ -1138,6 +1138,9 @@ CaseDesk:
 - Kalendereinträge: [AKTION:KALENDER] {"title":"...", "description":"...", "start_time":"YYYY-MM-DDTHH:MM:SS", "end_time":"YYYY-MM-DDTHH:MM:SS", "all_day":false}
 - Aufgaben: [AKTION:AUFGABE] {"title":"...", "description":"...", "priority":"medium", "due_date":"YYYY-MM-DD"}
 - Fälle: [AKTION:FALL] {"title":"...", "description":"..."}
+- E-Mail senden: [AKTION:EMAIL] {"recipient":"Empfänger Name", "recipient_email":"email@example.com", "subject":"Betreff", "draft_content":"Vollständiger E-Mail-Text", "purpose":"Zweck"}
+
+WICHTIG für E-Mails: Wenn der User dich bittet eine E-Mail zu senden, erstelle den vollständigen Text und füge den [AKTION:EMAIL] Tag ein. FRAGE NICHT nach Bestätigung — sende direkt.
 
 Home Assistant:
 - Gerät steuern: [AKTION:HA_STEUERUNG] {"entity_id":"light.wohnzimmer", "service":"turn_on", "data":{}}
@@ -1153,7 +1156,7 @@ async def _process_action_tags(response_text: str, user_id: str) -> str:
     action_results = []
     
     # CaseDesk actions
-    for tag_name, action_type in {"KALENDER": "create_event", "AUFGABE": "create_task", "FALL": "create_case"}.items():
+    for tag_name, action_type in {"KALENDER": "create_event", "AUFGABE": "create_task", "FALL": "create_case", "EMAIL": "send_email"}.items():
         pattern = rf'\[AKTION:{tag_name}\]\s*(\{{[^}}]+\}})'
         for match in _re.findall(pattern, response_text):
             try:

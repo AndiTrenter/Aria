@@ -4,6 +4,7 @@ Connects to CaseDesk AI API for emails, documents, cases, tasks, calendar
 """
 from fastapi import APIRouter, HTTPException, Request, Body
 import httpx
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -241,7 +242,7 @@ async def _gpt_interpret_search(user_message: str) -> list:
             resp = await client.post("https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.4-mini",
                     "messages": [
                         {"role": "system", "content": """Du bist ein Suchassistent. Der Benutzer stellt eine Frage und du musst die relevanten SUCHBEGRIFFE extrahieren, mit denen in einem Dokumentenmanagementsystem (E-Mails, PDFs, Rechnungen, Verträge, Lohnausweise etc.) gesucht werden soll.
 
@@ -453,5 +454,41 @@ async def execute_casedesk_action(action_type: str, data: dict) -> dict:
         if result and not err:
             return {"success": True, "message": f"Fall '{data.get('title')}' in CaseDesk erstellt."}
         return {"success": False, "message": f"Fall konnte nicht erstellt werden: {err}"}
+
+    elif action_type == "send_email":
+        # Step 1: Create draft via CaseDesk execute-action
+        action_payload = json.dumps({
+            "recipient": data.get("recipient", ""),
+            "recipient_email": data.get("recipient_email", ""),
+            "subject": data.get("subject", ""),
+            "purpose": data.get("purpose", ""),
+            "draft_content": data.get("draft_content", data.get("body", "")),
+            "suggested_documents": data.get("suggested_documents", []),
+            "context": data.get("context", ""),
+        })
+        # Create correspondence entry
+        result, err = await casedesk_request("POST", "/ai/execute-action",
+            data={"action_type": "send_email", "action_data": action_payload, "confirmed": "true"})
+        if result and result.get("success"):
+            corr_id = result.get("created", {}).get("id", "")
+            recipient_email = data.get("recipient_email", "")
+            
+            # Step 2: Try to send if we have a recipient email
+            if corr_id and recipient_email:
+                # Get mail accounts
+                accounts, acc_err = await casedesk_request("GET", "/mail-accounts")
+                if accounts and isinstance(accounts, list) and len(accounts) > 0:
+                    mail_account_id = accounts[0].get("id", "")
+                    if mail_account_id:
+                        send_result, send_err = await casedesk_request("POST", 
+                            f"/ai/send-correspondence/{corr_id}",
+                            data={"mail_account_id": mail_account_id, "recipient_email": recipient_email})
+                        if send_result and send_result.get("success"):
+                            return {"success": True, "message": f"E-Mail an '{data.get('recipient')}' ({recipient_email}) gesendet."}
+                        else:
+                            return {"success": True, "message": f"E-Mail-Entwurf an '{data.get('recipient')}' erstellt. Versand fehlgeschlagen: {send_err or 'SMTP nicht konfiguriert'}. Bitte in CaseDesk manuell senden."}
+                    
+            return {"success": True, "message": f"E-Mail-Entwurf an '{data.get('recipient')}' in CaseDesk erstellt. Bitte in CaseDesk den Versand bestätigen."}
+        return {"success": False, "message": f"E-Mail konnte nicht erstellt werden: {err}"}
 
     return {"success": False, "message": f"Unbekannte Aktion: {action_type}"}

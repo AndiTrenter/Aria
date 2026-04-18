@@ -239,10 +239,15 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [ ] Rechte-basierter Zugriff je nach erkannter Stimme
 - [ ] Läuft lokal auf Unraid (keine laufenden Kosten)
 
-### P6 — Emailversand fixen von Aria
-- [ ] Chat: Wenn Aria eine E-Mail erstellt und User bestätigt, muss die Mail tatsächlich über CaseDesk SMTP gesendet werden
-- [ ] Prüfen ob CaseDesk eine Send-Email API hat
-- [ ] Falls nicht: Eigenen SMTP-Versand in Aria einbauen (Admin-Einstellungen)
+### P6 — Emailversand fixen von Aria (DONE 2026-04-18)
+- [x] Email-Versand über CaseDesk API (execute-action + send-correspondence)
+- [x] [AKTION:EMAIL] Tag im Chat — GPT erstellt Email und sendet via CaseDesk SMTP
+- [x] Fallback: Wenn SMTP nicht konfiguriert, wird Entwurf in CaseDesk erstellt
+
+### P7 — GPT-Modell Optimierung (DONE 2026-04-18)
+- [x] Standard: gpt-5.4-mini (schneller, günstiger)
+- [x] Suchinterpretation: gpt-5.4-mini
+- [x] Eskalation auf gpt-5.4 für komplexe Aufgaben (Automationserstellung)
 
 ### P7 — ForgePilot Integration
 - [ ] Prüfen ob ForgePilot bereits als Dienst verbunden ist
