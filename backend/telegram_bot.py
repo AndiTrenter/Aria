@@ -27,7 +27,11 @@ def init(database, ha_func, llm_func):
 
 async def get_bot_token():
     doc = await db.settings.find_one({"key": "telegram_bot_token"})
-    return doc["value"] if doc and doc.get("value") and "..." not in doc["value"] else ""
+    token = doc["value"] if doc and doc.get("value") else ""
+    # Ignore disabled/placeholder tokens
+    if not token or "..." in token or token == "DISABLED" or len(token) < 20:
+        return ""
+    return token
 
 
 async def telegram_request(method, token, **kwargs):
