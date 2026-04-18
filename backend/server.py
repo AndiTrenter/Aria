@@ -1158,7 +1158,11 @@ CaseDesk:
 - Fälle: [AKTION:FALL] {"title":"...", "description":"..."}
 - E-Mail senden: [AKTION:EMAIL] {"recipient":"Empfänger Name", "recipient_email":"email@example.com", "subject":"Betreff", "draft_content":"Vollständiger E-Mail-Text", "purpose":"Zweck"}
 
-WICHTIG für E-Mails: Wenn der User dich bittet eine E-Mail zu senden, erstelle den vollständigen Text und füge den [AKTION:EMAIL] Tag ein. FRAGE NICHT nach Bestätigung — sende direkt.
+WICHTIG für E-Mails: Wenn der User dich bittet eine E-Mail zu senden:
+1. Erstelle zuerst den vollständigen E-Mail-Text als VORSCHAU (formatiert mit An, Betreff, Text)
+2. FRAGE den User: "Soll ich diese E-Mail so versenden?"
+3. ERST wenn der User bestätigt (ja, ok, senden, abschicken etc.), füge den [AKTION:EMAIL] Tag ein
+4. Füge den Tag NIEMALS bei der ersten Nachricht ein — IMMER zuerst Vorschau zeigen und Bestätigung abwarten
 
 Home Assistant:
 - Gerät steuern: [AKTION:HA_STEUERUNG] {"entity_id":"light.wohnzimmer", "service":"turn_on", "data":{}}
