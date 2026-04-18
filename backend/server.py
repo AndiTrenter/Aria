@@ -38,6 +38,7 @@ import automations
 import casedesk
 import telegram_bot
 import plex
+import service_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -887,13 +888,11 @@ async def get_llm_api_key() -> str:
 
 # ==================== CHAT CONTEXT ENRICHMENT ====================
 
-async def gather_context(msg_lower: str, request: Request) -> str:
-    """Gather real-time data from connected services based on the user's question."""
+async def gather_context_for_services(service_ids: list, msg_lower: str) -> str:
+    """Gather context ONLY from the routed services."""
     context_parts = []
     
-    # Weather context
-    weather_keywords = ["wetter", "temperatur", "regen", "sonne", "sonnig", "schnee", "wind", "wolken", "vorhersage", "morgen wetter", "heute wetter", "grad draußen", "kalt", "warm", "unwetter", "sturm", "gewitter", "nebel", "feucht"]
-    if any(w in msg_lower for w in weather_keywords):
+    if "weather" in service_ids:
         try:
             city, api_key = await get_weather_settings()
             if city and api_key:
@@ -904,7 +903,6 @@ async def gather_context(msg_lower: str, request: Request) -> str:
                         params["zip"] = f"{parsed['zip']},{parsed['country']}"
                     else:
                         params["q"] = parsed["q"]
-                    
                     current_resp = await http_client.get("https://api.openweathermap.org/data/2.5/weather", params=params)
                     if current_resp.status_code == 200:
                         w = current_resp.json()
@@ -919,35 +917,22 @@ async def gather_context(msg_lower: str, request: Request) -> str:
                                 temp = item["main"]["temp"]
                                 desc = item["weather"][0]["description"]
                                 forecast_text += f"  {dt}: {temp}°C, {desc}\n"
-                        
-                        context_parts.append(f"""AKTUELLE WETTERDATEN für {w.get('name', city)}:
+                        context_parts.append(f"""WETTERDATEN für {w.get('name', city)}:
 - Temperatur: {w['main']['temp']}°C (gefühlt {w['main']['feels_like']}°C)
-- Beschreibung: {w['weather'][0]['description']}
-- Luftfeuchtigkeit: {w['main']['humidity']}%
-- Wind: {w['wind']['speed']} m/s
-- Wolken: {w['clouds']['all']}%
-- Luftdruck: {w['main']['pressure']} hPa
-- Min/Max heute: {w['main']['temp_min']}°C / {w['main']['temp_max']}°C{forecast_text}""")
+- {w['weather'][0]['description']}, Luftfeuchtigkeit: {w['main']['humidity']}%
+- Wind: {w['wind']['speed']} m/s, Wolken: {w['clouds']['all']}%{forecast_text}""")
         except Exception as e:
             logger.warning(f"Weather context failed: {e}")
-    
-    # System Health context
-    health_keywords = ["server", "system", "cpu", "ram", "speicher", "festplatte", "disk", "arbeitsspeicher", "auslastung", "performance", "docker", "container", "dienst", "service", "netzwerk", "uptime"]
-    if any(w in msg_lower for w in health_keywords):
+
+    if "system" in service_ids:
         try:
             import psutil
             cpu = psutil.cpu_percent(interval=0.5)
             mem = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
-            context_parts.append(f"""AKTUELLE SYSTEMDATEN:
-- CPU Auslastung: {cpu}%
-- RAM: {mem.used / (1024**3):.1f} GB / {mem.total / (1024**3):.1f} GB ({mem.percent}%)
-- Festplatte: {disk.used / (1024**3):.1f} GB / {disk.total / (1024**3):.1f} GB ({disk.percent}%)
-- Uptime: {datetime.now(timezone.utc).isoformat()}""")
-        except Exception as e:
-            logger.warning(f"System context failed: {e}")
-        
-        # Docker containers
+            context_parts.append(f"SYSTEMDATEN: CPU {cpu}%, RAM {mem.used/(1024**3):.1f}/{mem.total/(1024**3):.1f}GB ({mem.percent}%), Disk {disk.percent}%")
+        except Exception:
+            pass
         try:
             import docker as docker_lib
             dock = docker_lib.DockerClient(base_url='unix:///var/run/docker.sock', timeout=5)
@@ -956,13 +941,8 @@ async def gather_context(msg_lower: str, request: Request) -> str:
             context_parts.append(f"DOCKER CONTAINER:\n{container_list}")
         except Exception:
             pass
-    
-    # Home Assistant context - always load if HA is connected and user mentions anything HA-related
-    ha_keywords = ["smart home", "home assistant", "geräte", "haus", "zuhause", "sensor", "automation",
-                   "licht", "lampe", "fernseh", "tv", "heizung", "rollladen", "schalter", "steckdose",
-                   "erstelle", "szene", "wakeword", "routine", "wenn", "dann", "einschalten", "ausschalten",
-                   "dimmen", "temperatur", "klima", "ventilator", "musik", "medien"]
-    if any(w in msg_lower for w in ha_keywords):
+
+    if "homeassistant" in service_ids:
         try:
             ha_url, ha_token = await get_ha_settings()
             if ha_url and ha_token:
@@ -978,35 +958,28 @@ async def gather_context(msg_lower: str, request: Request) -> str:
                                 name = e.get("attributes", {}).get("friendly_name", eid)
                                 state = e.get("state")
                                 unit = e.get("attributes", {}).get("unit_of_measurement", "")
-                                ha_info.append(f"  - {name}: {state} {unit}".strip())
+                                ha_info.append(f"  - {name} ({eid}): {state} {unit}".strip())
                         if ha_info:
                             context_parts.append(f"HOME ASSISTANT GERÄTE:\n" + "\n".join(ha_info))
         except Exception:
             pass
-    
-    # CaseDesk context - ALWAYS query if connected (Aria is the central assistant)
-    try:
-        cd_url, cd_email, cd_pw = await casedesk.get_casedesk_settings()
-        if cd_url and cd_email and cd_pw:
-            cd_context = await casedesk.get_casedesk_context(msg_lower)
-            if cd_context:
-                context_parts.append(cd_context)
-    except Exception as e:
-        logger.warning(f"CaseDesk context failed: {e}")
 
-    # Plex context - search media when user asks about films/series/music
-    plex_keywords = ["film", "filme", "movie", "serie", "serien", "staffel", "episode", "musik",
-                     "song", "album", "artist", "plex", "mediathek", "schauen", "gucken", "anschauen",
-                     "abspielen", "stream", "kino", "trailer", "neu auf plex", "weiterschauen",
-                     "empfehlung", "empfehlen", "was gibt", "was kann ich", "horror", "action",
-                     "comedy", "komödie", "thriller", "animation", "sci-fi", "fantasy", "drama"]
-    if any(w in msg_lower for w in plex_keywords):
+    if "casedesk" in service_ids:
+        try:
+            cd_url, cd_email, cd_pw = await casedesk.get_casedesk_settings()
+            if cd_url and cd_email and cd_pw:
+                cd_context = await casedesk.get_casedesk_context(msg_lower)
+                if cd_context:
+                    context_parts.append(cd_context)
+        except Exception as e:
+            logger.warning(f"CaseDesk context failed: {e}")
+
+    if "plex" in service_ids:
         try:
             plex_url, plex_token = await plex.get_plex_settings()
             if plex_url and plex_token:
                 plex_context = []
-                # Search if specific query
-                search_words = [w for w in msg_lower.split() if w not in {"film", "filme", "serie", "serien", "hast", "du", "gibt", "es", "was", "welche", "zeig", "mir", "den", "die", "das", "auf", "plex", "von", "einen", "kannst", "schauen", "gucken", "anschauen", "ich", "möchte", "will", "kann", "man"} and len(w) > 2]
+                search_words = [w for w in msg_lower.split() if w not in {"film", "filme", "serie", "serien", "hast", "du", "gibt", "es", "was", "welche", "zeig", "mir", "auf", "plex", "von", "kannst", "schauen", "ich", "möchte"} and len(w) > 2]
                 if search_words:
                     query = " ".join(search_words[:4])
                     data, err = await plex.plex_request("/hubs/search", {"query": query, "limit": 10})
@@ -1014,50 +987,24 @@ async def gather_context(msg_lower: str, request: Request) -> str:
                         results = []
                         for hub in data.get("MediaContainer", {}).get("Hub", []):
                             for item in hub.get("Metadata", []):
-                                title = item.get("title", "")
-                                year = item.get("year", "")
-                                mtype = item.get("type", "")
-                                summary = item.get("summary", "")[:200]
-                                rating = item.get("rating", "")
-                                results.append(f"- {title} ({year}) [{mtype}]{f' Rating: {rating}' if rating else ''}{f' | {summary}' if summary else ''}")
+                                results.append(f"- {item.get('title', '')} ({item.get('year', '')}) [{item.get('type', '')}] {item.get('summary', '')[:150]}")
                         if results:
-                            plex_context.append(f"--- Plex Suchergebnisse für '{query}' ---\n" + "\n".join(results[:8]))
-                
-                # Also get recently added and on-deck for general questions
-                if not search_words or any(w in msg_lower for w in ["neu", "zuletzt", "weiterschauen", "empfehlung", "was gibt", "was kann"]):
+                            plex_context.append(f"--- Plex Suchergebnisse ---\n" + "\n".join(results[:8]))
+                if not search_words or any(w in msg_lower for w in ["neu", "zuletzt", "empfehlung", "was gibt"]):
                     recent_data, _ = await plex.plex_request("/library/recentlyAdded", {"X-Plex-Container-Size": "8"})
                     if recent_data:
                         items = recent_data.get("MediaContainer", {}).get("Metadata", [])
                         if items:
-                            recent_list = [f"- {i.get('title', '')} ({i.get('year', '')}) [{i.get('type', '')}]" for i in items[:8]]
-                            plex_context.append("--- Zuletzt zu Plex hinzugefügt ---\n" + "\n".join(recent_list))
-                    
-                    deck_data, _ = await plex.plex_request("/library/onDeck")
-                    if deck_data:
-                        items = deck_data.get("MediaContainer", {}).get("Metadata", [])
-                        if items:
-                            deck_list = [f"- {i.get('grandparentTitle', '')} {i.get('title', '')} ({i.get('type', '')})" for i in items[:5]]
-                            plex_context.append("--- Weiterschauen (On Deck) ---\n" + "\n".join(deck_list))
-                
-                # Get libraries overview
-                lib_data, _ = await plex.plex_request("/library/sections")
-                if lib_data:
-                    dirs = lib_data.get("MediaContainer", {}).get("Directory", [])
-                    if dirs:
-                        lib_list = [f"- {d.get('title', '')}: {d.get('count', 0)} Einträge ({d.get('type', '')})" for d in dirs]
-                        plex_context.append("--- Plex Bibliotheken ---\n" + "\n".join(lib_list))
-                
+                            plex_context.append("--- Zuletzt hinzugefügt ---\n" + "\n".join([f"- {i.get('title', '')} ({i.get('year', '')})" for i in items[:8]]))
                 if plex_context:
                     context_parts.append("\n".join(plex_context))
         except Exception as e:
             logger.warning(f"Plex context failed: {e}")
 
-    if context_parts:
-        return "\n\n".join(context_parts)
-    return ""
+    return "\n\n".join(context_parts) if context_parts else ""
 
 async def process_chat_message(message_text: str, user_id: str, session_id: str = None) -> str:
-    """Core chat processing - used by both web and Telegram."""
+    """Core chat processing with intelligent service routing."""
     msg_lower = message_text.lower()
     
     api_key = await get_llm_api_key()
@@ -1069,16 +1016,29 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     
     session_id = session_id or f"{user_id}_{uuid.uuid4().hex[:8]}"
     
-    # Gather context
-    live_context = await gather_context(msg_lower, None)
+    # Step 1: Route — GPT-mini decides which services to query
+    route_result = await service_router.route_message(message_text)
+    routed_services = route_result.get("services", [])
+    is_simple = route_result.get("is_simple", False)
     
-    # Load chat history
+    logger.info(f"Router: '{message_text[:60]}' → services={routed_services}, simple={is_simple}")
+    
+    # Step 2: Gather context ONLY from routed services
+    live_context = ""
+    if routed_services:
+        live_context = await gather_context_for_services(routed_services, msg_lower)
+    
+    # Step 3: Load chat history
     history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
     
     try:
         openai_client = AsyncOpenAI(api_key=api_key)
         
         system_prompt = _get_system_prompt()
+        
+        # Add routing info to system prompt
+        if routed_services:
+            system_prompt += f"\n\n[ROUTING: Diese Anfrage wurde an folgende Dienste geroutet: {', '.join(routed_services)}. Nutze die bereitgestellten Daten.]"
         
         gpt_messages = [{"role": "system", "content": system_prompt}]
         
@@ -1091,39 +1051,40 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         
         gpt_messages.append({"role": "user", "content": user_message})
         
-        # Try gpt-5.4-mini first, fallback to gpt-4o
-        model = "gpt-5.4-mini"
-        try:
-            response = await openai_client.chat.completions.create(
-                model=model,
-                messages=gpt_messages,
-                temperature=0.7,
-                max_completion_tokens=1000,
-            )
-        except Exception as model_err:
-            err_str = str(model_err)
-            if "401" in err_str or "insufficient" in err_str or "missing_scope" in err_str or "model_not_found" in err_str:
-                logger.warning(f"gpt-5.4-mini not available, falling back to gpt-4o: {err_str[:100]}")
-                model = "gpt-4o"
-                response = await openai_client.chat.completions.create(
-                    model=model,
-                    messages=gpt_messages,
-                    temperature=0.7,
-                    max_tokens=1000,
-                )
-            else:
+        # Step 4: Use specialist model for complex queries, mini for simple
+        if is_simple and not routed_services:
+            model_preference = ["gpt-5.4-mini", "gpt-4o-mini"]
+        else:
+            model_preference = ["gpt-5.4-mini", "gpt-4o"]
+        
+        response = None
+        for model in model_preference:
+            try:
+                kwargs = {"model": model, "messages": gpt_messages, "temperature": 0.7}
+                if "5.4" in model:
+                    kwargs["max_completion_tokens"] = 1000
+                else:
+                    kwargs["max_tokens"] = 1000
+                response = await openai_client.chat.completions.create(**kwargs)
+                break
+            except Exception as e:
+                if "401" in str(e) or "model" in str(e).lower():
+                    continue
                 raise
+        
+        if not response:
+            return "KI-Modell nicht verfügbar."
         
         response_text = response.choices[0].message.content
         
-        # Process action tags
+        # Step 5: Process action tags
         response_text = await _process_action_tags(response_text, user_id)
         
         # Store messages
         now = datetime.now(timezone.utc).isoformat()
         await db.chat_messages.insert_many([
             {"session_id": session_id, "user_id": user_id, "role": "user", "content": message_text, "timestamp": now},
-            {"session_id": session_id, "user_id": user_id, "role": "assistant", "content": response_text, "timestamp": now},
+            {"session_id": session_id, "user_id": user_id, "role": "assistant", "content": response_text, "timestamp": now, "routed_to": routed_services},
         ])
         
         return response_text
@@ -1675,6 +1636,9 @@ app.include_router(casedesk.router)
 # Initialize Plex module
 plex.init(db, get_current_user)
 app.include_router(plex.router)
+
+# Initialize Service Router
+service_router.init(db, get_llm_api_key)
 
 # Initialize Telegram Bot module
 telegram_bot.init(db, get_ha_settings, get_llm_api_key)
