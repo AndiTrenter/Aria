@@ -19,7 +19,7 @@ const STATUS_ICONS = {
   draft: PencilSimple, pending: HourglassHigh, approved: CheckCircle, rejected: XCircle,
 };
 
-const Automations = () => {
+const Automations = ({ embedded = false }) => {
   const { user } = useAuth();
   const { theme } = useTheme();
   const [automations, setAutomations] = useState([]);
@@ -93,12 +93,14 @@ const Automations = () => {
   };
 
   return (
-    <div className="p-6" data-testid="automations-page">
+    <div className={embedded ? "" : "p-6"} data-testid="automations-page">
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
-        <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
-          {isLcars ? "AUTOMATIONEN" : "Automationen"}
-        </h2>
+        {!embedded && (
+          <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
+            {isLcars ? "AUTOMATISIERUNGEN" : "Automatisierungen"}
+          </h2>
+        )}
         <div className="flex-1" />
         <button onClick={() => setShowVoiceInput(!showVoiceInput)} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`} data-testid="toggle-voice-create">
           <Microphone size={14} />

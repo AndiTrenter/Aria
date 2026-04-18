@@ -120,7 +120,7 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-ALL_TABS = ["dash", "home", "auto", "health", "chat", "weather", "media", "account", "logs", "kiosk"]
+ALL_TABS = ["dash", "home", "health", "chat", "weather", "media", "account", "logs", "kiosk"]
 DEFAULT_TABS = ["dash", "home", "chat", "weather", "account"]
 
 class UserCreate(BaseModel):

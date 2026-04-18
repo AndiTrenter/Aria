@@ -19,8 +19,7 @@ const LcarsLayout = ({ children }) => {
 
   const TAB_MAP = {
     dash: { path: "/", shortLabel: "DASH" },
-    home: { path: "/smarthome", shortLabel: "HOME" },
-    auto: { path: "/automations", shortLabel: "AUTO" },
+    home: { path: "/smarthome", shortLabel: "SMARTHOME" },
     health: { path: "/health", shortLabel: "HEALTH" },
     chat: { path: "/chat", shortLabel: "CHAT" },
     weather: { path: "/weather", shortLabel: "WETTER" },
@@ -30,7 +29,7 @@ const LcarsLayout = ({ children }) => {
   };
 
   const navItems = [];
-  for (const tabId of ["dash", "home", "auto", "health", "chat", "weather", "media", "account", "logs"]) {
+  for (const tabId of ["dash", "home", "health", "chat", "weather", "media", "account", "logs"]) {
     if (isAdmin || visibleTabs.includes(tabId)) {
       navItems.push(TAB_MAP[tabId]);
     }

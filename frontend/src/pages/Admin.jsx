@@ -27,8 +27,7 @@ const ROOM_ICONS = [
 
 const ALL_TABS = [
   { id: "dash", label: "Dashboard" },
-  { id: "home", label: "Smart Home" },
-  { id: "auto", label: "Automationen" },
+  { id: "home", label: "SmartHome" },
   { id: "health", label: "System Health" },
   { id: "chat", label: "Chat" },
   { id: "weather", label: "Wetter" },

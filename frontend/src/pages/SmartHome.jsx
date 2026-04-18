@@ -7,6 +7,7 @@ import {
   LockSimple, SpeakerHigh, Fan, Robot, MagicWand, Gear, ArrowClockwise,
   Plus, CaretDown, CaretUp, Lightning, WifiHigh, WifiSlash
 } from "@phosphor-icons/react";
+import Automations from "@/pages/Automations";
 
 const DOMAIN_ICONS = {
   light: Lightbulb, switch: Power, climate: Thermometer, cover: ArrowsVertical,
@@ -135,6 +136,7 @@ const SmartHome = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
+  const [showAutomations, setShowAutomations] = useState(false);
   const isLcars = theme === "startrek";
 
   const fetchDashboard = useCallback(async () => {
@@ -294,58 +296,85 @@ const SmartHome = () => {
       {/* Room Tabs + Devices */}
       {dashboard?.rooms && dashboard.rooms.length > 0 && (
         <div>
-          {/* Room Tabs */}
-          <div className={`flex gap-2 mb-6 overflow-x-auto pb-2 ${isLcars ? "" : ""}`}>
-            {dashboard.rooms.map(room => (
-              <button
-                key={room.id}
-                onClick={() => setActiveRoom(room.id)}
-                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                  activeRoom === room.id
-                    ? isLcars ? "lcars-button" : "disney-button"
-                    : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400 hover:border-[var(--lcars-orange)]/30" : "bg-purple-950/30 border border-purple-800/20 text-purple-400 hover:border-purple-500/30"
-                }`}
-                data-testid={`room-tab-${room.id}`}
-              >
-                {isLcars ? room.name.toUpperCase() : room.name}
-                <span className={`ml-2 text-xs ${activeRoom === room.id ? "" : "text-gray-600"}`}>
-                  {room.devices?.length || 0}
-                </span>
-              </button>
-            ))}
+          {/* Top Row: Automatisierungen Tab */}
+          <div className={`flex gap-2 mb-3 overflow-x-auto pb-1`}>
+            <button
+              onClick={() => setShowAutomations(!showAutomations)}
+              className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                showAutomations
+                  ? isLcars ? "bg-[var(--lcars-orange)] text-black font-bold" : "bg-purple-600 text-white font-bold"
+                  : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-blue)]/30 text-[var(--lcars-blue)] hover:border-[var(--lcars-blue)]/60" : "bg-purple-950/30 border border-purple-800/20 text-purple-400 hover:border-purple-500/30"
+              }`}
+              data-testid="tab-automations"
+            >
+              <Gear size={14} className="inline mr-1.5" />
+              {isLcars ? "AUTOMATISIERUNGEN" : "Automatisierungen"}
+            </button>
           </div>
 
-          {/* Device Grid */}
-          {currentRoom && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" data-testid="device-grid">
-              {currentRoom.devices?.map(dev => (
-                <DeviceWidget
-                  key={dev.entity_id}
-                  device={dev}
-                  isLcars={isLcars}
-                  onControl={handleControl}
-                />
-              ))}
-              {(!currentRoom.devices || currentRoom.devices.length === 0) && (
-                <div className="col-span-full text-center py-12 text-gray-500">
-                  {isLcars ? "KEINE GERÄTE IN DIESEM SEKTOR" : "Keine Geräte in diesem Raum"}
-                </div>
-              )}
+          {/* Automations Content */}
+          {showAutomations && (
+            <div className="mb-6">
+              <Automations embedded />
             </div>
           )}
 
-          {/* Unassigned devices (admin only) */}
-          {isAdmin && dashboard.unassigned_devices?.length > 0 && (
-            <div className="mt-8">
-              <h3 className={`mb-4 text-sm ${isLcars ? "tracking-widest text-[var(--lcars-mauve)]" : "text-purple-400 font-bold"}`}>
-                {isLcars ? "NICHT ZUGEWIESEN" : "Nicht zugewiesene Geräte"} ({dashboard.unassigned_devices.length})
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {dashboard.unassigned_devices.map(dev => (
-                  <DeviceWidget key={dev.entity_id} device={dev} isLcars={isLcars} onControl={handleControl} />
+          {/* Bottom Row: Room Tabs */}
+          {!showAutomations && (
+            <>
+              <div className={`flex gap-2 mb-6 overflow-x-auto pb-2`}>
+                {dashboard.rooms.map(room => (
+                  <button
+                    key={room.id}
+                    onClick={() => setActiveRoom(room.id)}
+                    className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                      activeRoom === room.id
+                        ? isLcars ? "lcars-button" : "disney-button"
+                        : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400 hover:border-[var(--lcars-orange)]/30" : "bg-purple-950/30 border border-purple-800/20 text-purple-400 hover:border-purple-500/30"
+                    }`}
+                    data-testid={`room-tab-${room.id}`}
+                  >
+                    {isLcars ? room.name.toUpperCase() : room.name}
+                    <span className={`ml-2 text-xs ${activeRoom === room.id ? "" : "text-gray-600"}`}>
+                      {room.devices?.length || 0}
+                    </span>
+                  </button>
                 ))}
               </div>
-            </div>
+
+              {/* Device Grid */}
+              {currentRoom && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" data-testid="device-grid">
+                  {currentRoom.devices?.map(dev => (
+                    <DeviceWidget
+                      key={dev.entity_id}
+                      device={dev}
+                      isLcars={isLcars}
+                      onControl={handleControl}
+                    />
+                  ))}
+                  {(!currentRoom.devices || currentRoom.devices.length === 0) && (
+                    <div className="col-span-full text-center py-12 text-gray-500">
+                      {isLcars ? "KEINE GERÄTE IN DIESEM SEKTOR" : "Keine Geräte in diesem Raum"}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Unassigned devices (admin only) */}
+              {isAdmin && dashboard.unassigned_devices?.length > 0 && (
+                <div className="mt-8">
+                  <h3 className={`mb-4 text-sm ${isLcars ? "tracking-widest text-[var(--lcars-mauve)]" : "text-purple-400 font-bold"}`}>
+                    {isLcars ? "NICHT ZUGEWIESEN" : "Nicht zugewiesene Geräte"} ({dashboard.unassigned_devices.length})
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {dashboard.unassigned_devices.map(dev => (
+                      <DeviceWidget key={dev.entity_id} device={dev} isLcars={isLcars} onControl={handleControl} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
