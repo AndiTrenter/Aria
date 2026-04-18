@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
+import { toast } from "sonner";
 import { PaperPlaneRight, Trash, Plus, Circle, Microphone, SpeakerHigh, Stop } from "@phosphor-icons/react";
 
 const Chat = () => {
@@ -21,6 +22,8 @@ const Chat = () => {
   const isLcars = theme === "startrek";
 
   const hasSpeechAPI = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const isSecureContext = typeof window !== "undefined" && (window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168."));
+  const canUseMic = hasSpeechAPI;
 
   useEffect(() => {
     axios.get(`${API}/chat/sessions`).then(r => setSessions(r.data)).catch(() => {});
@@ -72,9 +75,22 @@ const Chat = () => {
   };
 
   // ==================== STT ====================
-  const startRecording = () => {
+  const startRecording = async () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      toast.error("Spracherkennung wird in diesem Browser nicht unterstützt. Bitte Chrome oder Edge verwenden.");
+      return;
+    }
+
+    // Request microphone permission first
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop()); // Release immediately, just needed permission
+    } catch (permErr) {
+      toast.error("Mikrofon-Zugriff verweigert. Bitte erlaube den Mikrofon-Zugriff in den Browser-Einstellungen.");
+      console.error("Mic permission error:", permErr);
+      return;
+    }
 
     stopRecording();
     const rec = new SR();
@@ -93,14 +109,18 @@ const Chat = () => {
       if (final) {
         setIsRecording(false);
         setSpokenInput(true);
-        // Auto-send after voice input
         sendMessageDirect(final, true);
       }
     };
 
     rec.onerror = (e) => {
-      if (e.error !== "no-speech" && e.error !== "aborted") {
-        console.error("Speech error:", e.error);
+      console.error("Speech error:", e.error);
+      if (e.error === "not-allowed") {
+        toast.error("Mikrofon-Zugriff verweigert.");
+      } else if (e.error === "network") {
+        toast.error("Netzwerkfehler bei der Spracherkennung. HTTPS erforderlich für externe Spracherkennung.");
+      } else if (e.error !== "no-speech" && e.error !== "aborted") {
+        toast.error(`Sprachfehler: ${e.error}`);
       }
       setIsRecording(false);
     };
@@ -110,7 +130,13 @@ const Chat = () => {
     recognitionRef.current = rec;
     setIsRecording(true);
     setInput("");
-    rec.start();
+    try {
+      rec.start();
+    } catch (startErr) {
+      console.error("Speech start error:", startErr);
+      toast.error("Spracherkennung konnte nicht gestartet werden: " + startErr.message);
+      setIsRecording(false);
+    }
   };
 
   const stopRecording = () => {
@@ -264,17 +290,16 @@ const Chat = () => {
           {/* Input */}
           <div className={`p-3 border-t ${isLcars ? "border-[var(--lcars-purple)]/30" : "border-purple-800/30"}`}>
             <div className="flex gap-2 items-center">
-              {/* Mic Button */}
-              {hasSpeechAPI && (
-                <button onClick={toggleRecording}
-                  className={`p-3 rounded-xl transition-all ${
-                    isRecording
-                      ? isLcars ? "bg-red-600 text-white animate-pulse" : "bg-red-500 text-white animate-pulse"
-                      : isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)] hover:bg-[var(--lcars-purple)]/30" : "bg-purple-800/30 text-purple-400 hover:bg-purple-700/40"
-                  }`}
-                  data-testid="chat-mic-button"
-                  title={isRecording ? "Aufnahme stoppen" : "Sprachnachricht"}
-                >
+              {/* Mic Button - always shown */}
+              <button onClick={toggleRecording}
+                className={`p-3 rounded-xl transition-all ${
+                  isRecording
+                    ? isLcars ? "bg-red-600 text-white animate-pulse" : "bg-red-500 text-white animate-pulse"
+                    : isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)] hover:bg-[var(--lcars-purple)]/30" : "bg-purple-800/30 text-purple-400 hover:bg-purple-700/40"
+                }`}
+                data-testid="chat-mic-button"
+                title={isRecording ? "Aufnahme stoppen" : "Sprachnachricht"}
+              >
                   {isRecording ? (
                     <div className="relative">
                       <Microphone size={20} weight="fill" />
@@ -284,7 +309,6 @@ const Chat = () => {
                     <Microphone size={20} />
                   )}
                 </button>
-              )}
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
