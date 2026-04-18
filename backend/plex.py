@@ -190,25 +190,6 @@ async def on_deck(request: Request):
     return [_format_item(item, url, token) for item in items]
 
 
-@router.get("/thumb/{rating_key}")
-async def get_thumb_proxy(request: Request, rating_key: str, w: int = 300, h: int = 450):
-    """Proxy thumbnail from Plex (avoids exposing token to browser)."""
-    await get_current_user(request)
-    url, token = await get_plex_settings()
-    if not url or not token:
-        raise HTTPException(404)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{url}/photo/:/transcode",
-                params={"width": w, "height": h, "minSize": 1, "upscale": 1,
-                         "url": f"/library/metadata/{rating_key}/thumb", "X-Plex-Token": token})
-            if resp.status_code == 200:
-                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
-    except Exception:
-        pass
-    raise HTTPException(404)
-
-
 def _thumb_url(thumb_path, base_url, token):
     if not thumb_path:
         return ""
@@ -243,8 +224,7 @@ def _format_item(item, base_url, token):
 
 @router.get("/image")
 async def proxy_image(request: Request, path: str = ""):
-    """Generic image proxy for Plex."""
-    await get_current_user(request)
+    """Generic image proxy for Plex. No auth required for images (token in Plex request)."""
     url, token = await get_plex_settings()
     if not url or not token or not path:
         raise HTTPException(404)
@@ -253,7 +233,27 @@ async def proxy_image(request: Request, path: str = ""):
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(full_url, params={"X-Plex-Token": token})
             if resp.status_code == 200:
-                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
+                    headers={"Cache-Control": "public, max-age=86400"})
+    except Exception:
+        pass
+    raise HTTPException(404)
+
+
+@router.get("/thumb/{rating_key}")
+async def get_thumb_proxy(request: Request, rating_key: str, w: int = 300, h: int = 450):
+    """Proxy thumbnail from Plex via transcode."""
+    url, token = await get_plex_settings()
+    if not url or not token:
+        raise HTTPException(404)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{url}/photo/:/transcode",
+                params={"width": w, "height": h, "minSize": 1, "upscale": 1,
+                         "url": f"/library/metadata/{rating_key}/thumb", "X-Plex-Token": token})
+            if resp.status_code == 200:
+                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
+                    headers={"Cache-Control": "public, max-age=86400"})
     except Exception:
         pass
     raise HTTPException(404)

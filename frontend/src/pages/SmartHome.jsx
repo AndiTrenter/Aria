@@ -296,8 +296,8 @@ const SmartHome = () => {
       {/* Room Tabs + Devices */}
       {dashboard?.rooms && dashboard.rooms.length > 0 && (
         <div>
-          {/* Top Row: Automatisierungen Tab */}
-          <div className={`flex gap-2 mb-3 overflow-x-auto pb-1`}>
+          {/* Row 1: Automatisierungen Tab */}
+          <div className={`flex gap-2 mb-2 overflow-x-auto pb-1`}>
             <button
               onClick={() => setShowAutomations(!showAutomations)}
               className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
@@ -312,36 +312,34 @@ const SmartHome = () => {
             </button>
           </div>
 
-          {/* Automations Content */}
-          {showAutomations && (
+          {/* Row 2: Room Tabs (ALWAYS visible) */}
+          <div className={`flex gap-2 mb-6 overflow-x-auto pb-2`}>
+            {dashboard.rooms.map(room => (
+              <button
+                key={room.id}
+                onClick={() => { setActiveRoom(room.id); setShowAutomations(false); }}
+                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                  !showAutomations && activeRoom === room.id
+                    ? isLcars ? "lcars-button" : "disney-button"
+                    : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400 hover:border-[var(--lcars-orange)]/30" : "bg-purple-950/30 border border-purple-800/20 text-purple-400 hover:border-purple-500/30"
+                }`}
+                data-testid={`room-tab-${room.id}`}
+              >
+                {isLcars ? room.name.toUpperCase() : room.name}
+                <span className={`ml-2 text-xs ${!showAutomations && activeRoom === room.id ? "" : "text-gray-600"}`}>
+                  {room.devices?.length || 0}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Content: Automations OR Room Devices */}
+          {showAutomations ? (
             <div className="mb-6">
               <Automations embedded />
             </div>
-          )}
-
-          {/* Bottom Row: Room Tabs */}
-          {!showAutomations && (
+          ) : (
             <>
-              <div className={`flex gap-2 mb-6 overflow-x-auto pb-2`}>
-                {dashboard.rooms.map(room => (
-                  <button
-                    key={room.id}
-                    onClick={() => setActiveRoom(room.id)}
-                    className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                      activeRoom === room.id
-                        ? isLcars ? "lcars-button" : "disney-button"
-                        : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400 hover:border-[var(--lcars-orange)]/30" : "bg-purple-950/30 border border-purple-800/20 text-purple-400 hover:border-purple-500/30"
-                    }`}
-                    data-testid={`room-tab-${room.id}`}
-                  >
-                    {isLcars ? room.name.toUpperCase() : room.name}
-                    <span className={`ml-2 text-xs ${activeRoom === room.id ? "" : "text-gray-600"}`}>
-                      {room.devices?.length || 0}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
               {/* Device Grid */}
               {currentRoom && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" data-testid="device-grid">

@@ -191,6 +191,8 @@ async def lifespan(app: FastAPI):
         {"id": "casedesk", "name": "CaseDesk AI", "url": "http://192.168.1.140:9090", "icon": "files", "category": "Dokumente", "description": "Dokumenten- und Fallverwaltung mit KI", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
         {"id": "forgepilot", "name": "ForgePilot", "url": "http://192.168.1.140:3000", "icon": "code", "category": "Entwicklung", "description": "Projekt- und Code-Verwaltung mit Agenten", "health_endpoint": "/api/health", "api_base": "/api", "enabled": True},
         {"id": "nextcloud", "name": "Nextcloud", "url": "http://192.168.1.140:8666", "icon": "cloud", "category": "Cloud", "description": "Dateien, Kalender und Kontakte", "health_endpoint": "/status.php", "api_base": "", "enabled": True},
+        {"id": "homeassistant", "name": "Home Assistant", "url": "http://192.168.1.151:8123", "icon": "house", "category": "Smart Home", "description": "Smart Home Steuerung und Automationen", "health_endpoint": "/api/", "api_base": "/api", "enabled": True},
+        {"id": "plex", "name": "Plex Media Server", "url": "http://192.168.1.140:32400", "icon": "film-strip", "category": "Medien", "description": "Filme, Serien und Musik streamen", "health_endpoint": "/identity", "api_base": "", "enabled": True},
         {"id": "unraid", "name": "Unraid", "url": "http://192.168.1.140", "icon": "hard-drives", "category": "Server", "description": "Unraid Server Dashboard", "health_endpoint": "/", "enabled": True},
     ]
     
