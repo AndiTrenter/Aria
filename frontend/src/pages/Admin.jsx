@@ -80,6 +80,11 @@ const Admin = () => {
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [newProfile, setNewProfile] = useState({ name: "", room_id: "", user_id: "", kiosk_mode: false, child_mode: false });
 
+  // SmartHome Builder
+  const [builderUser, setBuilderUser] = useState(null);
+  const [builderConfig, setBuilderConfig] = useState({});
+  const [builderSaving, setBuilderSaving] = useState(false);
+
   // Settings
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -420,10 +425,58 @@ const Admin = () => {
   const roomDevices = selectedRoom ? devices.filter(d => d.room_id === selectedRoom) : [];
   const unassignedDevices = devices.filter(d => !d.room_id);
 
+  // SmartHome Builder handlers
+  const loadBuilderConfig = async (userId) => {
+    setBuilderUser(userId);
+    try {
+      const { data } = await axios.get(`${API}/smarthome/builder/${userId}`);
+      setBuilderConfig(data.config || {});
+    } catch { setBuilderConfig({}); }
+  };
+
+  const toggleBuilderEntity = (roomId, entityId) => {
+    const roomKey = roomId || "__unassigned";
+    const current = builderConfig[roomKey] || [];
+    const updated = current.includes(entityId)
+      ? current.filter(e => e !== entityId)
+      : [...current, entityId];
+    setBuilderConfig({ ...builderConfig, [roomKey]: updated });
+  };
+
+  const selectAllInRoom = (roomId) => {
+    const roomKey = roomId || "__unassigned";
+    const roomDevs = devices.filter(d => (d.room_id || "__unassigned") === roomKey);
+    setBuilderConfig({ ...builderConfig, [roomKey]: roomDevs.map(d => d.entity_id) });
+  };
+
+  const deselectAllInRoom = (roomId) => {
+    const roomKey = roomId || "__unassigned";
+    setBuilderConfig({ ...builderConfig, [roomKey]: [] });
+  };
+
+  const saveBuilderConfig = async () => {
+    if (!builderUser) return;
+    setBuilderSaving(true);
+    try {
+      await axios.put(`${API}/smarthome/builder/${builderUser}`, { config: builderConfig });
+      toast.success("SmartHome-Konfiguration gespeichert");
+    } catch (e) { toast.error("Fehler beim Speichern"); }
+    finally { setBuilderSaving(false); }
+  };
+
+  const isEntitySelected = (roomId, entityId) => {
+    const roomKey = roomId || "__unassigned";
+    return (builderConfig[roomKey] || []).includes(entityId);
+  };
+
+  const getBuilderUserObj = users.find(u => u.id === builderUser);
+  const builderSelectedCount = Object.values(builderConfig).flat().length;
+
   const tabs = [
     { id: "users", label: isLcars ? "BENUTZER" : "Benutzer" },
     { id: "rooms", label: isLcars ? "RÄUME" : "Räume" },
     { id: "devices", label: isLcars ? "GERÄTE" : "Geräte" },
+    { id: "builder", label: isLcars ? "SH-BUILDER" : "SmartHome Builder" },
     { id: "permissions", label: isLcars ? "FREIGABEN" : "Freigaben" },
     { id: "profiles", label: isLcars ? "PROFILE" : "Profile" },
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
@@ -687,6 +740,110 @@ const Admin = () => {
           </div>
         </div>
       )}
+
+
+      {/* ==================== SMARTHOME BUILDER TAB ==================== */}
+      {activeTab === "builder" && (
+        <div>
+          <div className={`mb-4 p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-orange)]/20 text-gray-400" : "bg-purple-950/30 border border-purple-800/30 text-purple-300"}`}>
+            {isLcars ? "SMARTHOME SEITEN-BUILDER — LEGE PRO BENUTZER FEST WELCHE GERÄTE/WIDGETS AUF DER SMARTHOME-SEITE ANGEZEIGT WERDEN." : "SmartHome Seiten-Builder — Lege pro Benutzer fest welche Geräte/Widgets auf der SmartHome-Seite angezeigt werden."}
+          </div>
+
+          {/* User Selection */}
+          <div className="flex gap-3 mb-6 flex-wrap">
+            {users.map(u => (
+              <button key={u.id} onClick={() => loadBuilderConfig(u.id)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
+                  builderUser === u.id
+                    ? isLcars ? "bg-[var(--lcars-orange)]/15 border border-[var(--lcars-orange)]/40 text-[var(--lcars-orange)]" : "bg-purple-600/20 border border-purple-500/40 text-purple-200"
+                    : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400" : "bg-purple-950/30 border border-purple-800/20 text-purple-400"
+                }`}
+                data-testid={`builder-user-${u.id}`}
+              >
+                <User size={16} />
+                <div>
+                  <div className="font-bold text-xs">{u.name || u.email}</div>
+                  <div className="text-[10px] opacity-60">{u.role}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Builder Content */}
+          {builderUser && getBuilderUserObj && (
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <span className={`text-sm font-bold ${isLcars ? "text-[var(--lcars-orange)] tracking-wider" : "text-purple-200"}`}>
+                  {isLcars ? `SMARTHOME FÜR ${(getBuilderUserObj.name || getBuilderUserObj.email).toUpperCase()}` : `SmartHome für ${getBuilderUserObj.name || getBuilderUserObj.email}`}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded ${isLcars ? "bg-[var(--lcars-blue)]/20 text-[var(--lcars-blue)]" : "bg-purple-800/30 text-purple-300"}`}>
+                  {builderSelectedCount} {isLcars ? "GERÄTE AUSGEWÄHLT" : "Geräte ausgewählt"}
+                </span>
+                <div className="flex-1" />
+                <button onClick={saveBuilderConfig} disabled={builderSaving}
+                  className={`${btnClass} py-1 px-4 text-xs flex items-center gap-1`} data-testid="builder-save">
+                  {builderSaving ? <ArrowClockwise size={14} className="animate-spin" /> : <Check size={14} />}
+                  {isLcars ? "SPEICHERN" : "Speichern"}
+                </button>
+              </div>
+
+              {/* Rooms with entity checkboxes */}
+              {rooms.map(room => {
+                const roomDevs = devices.filter(d => d.room_id === room.id);
+                if (roomDevs.length === 0) return null;
+                const selectedInRoom = (builderConfig[room.id] || []).length;
+                const Icon = DOMAIN_ICONS[roomDevs[0]?.domain] || Power;
+                return (
+                  <div key={room.id} className={`${cardClass} mb-4`} data-testid={`builder-room-${room.id}`}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <House size={18} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+                      <span className={`font-bold text-sm ${isLcars ? "tracking-wider" : ""}`}>{isLcars ? room.name.toUpperCase() : room.name}</span>
+                      <span className="text-xs text-gray-500">{selectedInRoom}/{roomDevs.length}</span>
+                      <div className="flex-1" />
+                      <button onClick={() => selectAllInRoom(room.id)}
+                        className={`text-[10px] px-2 py-1 rounded ${isLcars ? "bg-green-900/30 text-green-400" : "bg-green-900/20 text-green-400"}`}>Alle</button>
+                      <button onClick={() => deselectAllInRoom(room.id)}
+                        className={`text-[10px] px-2 py-1 rounded ${isLcars ? "bg-red-900/30 text-red-400" : "bg-red-900/20 text-red-400"}`}>Keine</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {roomDevs.map(dev => {
+                        const DevIcon = DOMAIN_ICONS[dev.domain] || Power;
+                        const selected = isEntitySelected(room.id, dev.entity_id);
+                        return (
+                          <button key={dev.entity_id} onClick={() => toggleBuilderEntity(room.id, dev.entity_id)}
+                            className={`flex items-center gap-2 p-2 rounded-lg text-left text-xs transition-all ${
+                              selected
+                                ? isLcars ? "bg-[var(--lcars-orange)]/10 border border-[var(--lcars-orange)]/30 text-[var(--lcars-orange)]" : "bg-purple-600/15 border border-purple-500/30 text-purple-200"
+                                : isLcars ? "bg-[#0a0a14] border border-gray-800 text-gray-500" : "bg-gray-900/30 border border-gray-700 text-gray-500"
+                            }`}
+                            data-testid={`builder-entity-${dev.entity_id}`}
+                          >
+                            <div className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${selected ? (isLcars ? "bg-[var(--lcars-orange)]/20" : "bg-purple-600/30") : "bg-gray-800"}`}>
+                              {selected ? <Check size={12} weight="bold" /> : <DevIcon size={12} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{dev.display_name}</div>
+                              <div className="text-[9px] text-gray-600 truncate">{dev.entity_id}</div>
+                            </div>
+                            {dev.critical && <Shield size={10} className="text-red-400 flex-shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Info */}
+              <div className={`p-3 rounded-lg text-xs mt-4 ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-500" : "bg-purple-950/30 border border-purple-800/20 text-purple-400"}`}>
+                {isLcars ? "NUR AUSGEWÄHLTE GERÄTE WERDEN FÜR DIESEN BENUTZER AUF DER SMARTHOME-SEITE ANGEZEIGT. NICHT AUSGEWÄHLTE GERÄTE SIND FÜR DEN BENUTZER UNSICHTBAR." : "Nur ausgewählte Geräte werden für diesen Benutzer auf der SmartHome-Seite angezeigt. Nicht ausgewählte Geräte sind für den Benutzer unsichtbar."}
+              </div>
+            </div>
+          )}
+          {!builderUser && <div className="text-center py-12 text-gray-500">{isLcars ? "BENUTZER AUSWÄHLEN" : "Wähle einen Benutzer"}</div>}
+        </div>
+      )}
+
 
       {/* ==================== PERMISSIONS TAB ==================== */}
       {activeTab === "permissions" && (

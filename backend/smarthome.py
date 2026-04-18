@@ -399,6 +399,29 @@ async def delete_profile(profile_id: str, request: Request):
     await db.room_profiles.delete_one({"id": profile_id})
     return {"success": True}
 
+
+# ==================== SMARTHOME BUILDER ====================
+
+@router.get("/builder/{user_id}")
+async def get_builder_config(user_id: str, request: Request):
+    """Get SmartHome Builder config for a specific user."""
+    await require_admin(request)
+    config = await db.sh_builder.find_one({"user_id": user_id}, {"_id": 0})
+    return {"config": config.get("config", {}) if config else {}}
+
+@router.put("/builder/{user_id}")
+async def save_builder_config(user_id: str, request: Request, body: dict = Body(...)):
+    """Save SmartHome Builder config for a specific user."""
+    await require_admin(request)
+    config = body.get("config", {})
+    await db.sh_builder.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "config": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"success": True}
+
+
 # ==================== SCENE TEMPLATES ====================
 
 DEFAULT_SCENE_TEMPLATES = [
@@ -689,6 +712,11 @@ async def smarthome_dashboard(request: Request):
     assigned_rooms = user.get("assigned_rooms", [])
     perms = {} if is_admin else await get_user_permissions(user["id"])
     
+    # Load SmartHome Builder config for this user
+    builder_doc = await db.sh_builder.find_one({"user_id": user["id"]}, {"_id": 0})
+    builder_config = builder_doc.get("config", {}) if builder_doc else {}
+    has_builder = bool(builder_config and any(v for v in builder_config.values()))
+    
     # Build room-device structure
     room_map = {}
     unassigned = []
@@ -697,10 +725,18 @@ async def smarthome_dashboard(request: Request):
         eid = dev["entity_id"]
         rid = dev.get("room_id")
         
-        if is_admin:
+        if is_admin and not has_builder:
+            # Admin without builder config: show everything
+            dev["_perm"] = {"controllable": True, "automation_allowed": True, "voice_allowed": True}
+        elif has_builder:
+            # Builder config exists: only show selected entities
+            room_key = rid or "__unassigned"
+            allowed_entities = builder_config.get(room_key, [])
+            if eid not in allowed_entities:
+                continue
             dev["_perm"] = {"controllable": True, "automation_allowed": True, "voice_allowed": True}
         else:
-            # Room assignment grants visibility: user sees devices in assigned rooms
+            # No builder: use room assignment + permissions
             if rid and assigned_rooms and rid in assigned_rooms:
                 perm = perms.get(eid, {})
                 dev["_perm"] = {
@@ -709,7 +745,6 @@ async def smarthome_dashboard(request: Request):
                     "voice_allowed": perm.get("voice_allowed", True),
                 }
             elif perms.get(eid, {}).get("visible", False):
-                # Fallback: explicit device-level permission
                 perm = perms[eid]
                 dev["_perm"] = {
                     "controllable": perm.get("controllable", False),
@@ -728,12 +763,11 @@ async def smarthome_dashboard(request: Request):
     
     result_rooms = []
     for room in rooms:
-        if not is_admin and assigned_rooms and room["id"] not in assigned_rooms:
-            # Skip rooms not assigned to user (unless they have device-level perms)
+        if not is_admin and not has_builder and assigned_rooms and room["id"] not in assigned_rooms:
             if room["id"] not in room_map:
                 continue
         devices = room_map.get(room["id"], [])
-        if is_admin or devices:
+        if (is_admin and not has_builder) or devices:
             room["devices"] = devices
             result_rooms.append(room)
     

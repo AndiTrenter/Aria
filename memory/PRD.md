@@ -239,15 +239,13 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [ ] Rechte-basierter Zugriff je nach erkannter Stimme
 - [ ] Läuft lokal auf Unraid (keine laufenden Kosten)
 
-### P6 — Emailversand fixen von Aria (DONE 2026-04-18)
+### Phase 10 — SmartHome Builder + Email Fix + GPT-5.4 (DONE 2026-04-18)
+- [x] SmartHome Seiten-Builder in Admin (SH-BUILDER Tab)
+- [x] Pro User: Geräte/Entitäten auswählen die auf SmartHome-Seite sichtbar sind
+- [x] Dashboard-API berücksichtigt Builder-Config als primären Filter
 - [x] Email-Versand über CaseDesk API (execute-action + send-correspondence)
-- [x] [AKTION:EMAIL] Tag im Chat — GPT erstellt Email und sendet via CaseDesk SMTP
-- [x] Fallback: Wenn SMTP nicht konfiguriert, wird Entwurf in CaseDesk erstellt
-
-### P7 — GPT-Modell Optimierung (DONE 2026-04-18)
-- [x] Standard: gpt-5.4-mini (schneller, günstiger)
-- [x] Suchinterpretation: gpt-5.4-mini
-- [x] Eskalation auf gpt-5.4 für komplexe Aufgaben (Automationserstellung)
+- [x] GPT-Modell auf gpt-5.4-mini (Standard), gpt-5.4 für Eskalation
+- [x] Navigation: HOME→SMARTHOME, AUTO→Automatisierungen als Tab in SmartHome
 
 ### P7 — ForgePilot Integration
 - [ ] Prüfen ob ForgePilot bereits als Dienst verbunden ist
