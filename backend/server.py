@@ -1091,12 +1091,28 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         
         gpt_messages.append({"role": "user", "content": user_message})
         
-        response = await openai_client.chat.completions.create(
-            model="gpt-5.4-mini",
-            messages=gpt_messages,
-            temperature=0.7,
-            max_tokens=1000,
-        )
+        # Try gpt-5.4-mini first, fallback to gpt-4o
+        model = "gpt-5.4-mini"
+        try:
+            response = await openai_client.chat.completions.create(
+                model=model,
+                messages=gpt_messages,
+                temperature=0.7,
+                max_completion_tokens=1000,
+            )
+        except Exception as model_err:
+            err_str = str(model_err)
+            if "401" in err_str or "insufficient" in err_str or "missing_scope" in err_str or "model_not_found" in err_str:
+                logger.warning(f"gpt-5.4-mini not available, falling back to gpt-4o: {err_str[:100]}")
+                model = "gpt-4o"
+                response = await openai_client.chat.completions.create(
+                    model=model,
+                    messages=gpt_messages,
+                    temperature=0.7,
+                    max_tokens=1000,
+                )
+            else:
+                raise
         
         response_text = response.choices[0].message.content
         

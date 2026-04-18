@@ -239,12 +239,14 @@ async def _gpt_interpret_search(user_message: str) -> list:
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post("https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "gpt-5.4-mini",
-                    "messages": [
-                        {"role": "system", "content": """Du bist ein Suchassistent. Der Benutzer stellt eine Frage und du musst die relevanten SUCHBEGRIFFE extrahieren, mit denen in einem Dokumentenmanagementsystem (E-Mails, PDFs, Rechnungen, Verträge, Lohnausweise etc.) gesucht werden soll.
+            # Try gpt-5.4-mini, fallback to gpt-4o-mini
+            for model in ["gpt-5.4-mini", "gpt-4o-mini"]:
+                resp = await client.post("https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": """Du bist ein Suchassistent. Der Benutzer stellt eine Frage und du musst die relevanten SUCHBEGRIFFE extrahieren, mit denen in einem Dokumentenmanagementsystem (E-Mails, PDFs, Rechnungen, Verträge, Lohnausweise etc.) gesucht werden soll.
 
 REGELN:
 - Gib NUR eine kommaseparierte Liste von Suchbegriffen zurück
@@ -262,16 +264,20 @@ Antwort: Unterhalt, Alimente, Kindesunterhalt, Scheidungsurteil, Scheidung, Sorg
 
 User: "Hast du die Rechnung von der Garage?"
 Antwort: Rechnung, Garage, Auto, Fahrzeug, Reparatur, Werkstatt, Invoice, Faktura"""},
-                        {"role": "user", "content": user_message}
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 100,
-                })
-            if resp.status_code == 200:
-                text = resp.json()["choices"][0]["message"]["content"].strip()
-                terms = [t.strip().lower() for t in text.split(",") if t.strip()]
-                logger.info(f"GPT search terms for '{user_message[:50]}': {terms}")
-                return terms
+                            {"role": "user", "content": user_message}
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 100,
+                    })
+                if resp.status_code == 200:
+                    text = resp.json()["choices"][0]["message"]["content"].strip()
+                    terms = [t.strip().lower() for t in text.split(",") if t.strip()]
+                    logger.info(f"GPT search terms ({model}) for '{user_message[:50]}': {terms}")
+                    return terms
+                elif resp.status_code == 401:
+                    continue  # Try next model
+                else:
+                    break
     except Exception as e:
         logger.warning(f"GPT search interpretation failed: {e}")
     return []
