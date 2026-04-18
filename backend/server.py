@@ -39,6 +39,7 @@ import casedesk
 import telegram_bot
 import plex
 import service_router
+import forgepilot
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -1022,6 +1023,43 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     is_simple = route_result.get("is_simple", False)
     
     logger.info(f"Router: '{message_text[:60]}' → services={routed_services}, simple={is_simple}")
+
+    # Step 1a: ForgePilot Sticky-Session — wenn die letzte Assistenten-Antwort
+    # aus ForgePilot kam (z.B. offene Rückfrage), leite Follow-up-Nachricht
+    # automatisch wieder dorthin. So landet der Rückfrage-Dialog beim richtigen System.
+    last_assistant = await db.chat_messages.find_one(
+        {"session_id": session_id, "role": "assistant"},
+        {"_id": 0, "routed_to": 1, "forgepilot_meta": 1},
+        sort=[("timestamp", -1)],
+    )
+    if last_assistant:
+        meta = last_assistant.get("forgepilot_meta") or {}
+        routed_to = last_assistant.get("routed_to") or []
+        if "forgepilot" in routed_to and (meta.get("ask_user") or meta.get("still_running")):
+            if "forgepilot" not in routed_services:
+                routed_services = ["forgepilot"] + [s for s in routed_services if s != "forgepilot"]
+                logger.info(f"Sticky ForgePilot: Follow-up auf offene Rückfrage/Arbeit → forgepilot")
+
+    # Step 1b: ForgePilot Delegation — wenn ForgePilot gebraucht wird,
+    # delegieren wir vollständig an ForgePilot (eigener autonomer Agent) und
+    # lassen Aria die Antwort freundlich umformulieren.
+    if "forgepilot" in routed_services:
+        forge_result = await forgepilot.query_forgepilot(message_text, session_id, user_id)
+        friendly = await forgepilot.friendly_rephrase(forge_result, message_text)
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.chat_messages.insert_many([
+            {"session_id": session_id, "user_id": user_id, "role": "user", "content": message_text, "timestamp": now},
+            {"session_id": session_id, "user_id": user_id, "role": "assistant", "content": friendly,
+             "timestamp": now, "routed_to": ["forgepilot"],
+             "forgepilot_meta": {
+                 "ask_user": forge_result.get("ask_user", False),
+                 "is_complete": forge_result.get("is_complete", False),
+                 "still_running": forge_result.get("still_running", False),
+                 "project_id": forge_result.get("project_id"),
+             }},
+        ])
+        return friendly
     
     # Step 2: Gather context ONLY from routed services
     live_context = ""
@@ -1639,6 +1677,9 @@ app.include_router(plex.router)
 
 # Initialize Service Router
 service_router.init(db, get_llm_api_key)
+
+# Initialize ForgePilot integration
+forgepilot.init(db, get_llm_api_key)
 
 # Initialize Telegram Bot module
 telegram_bot.init(db, get_ha_settings, get_llm_api_key)

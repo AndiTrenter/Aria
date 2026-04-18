@@ -228,7 +228,7 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [ ] Disk-Temperaturen im System Health diagnostik
 
 ### P4 — Weitere Dienst-Integrationen
-- [ ] ForgePilot Integration (Code/Projekte)
+- [x] ForgePilot Integration (Code/Projekte) — siehe Phase 11 unten
 - [ ] Nextcloud Integration (Dateien/Kalender)
 - [ ] Dienst-übergreifende Aktionen
 
@@ -248,8 +248,28 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 - [x] Navigation: HOME→SMARTHOME, AUTO→Automatisierungen als Tab in SmartHome
 
 ### P7 — ForgePilot Integration
-- [ ] Prüfen ob ForgePilot bereits als Dienst verbunden ist
-- [ ] API-Anbindung für Projekte/Code-Zugriff via Aria Chat
+- [x] Siehe Phase 11
+
+### Phase 11 — ForgePilot Integration (DONE 2026-04-18)
+- [x] Neues Backend-Modul `/app/backend/forgepilot.py`
+  - `get_forgepilot_url()` → holt URL aus `services` Collection
+  - `is_available()` → GET `/api/health` mit 3s Timeout
+  - `_get_or_create_project()` → mappt Aria-Session auf ForgePilot-Projekt (Collection `forgepilot_sessions`)
+  - `query_forgepilot()` → POST `/api/projects/{id}/chat` mit SSE-Stream-Parsing (content/tool/ask_user/complete)
+  - `friendly_rephrase()` → formuliert ForgePilot-Antwort mit GPT in Aria-Ton um (Fallback ohne LLM-Key vorhanden)
+  - Stream-Timeout: 75s (bei längeren Tasks wird partieller Stand zurückgegeben)
+- [x] `service_router.py` erweitert
+  - ForgePilot-Beschreibung geschärft (inkl. Bug-Fixing, Programmier-Fragen)
+  - Keyword-Fallback erweitert (programmier, python, javascript, react, fastapi, bug, debug, script …)
+  - Echte Verfügbarkeitsprüfung via `forgepilot.is_available()`
+- [x] `server.py` `process_chat_message`
+  - Wenn Router `forgepilot` zurückgibt → komplette Delegation an ForgePilot + Aria-Rephrase
+  - Speichert `forgepilot_meta` (ask_user/still_running/project_id) im DB-Record
+  - Sticky-Session: Wenn letzte Assistant-Nachricht `ask_user` oder `still_running` hatte → Follow-up geht automatisch zurück an ForgePilot (Rückfrage-Dialog bleibt konsistent)
+- [x] Integrations-Tests (`/app/backend/tests/test_forgepilot_integration.py` und `test_forgepilot_e2e.py`)
+  - Mock-SSE-Server, 6 Unit-Tests (Availability, Project-Create/Reuse, ask_user, Rephrase-Fallback, Timeout)
+  - 3 E2E-Tests (Full-Flow, Sticky-Session, DB-Persistence)
+  - Alle grün
 
 ## API Endpoints
 - Auth: POST /login, GET /me

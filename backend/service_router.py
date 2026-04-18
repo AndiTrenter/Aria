@@ -65,9 +65,14 @@ DEFAULT_REGISTRY = [
         "service_id": "forgepilot",
         "name": "ForgePilot",
         "type": "development",
-        "description": "Projekt- und Code-Verwaltung mit KI-Agenten: Projekte verwalten, Code generieren, Builds starten",
-        "capabilities": ["Projekte auflisten", "Code-Fragen beantworten", "Builds starten"],
-        "example_queries": ["Welche Projekte gibt es?", "Starte einen Build", "Was ist der Status von Projekt X?"],
+        "description": "Software-Entwicklung mit KI-Agenten: Code schreiben, Programmier-Fragen beantworten, Projekte erstellen, Bugs fixen, Builds laufen lassen, Git-Ops",
+        "capabilities": ["Code generieren", "Programmier-Fragen beantworten", "Projekte anlegen", "Bugs debuggen", "Builds starten", "Git Push/Pull"],
+        "example_queries": [
+            "Schreibe mir einen Python-Crawler",
+            "Warum funktioniert mein React-Effekt nicht?",
+            "Starte einen Build für mein Projekt",
+            "Erstelle ein FastAPI Backend mit JWT Auth",
+        ],
     },
 ]
 
@@ -115,6 +120,9 @@ async def check_service_available(service_id):
         import plex as plex_mod
         url, token = await plex_mod.get_plex_settings()
         return bool(url and token)
+    elif service_id == "forgepilot":
+        import forgepilot as fp_mod
+        return await fp_mod.is_available()
     return False
 
 
@@ -208,7 +216,7 @@ def _keyword_fallback(message: str, services: list) -> dict:
         "homeassistant": ["licht", "lampe", "heizung", "rollladen", "schalter", "automation", "smart home", "tv", "fernseh"],
         "casedesk": ["email", "mail", "dokument", "rechnung", "lohn", "fall", "aufgabe", "termin", "kalender", "brief", "schreibe"],
         "plex": ["film", "serie", "musik", "plex", "schauen", "mediathek", "stream"],
-        "forgepilot": ["projekt", "code", "build", "git", "entwickl"],
+        "forgepilot": ["projekt", "code", "build", "git", "entwickl", "programmier", "python", "javascript", "react", "fastapi", "bug", "debug", "funktion", "api", "frontend", "backend", "schreibe mir", "erstelle mir", "script", "skript"],
     }
     
     available_ids = {s["service_id"] for s in services}
