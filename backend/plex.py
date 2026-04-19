@@ -230,13 +230,14 @@ async def proxy_image(request: Request, path: str = ""):
         raise HTTPException(404)
     try:
         full_url = f"{url}{path}" if path.startswith("/") else f"{url}/{path}"
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(full_url, params={"X-Plex-Token": token})
-            if resp.status_code == 200:
+            if resp.status_code == 200 and resp.content:
                 return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
                     headers={"Cache-Control": "public, max-age=86400"})
-    except Exception:
-        pass
+            logger.warning(f"Plex image proxy failed: {resp.status_code} for {path[:120]}")
+    except Exception as e:
+        logger.warning(f"Plex image proxy error: {e}")
     raise HTTPException(404)
 
 
@@ -247,13 +248,140 @@ async def get_thumb_proxy(request: Request, rating_key: str, w: int = 300, h: in
     if not url or not token:
         raise HTTPException(404)
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(f"{url}/photo/:/transcode",
                 params={"width": w, "height": h, "minSize": 1, "upscale": 1,
                          "url": f"/library/metadata/{rating_key}/thumb", "X-Plex-Token": token})
-            if resp.status_code == 200:
+            if resp.status_code == 200 and resp.content:
                 return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
                     headers={"Cache-Control": "public, max-age=86400"})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Plex thumb proxy error: {e}")
     raise HTTPException(404)
+
+
+# ==================== CHAT CONTEXT ====================
+
+_STOPWORDS_DE = {
+    "der", "die", "das", "den", "dem", "ein", "eine", "einen", "einer",
+    "hast", "hat", "ist", "sind", "war", "gibt", "es", "auf", "mit", "von",
+    "zu", "im", "in", "an", "bei", "und", "oder", "nicht", "wie", "was",
+    "welche", "welcher", "wer", "wo", "zeig", "mir", "uns", "dir", "ich",
+    "du", "wir", "ihr", "sie", "kannst", "kann", "könntest", "möchte",
+    "plex", "film", "filme", "serie", "serien", "musik", "titel", "bitte",
+    "mal", "auch", "noch", "schon", "etwa", "ein", "paar", "wieviele",
+    "wieviel", "viele", "anzahl", "für", "über", "schauen", "anschauen",
+    "stream", "streamen", "nach", "einem", "einen", "einer", "doch",
+}
+
+
+def _extract_search_terms(message: str) -> list[str]:
+    """Extract meaningful search words, preserving title casing hints."""
+    # Keep quoted substrings as one token
+    import re as _re
+    quoted = _re.findall(r'"([^"]+)"|«([^»]+)»|„([^"]+)"', message)
+    quoted_terms = [t for grp in quoted for t in grp if t]
+    stripped = _re.sub(r'"[^"]*"|«[^»]*»|„[^"]*"', " ", message)
+    tokens = [t.strip(",.!?:;()[]{}\"'") for t in stripped.split()]
+    terms = [t for t in tokens if len(t) >= 3 and t.lower() not in _STOPWORDS_DE]
+    # Preserve quoted full-strings first (most specific)
+    return quoted_terms + terms
+
+
+async def build_chat_context(message: str) -> str:
+    """Build rich Plex context for Aria chat based on user question.
+
+    Provides:
+    - Library summary (counts per section) for count-questions or always as baseline
+    - Search results when user asks about specific titles
+    - Recently added when user asks for 'neu/zuletzt'
+    """
+    url, token = await get_plex_settings()
+    if not url or not token:
+        return ""
+
+    msg_lower = message.lower()
+    parts: list[str] = []
+
+    # ---- 1) Library summary (always useful, cheap call) ----
+    libs_data, _ = await plex_request("/library/sections")
+    lib_summary_lines: list[str] = []
+    section_info: list[dict] = []
+    if libs_data:
+        dirs = libs_data.get("MediaContainer", {}).get("Directory", [])
+        for d in dirs:
+            # Fetch total count for this section — Plex returns totalSize in container
+            sec_data, _ = await plex_request(
+                f"/library/sections/{d['key']}/all",
+                {"X-Plex-Container-Start": 0, "X-Plex-Container-Size": 0},
+            )
+            total = 0
+            if sec_data:
+                total = sec_data.get("MediaContainer", {}).get("totalSize", 0) or 0
+            section_info.append({"key": d["key"], "title": d["title"], "type": d["type"], "count": total})
+            lib_summary_lines.append(f"  - {d['title']} ({d['type']}): {total} Titel")
+
+    if lib_summary_lines:
+        parts.append("PLEX BIBLIOTHEKS-ÜBERSICHT (autoritative Zahlen):\n" + "\n".join(lib_summary_lines))
+
+    # ---- 2) Count-Intent? ("wieviele / anzahl") — summary above already covers this ----
+
+    # ---- 3) Search Intent ----
+    search_terms = _extract_search_terms(message)
+    search_results_text: list[str] = []
+    if search_terms:
+        # Try full-query search first (most specific)
+        for query in [" ".join(search_terms[:6]), " ".join(search_terms[:3]), search_terms[0]]:
+            if not query:
+                continue
+            data, err = await plex_request("/hubs/search", {"query": query, "limit": 15})
+            if data and not err:
+                hits: list[str] = []
+                for hub in data.get("MediaContainer", {}).get("Hub", []) or []:
+                    hub_type = hub.get("type", "")
+                    # Only keep movie/show/episode/artist/album/track hubs
+                    if hub_type not in ("movie", "show", "episode", "artist", "album", "track"):
+                        continue
+                    for item in hub.get("Metadata", []) or []:
+                        title = item.get("title", "")
+                        year = item.get("year", "")
+                        itype = item.get("type", hub_type)
+                        parent = item.get("parentTitle", "")
+                        grand = item.get("grandparentTitle", "")
+                        lib_title = item.get("librarySectionTitle", "")
+                        extra = []
+                        if grand:
+                            extra.append(grand)
+                        if parent and parent != grand:
+                            extra.append(parent)
+                        extra_str = f" [{' · '.join(extra)}]" if extra else ""
+                        year_str = f" ({year})" if year else ""
+                        lib_str = f" — {lib_title}" if lib_title else ""
+                        hits.append(f"  - {title}{year_str} [{itype}]{extra_str}{lib_str}")
+                if hits:
+                    search_results_text.append(f"PLEX SUCHE nach '{query}':\n" + "\n".join(hits[:15]))
+                    break  # Got results, no need to try broader
+        if not search_results_text:
+            # Explicit "nicht gefunden" signal so GPT answers honestly
+            search_results_text.append(f"PLEX SUCHE nach '{' '.join(search_terms[:4])}': KEINE TREFFER (Titel existiert nicht in der Bibliothek).")
+
+    if search_results_text:
+        parts.append("\n\n".join(search_results_text))
+
+    # ---- 4) Recently Added ----
+    if any(w in msg_lower for w in ["neu", "neues", "zuletzt", "hinzugefügt", "empfehlung", "empfiehl", "was gibt"]):
+        recent_data, _ = await plex_request("/library/recentlyAdded", {"X-Plex-Container-Size": "10"})
+        if recent_data:
+            items = recent_data.get("MediaContainer", {}).get("Metadata", []) or []
+            if items:
+                lines = []
+                for i in items[:10]:
+                    t = i.get("title", "")
+                    y = i.get("year", "")
+                    tt = i.get("type", "")
+                    gp = i.get("grandparentTitle", "")
+                    prefix = f"{gp} - " if gp else ""
+                    lines.append(f"  - {prefix}{t} ({y}) [{tt}]")
+                parts.append("PLEX ZULETZT HINZUGEFÜGT:\n" + "\n".join(lines))
+
+    return "\n\n".join(parts) if parts else ""

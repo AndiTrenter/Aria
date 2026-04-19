@@ -85,6 +85,12 @@ const Admin = () => {
   const [builderConfig, setBuilderConfig] = useState({});
   const [builderSaving, setBuilderSaving] = useState(false);
 
+  // Service Registry (GPT Router)
+  const [registry, setRegistry] = useState([]);
+  const [regEditing, setRegEditing] = useState(null);
+  const [regForm, setRegForm] = useState({ service_id: "", name: "", description: "", capabilities: "", example_queries: "", type: "custom" });
+  const [showCreateReg, setShowCreateReg] = useState(false);
+
   // Settings
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -162,6 +168,54 @@ const Admin = () => {
       const { data } = await axios.get(`${API}/audit-log?limit=50`);
       setAuditLogs(data);
     } catch {}
+  };
+
+  const fetchRegistry = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/service-registry`);
+      setRegistry(data.services || []);
+    } catch { setRegistry([]); }
+  };
+
+  const saveRegistryOverride = async (service_id, payload) => {
+    try {
+      await axios.put(`${API}/admin/service-registry/${service_id}`, payload);
+      toast.success("Dienst-Beschreibung gespeichert");
+      fetchRegistry();
+      setRegEditing(null);
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const createRegistryCustom = async () => {
+    const payload = {
+      service_id: regForm.service_id.trim().toLowerCase(),
+      name: regForm.name.trim(),
+      description: regForm.description.trim(),
+      capabilities: regForm.capabilities.split(",").map(s => s.trim()).filter(Boolean),
+      example_queries: regForm.example_queries.split("\n").map(s => s.trim()).filter(Boolean),
+      type: regForm.type,
+      is_active: true,
+    };
+    if (!payload.service_id || !payload.name) {
+      toast.error("ID und Name sind Pflicht");
+      return;
+    }
+    try {
+      await axios.post(`${API}/admin/service-registry`, payload);
+      toast.success("Dienst hinzugefügt");
+      setShowCreateReg(false);
+      setRegForm({ service_id: "", name: "", description: "", capabilities: "", example_queries: "", type: "custom" });
+      fetchRegistry();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const deleteRegistryEntry = async (service_id, is_custom) => {
+    if (!window.confirm(is_custom ? "Custom-Dienst wirklich löschen?" : "Zurücksetzen auf Standard?")) return;
+    try {
+      await axios.delete(`${API}/admin/service-registry/${service_id}`);
+      toast.success(is_custom ? "Gelöscht" : "Auf Standard zurückgesetzt");
+      fetchRegistry();
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const checkHaStatus = async (silent = false) => {
@@ -481,6 +535,7 @@ const Admin = () => {
     { id: "profiles", label: isLcars ? "PROFILE" : "Profile" },
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
     { id: "services", label: isLcars ? "DIENSTE" : "Dienste" },
+    { id: "router", label: isLcars ? "KI-ROUTER" : "KI-Router" },
     { id: "settings", label: isLcars ? "EINSTELLUNGEN" : "Einstellungen" },
   ];
 
@@ -500,7 +555,7 @@ const Admin = () => {
       {/* Tabs - scrollable */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2" data-testid="admin-tabs">
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === "audit") fetchAuditLog(); }}
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === "audit") fetchAuditLog(); if (tab.id === "router") fetchRegistry(); }}
             className={`px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
               activeTab === tab.id
                 ? isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-600 text-white"
@@ -1074,6 +1129,146 @@ const Admin = () => {
         </div>
       )}
 
+      {/* ==================== KI-ROUTER TAB (Service Registry) ==================== */}
+      {activeTab === "router" && (
+        <div className="space-y-4" data-testid="router-tab">
+          <div className={cardClass}>
+            <div className="flex items-center gap-3 mb-2">
+              <MagicWand size={20} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "KI-ROUTER — DIENST-REGISTRY" : "KI-Router — Dienst-Registry"}
+              </h3>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Hier konfigurierst du was jeder Dienst <b>kann</b>. Der GPT-Router entscheidet anhand dieser Beschreibungen welcher Dienst für eine Nutzer-Anfrage zuständig ist.
+              Passe Beschreibung, Fähigkeiten und Beispiel-Anfragen an, um das Routing für deine Daten zu optimieren.
+              Überschreibungen werden separat gespeichert — Standard-Dienste lassen sich jederzeit auf die Voreinstellung zurücksetzen.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1" />
+            <button onClick={() => setShowCreateReg(true)} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`} data-testid="registry-add-btn">
+              <Plus size={14} /> {isLcars ? "NEUEN DIENST" : "Neuen Dienst hinzufügen"}
+            </button>
+          </div>
+
+          {showCreateReg && (
+            <div className={cardClass} data-testid="registry-create-form">
+              <h4 className={`text-sm font-bold mb-3 ${isLcars ? "text-[var(--lcars-orange)] tracking-wider" : "text-purple-200"}`}>
+                {isLcars ? "NEUER DIENST" : "Neuer Dienst"}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input placeholder="service_id (z.B. nextcloud)" value={regForm.service_id}
+                  onChange={e => setRegForm({ ...regForm, service_id: e.target.value })}
+                  className={isLcars ? "lcars-input" : "disney-input"} style={{ textTransform: "none" }}
+                  data-testid="registry-new-id" />
+                <input placeholder="Anzeigename" value={regForm.name}
+                  onChange={e => setRegForm({ ...regForm, name: e.target.value })}
+                  className={isLcars ? "lcars-input" : "disney-input"} style={{ textTransform: "none" }}
+                  data-testid="registry-new-name" />
+              </div>
+              <textarea placeholder="Beschreibung — was kann dieser Dienst? (GPT liest das für Routing-Entscheidung)"
+                value={regForm.description}
+                onChange={e => setRegForm({ ...regForm, description: e.target.value })}
+                rows={3}
+                className={`${isLcars ? "lcars-input" : "disney-input"} w-full mt-3`}
+                style={{ textTransform: "none" }}
+                data-testid="registry-new-desc" />
+              <input placeholder="Fähigkeiten (komma-getrennt)" value={regForm.capabilities}
+                onChange={e => setRegForm({ ...regForm, capabilities: e.target.value })}
+                className={`${isLcars ? "lcars-input" : "disney-input"} w-full mt-3`}
+                style={{ textTransform: "none" }}
+                data-testid="registry-new-caps" />
+              <textarea placeholder="Beispiel-Anfragen (eine pro Zeile)"
+                value={regForm.example_queries}
+                onChange={e => setRegForm({ ...regForm, example_queries: e.target.value })}
+                rows={3}
+                className={`${isLcars ? "lcars-input" : "disney-input"} w-full mt-3`}
+                style={{ textTransform: "none" }}
+                data-testid="registry-new-examples" />
+              <div className="flex gap-2 mt-3">
+                <button onClick={createRegistryCustom} className={btnClass} data-testid="registry-save-new">
+                  {isLcars ? "SPEICHERN" : "Speichern"}
+                </button>
+                <button onClick={() => setShowCreateReg(false)} className={`${btnClass} opacity-70`} data-testid="registry-cancel-new">
+                  {isLcars ? "ABBRECHEN" : "Abbrechen"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {registry.map(s => (
+              <div key={s.service_id} className={cardClass} data-testid={`registry-${s.service_id}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    s.available
+                      ? (isLcars ? "bg-green-500/20 text-green-400" : "bg-green-700/30 text-green-300")
+                      : (isLcars ? "bg-gray-700/30 text-gray-500" : "bg-gray-800/40 text-gray-500")
+                  }`}>
+                    <Robot size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-bold text-sm">{s.name}</div>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">{s.service_id}</span>
+                      {s.is_custom && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-700/40 text-blue-300">CUSTOM</span>}
+                      {s.overridden && !s.is_custom && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-700/40 text-yellow-200">ÜBERSCHRIEBEN</span>}
+                      <span className={`text-[10px] font-bold ${s.available ? "text-green-400" : "text-gray-500"}`}>
+                        {s.available ? "VERFÜGBAR" : "OFFLINE"}
+                      </span>
+                    </div>
+                    {regEditing === s.service_id ? (
+                      <RegistryEditor service={s} isLcars={isLcars}
+                        onSave={(payload) => saveRegistryOverride(s.service_id, payload)}
+                        onCancel={() => setRegEditing(null)} />
+                    ) : (
+                      <>
+                        <div className="text-xs text-gray-400 mt-1 leading-relaxed" style={{ textTransform: "none" }}>
+                          {s.description || <span className="italic text-gray-600">Keine Beschreibung</span>}
+                        </div>
+                        {s.capabilities?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {s.capabilities.map((c, i) => (
+                              <span key={i} className={`text-[10px] px-2 py-0.5 rounded ${isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)]" : "bg-purple-800/30 text-purple-300"}`}>{c}</span>
+                            ))}
+                          </div>
+                        )}
+                        {s.example_queries?.length > 0 && (
+                          <div className="text-[10px] text-gray-500 mt-2">
+                            <b>Beispiele:</b> {s.example_queries.slice(0, 3).map((q, i) => <span key={i} className="italic">"{q}"{i < Math.min(s.example_queries.length, 3) - 1 ? "; " : ""}</span>)}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {regEditing !== s.service_id && (
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => setRegEditing(s.service_id)}
+                        className={`${btnClass} py-1 px-2 text-[10px]`}
+                        data-testid={`registry-edit-${s.service_id}`}>
+                        <PencilSimple size={12} />
+                      </button>
+                      {(s.overridden || s.is_custom) && (
+                        <button onClick={() => deleteRegistryEntry(s.service_id, s.is_custom)}
+                          className="py-1 px-2 text-[10px] rounded bg-red-900/40 text-red-300 hover:bg-red-800/50"
+                          data-testid={`registry-delete-${s.service_id}`}>
+                          <Trash size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {registry.length === 0 && (
+              <div className="text-center py-12 text-gray-500 text-sm">Noch keine Dienste geladen — Tab erneut öffnen.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ==================== SETTINGS TAB ==================== */}
       {activeTab === "settings" && (
         <div className="space-y-6">
@@ -1341,3 +1536,47 @@ const Admin = () => {
 };
 
 export default Admin;
+
+// ===== Registry Editor Component =====
+const RegistryEditor = ({ service, isLcars, onSave, onCancel }) => {
+  const [desc, setDesc] = useState(service.description || "");
+  const [caps, setCaps] = useState((service.capabilities || []).join(", "));
+  const [examples, setExamples] = useState((service.example_queries || []).join("\n"));
+  const inputCls = isLcars ? "lcars-input" : "disney-input";
+  const btnCls = isLcars ? "lcars-button" : "disney-button";
+
+  const handleSave = () => {
+    onSave({
+      description: desc,
+      capabilities: caps.split(",").map(s => s.trim()).filter(Boolean),
+      example_queries: examples.split("\n").map(s => s.trim()).filter(Boolean),
+    });
+  };
+
+  return (
+    <div className="mt-2 space-y-2" data-testid={`registry-editor-${service.service_id}`}>
+      <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3}
+        placeholder="Beschreibung — was kann dieser Dienst?"
+        className={`${inputCls} w-full`} style={{ textTransform: "none" }}
+        data-testid={`registry-desc-${service.service_id}`} />
+      <input value={caps} onChange={e => setCaps(e.target.value)}
+        placeholder="Fähigkeiten (komma-getrennt)"
+        className={`${inputCls} w-full`} style={{ textTransform: "none" }}
+        data-testid={`registry-caps-${service.service_id}`} />
+      <textarea value={examples} onChange={e => setExamples(e.target.value)} rows={3}
+        placeholder="Beispiel-Anfragen (eine pro Zeile)"
+        className={`${inputCls} w-full`} style={{ textTransform: "none" }}
+        data-testid={`registry-examples-${service.service_id}`} />
+      <div className="flex gap-2">
+        <button onClick={handleSave} className={`${btnCls} py-1 px-3 text-xs`}
+          data-testid={`registry-save-${service.service_id}`}>
+          {isLcars ? "SPEICHERN" : "Speichern"}
+        </button>
+        <button onClick={onCancel} className={`${btnCls} py-1 px-3 text-xs opacity-70`}
+          data-testid={`registry-cancel-${service.service_id}`}>
+          {isLcars ? "ABBRECHEN" : "Abbrechen"}
+        </button>
+      </div>
+    </div>
+  );
+};

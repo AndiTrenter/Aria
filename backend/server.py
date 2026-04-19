@@ -887,9 +887,96 @@ async def get_llm_api_key() -> str:
         return setting["value"]
     return ""
 
+# ==================== ADMIN SERVICE-REGISTRY (GPT ROUTER) ====================
+
+@api_router.get("/admin/service-registry")
+async def admin_get_service_registry(request: Request):
+    """Return merged service registry (defaults + DB overrides) with availability status."""
+    await require_admin(request)
+    default_ids = {s["service_id"] for s in service_router.DEFAULT_REGISTRY}
+    custom = await db.service_registry.find({}, {"_id": 0}).to_list(100)
+    custom_map = {c["service_id"]: c for c in custom}
+
+    merged = []
+    for default in service_router.DEFAULT_REGISTRY:
+        sid = default["service_id"]
+        entry = {**default, "is_default": True, "overridden": sid in custom_map, "is_custom": False}
+        if sid in custom_map:
+            entry = {**entry, **custom_map[sid], "is_default": True, "overridden": True, "is_custom": False}
+        try:
+            entry["available"] = await service_router.check_service_available(sid)
+        except Exception:
+            entry["available"] = False
+        merged.append(entry)
+
+    # Custom services without default counterpart
+    for c in custom:
+        if c["service_id"] not in default_ids:
+            entry = {**c, "is_default": False, "overridden": False, "is_custom": True, "available": False}
+            merged.append(entry)
+
+    return {"services": merged}
+
+
+@api_router.put("/admin/service-registry/{service_id}")
+async def admin_update_service_registry(service_id: str, request: Request, body: dict = Body(...)):
+    """Upsert a service override (or custom service). Expected body fields:
+       name, description, capabilities (list), example_queries (list), type, is_active (bool).
+    """
+    await require_admin(request)
+    allowed = {"name", "description", "capabilities", "example_queries", "type", "is_active"}
+    clean = {k: v for k, v in body.items() if k in allowed}
+    if not clean:
+        raise HTTPException(400, "Keine gültigen Felder")
+    clean["service_id"] = service_id
+    clean["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.service_registry.update_one(
+        {"service_id": service_id},
+        {"$set": clean},
+        upsert=True,
+    )
+    return {"success": True, "service_id": service_id}
+
+
+@api_router.post("/admin/service-registry")
+async def admin_create_custom_service(request: Request, body: dict = Body(...)):
+    """Create a new custom service not in the default registry."""
+    await require_admin(request)
+    sid = (body.get("service_id") or "").strip().lower()
+    if not sid or not sid.replace("_", "").replace("-", "").isalnum():
+        raise HTTPException(400, "service_id muss alphanumerisch sein (a-z, 0-9, _, -)")
+    default_ids = {s["service_id"] for s in service_router.DEFAULT_REGISTRY}
+    if sid in default_ids:
+        raise HTTPException(400, "Service-ID existiert bereits als Default. Nutze PUT zum Überschreiben.")
+    existing = await db.service_registry.find_one({"service_id": sid})
+    if existing:
+        raise HTTPException(400, "Service-ID existiert bereits")
+    doc = {
+        "service_id": sid,
+        "name": body.get("name", sid),
+        "description": body.get("description", ""),
+        "capabilities": body.get("capabilities", []),
+        "example_queries": body.get("example_queries", []),
+        "type": body.get("type", "custom"),
+        "is_active": body.get("is_active", True),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.service_registry.insert_one(doc)
+    doc.pop("_id", None)
+    return {"success": True, "service": doc}
+
+
+@api_router.delete("/admin/service-registry/{service_id}")
+async def admin_delete_service_registry(service_id: str, request: Request):
+    """Delete a registry override. For defaults this reverts to default; for custom it removes the service entirely."""
+    await require_admin(request)
+    result = await db.service_registry.delete_one({"service_id": service_id})
+    return {"success": True, "deleted": result.deleted_count}
+
+
 # ==================== CHAT CONTEXT ENRICHMENT ====================
 
-async def gather_context_for_services(service_ids: list, msg_lower: str) -> str:
+async def gather_context_for_services(service_ids: list, msg_lower: str, original_message: str = "") -> str:
     """Gather context ONLY from the routed services."""
     context_parts = []
     
@@ -979,26 +1066,9 @@ async def gather_context_for_services(service_ids: list, msg_lower: str) -> str:
         try:
             plex_url, plex_token = await plex.get_plex_settings()
             if plex_url and plex_token:
-                plex_context = []
-                search_words = [w for w in msg_lower.split() if w not in {"film", "filme", "serie", "serien", "hast", "du", "gibt", "es", "was", "welche", "zeig", "mir", "auf", "plex", "von", "kannst", "schauen", "ich", "möchte"} and len(w) > 2]
-                if search_words:
-                    query = " ".join(search_words[:4])
-                    data, err = await plex.plex_request("/hubs/search", {"query": query, "limit": 10})
-                    if data and not err:
-                        results = []
-                        for hub in data.get("MediaContainer", {}).get("Hub", []):
-                            for item in hub.get("Metadata", []):
-                                results.append(f"- {item.get('title', '')} ({item.get('year', '')}) [{item.get('type', '')}] {item.get('summary', '')[:150]}")
-                        if results:
-                            plex_context.append(f"--- Plex Suchergebnisse ---\n" + "\n".join(results[:8]))
-                if not search_words or any(w in msg_lower for w in ["neu", "zuletzt", "empfehlung", "was gibt"]):
-                    recent_data, _ = await plex.plex_request("/library/recentlyAdded", {"X-Plex-Container-Size": "8"})
-                    if recent_data:
-                        items = recent_data.get("MediaContainer", {}).get("Metadata", [])
-                        if items:
-                            plex_context.append("--- Zuletzt hinzugefügt ---\n" + "\n".join([f"- {i.get('title', '')} ({i.get('year', '')})" for i in items[:8]]))
-                if plex_context:
-                    context_parts.append("\n".join(plex_context))
+                plex_ctx = await plex.build_chat_context(original_message or msg_lower)
+                if plex_ctx:
+                    context_parts.append(plex_ctx)
         except Exception as e:
             logger.warning(f"Plex context failed: {e}")
 
@@ -1064,7 +1134,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     # Step 2: Gather context ONLY from routed services
     live_context = ""
     if routed_services:
-        live_context = await gather_context_for_services(routed_services, msg_lower)
+        live_context = await gather_context_for_services(routed_services, msg_lower, message_text)
     
     # Step 3: Load chat history
     history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
@@ -1137,7 +1207,7 @@ def _get_system_prompt():
 VERBUNDENE DIENSTE:
 - **CaseDesk AI**: Dokumente, E-Mails, Fälle, Aufgaben, Kalender. Du kannst lesen, suchen, zusammenfassen UND neue Einträge erstellen.
 - **Home Assistant**: Smart-Home-Geräte steuern UND Automationen erstellen.
-- **Plex Media Server**: Filme, Serien und Musik durchsuchen. Du kennst die Bibliothek und kannst Empfehlungen geben.
+- **Plex Media Server**: Filme, Serien und Musik durchsuchen. Du kennst die Bibliothek und kannst Empfehlungen geben. Wenn PLEX BIBLIOTHEKS-ÜBERSICHT mit Zahlen vorliegt, nutze DIESE Zahlen direkt (z.B. bei "wieviele Filme hast du?"). Wenn PLEX SUCHE "KEINE TREFFER" meldet, sage klar dass der Titel NICHT in der Bibliothek ist. Erfinde KEINE Titel.
 - **System**: Server-Diagnostik (CPU, RAM, Docker-Container).
 - **Wetter**: Aktuelles Wetter und Vorhersage.
 
@@ -1693,4 +1763,3 @@ async def start_telegram_bot():
         logger.info("Telegram bot started")
     else:
         logger.info("Telegram bot token not configured - bot not started")
-
