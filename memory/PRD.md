@@ -250,7 +250,23 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### P7 — ForgePilot Integration
 - [x] Siehe Phase 11
 
-### Phase 12 — Plex Chat-Intelligence + Admin Service-Registry UI (DONE 2026-04-18)
+### Phase 13 — Telegram Diagnostics + Router-Historie + SMART-Disks (DONE 2026-04-19)
+- [x] **Telegram Bot komplett aufgerüstet**
+  - Neuer `test_token()` Helper → getMe + getWebhookInfo + deleteWebhook in einem Call
+  - `_status` dict mit running/bot_username/last_poll_at/polls_count/updates_received/last_error
+  - `restart_bot()` (async, wartet auf alten Task) + explicit `clear_webhook()` beim Token-Wechsel
+  - 409 Conflict-Erkennung mit klarer Fehlermeldung
+  - Admin-Endpoints: POST `/api/admin/telegram/test`, GET `/api/admin/telegram/status`, POST `/api/admin/telegram/restart`
+  - Admin UI: Test-Button mit grünem/rotem Feedback-Panel, Status-Panel (Polls/Updates/Errors), Restart-Button
+- [x] **Router-Historie**
+  - Neue Collection `chat_route_log` (gefüllt in `process_chat_message` bei jeder Routing-Entscheidung)
+  - Endpoints: GET `/api/admin/router-history?limit=N`, DELETE `/api/admin/router-history`
+  - Admin UI: Neuer Block "Router-Historie" in KI-ROUTER Tab — zeigt letzte 30 Anfragen mit geroutetem Service als Badge
+- [x] **SMART / Disk-Temperaturen**
+  - Endpoint `/api/health/disks` versucht `smartctl --scan-open -j` → fallback `/sys/class/hwmon/*` für NVMe
+  - Gibt klaren Hinweis zurück wenn `smartmontools` fehlt (Installationsanleitung für Unraid-Docker: `--cap-add=SYS_RAWIO`)
+  - Health-Seite: Temperatur-Badge je Disk + neue "SMART / TEMPERATUREN" Sektion (grün <45°C, orange <55°C, rot ≥55°C)
+- [x] 15 neue pytest Backend-Tests (`/app/backend/tests/test_telegram_router_disks.py`) alle grün
 - [x] Plex Chat-Kontext massiv verbessert (`plex.py::build_chat_context`)
   - Liefert IMMER autoritative Bibliotheks-Counts (Filme/Serien/Musik)
   - Saubere Titel-Suche mit Quote-Support ("The Matrix")
