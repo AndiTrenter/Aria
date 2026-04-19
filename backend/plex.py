@@ -230,7 +230,7 @@ async def proxy_image(request: Request, path: str = ""):
         raise HTTPException(404)
     try:
         full_url = f"{url}{path}" if path.startswith("/") else f"{url}/{path}"
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
             resp = await client.get(full_url, params={"X-Plex-Token": token})
             if resp.status_code == 200 and resp.content:
                 return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),

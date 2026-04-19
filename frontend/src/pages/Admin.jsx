@@ -87,6 +87,7 @@ const Admin = () => {
 
   // Service Registry (GPT Router)
   const [registry, setRegistry] = useState([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
   const [regEditing, setRegEditing] = useState(null);
   const [regForm, setRegForm] = useState({ service_id: "", name: "", description: "", capabilities: "", example_queries: "", type: "custom" });
   const [showCreateReg, setShowCreateReg] = useState(false);
@@ -171,10 +172,12 @@ const Admin = () => {
   };
 
   const fetchRegistry = async () => {
+    setRegistryLoading(true);
     try {
       const { data } = await axios.get(`${API}/admin/service-registry`);
       setRegistry(data.services || []);
     } catch { setRegistry([]); }
+    finally { setRegistryLoading(false); }
   };
 
   const saveRegistryOverride = async (service_id, payload) => {

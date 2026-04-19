@@ -250,6 +250,27 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### P7 — ForgePilot Integration
 - [x] Siehe Phase 11
 
+### Phase 12 — Plex Chat-Intelligence + Admin Service-Registry UI (DONE 2026-04-18)
+- [x] Plex Chat-Kontext massiv verbessert (`plex.py::build_chat_context`)
+  - Liefert IMMER autoritative Bibliotheks-Counts (Filme/Serien/Musik)
+  - Saubere Titel-Suche mit Quote-Support ("The Matrix")
+  - "KEINE TREFFER"-Signal wenn Titel nicht in Bibliothek → GPT antwortet ehrlich
+  - Zuletzt-hinzugefügt bei "neu/empfehlung"-Fragen
+- [x] Plex Image-Proxy gefixt
+  - `follow_redirects=True` (Plex redirected thumbs)
+  - Timeout 6s (schneller Fail wenn unreachable)
+  - Bessere Logs
+- [x] Aria System-Prompt klarer bzgl Plex-Nutzung (nutze autoritative Zahlen, keine Halluzination)
+- [x] Admin Service-Registry UI (neuer Tab "KI-ROUTER")
+  - Backend: GET/PUT/POST/DELETE `/api/admin/service-registry`
+  - Zeigt merged List: defaults + DB-Overrides + Custom
+  - Live-Availability-Check pro Service
+  - Inline-Editor für Beschreibung/Capabilities/Example-Queries
+  - "Neuer Dienst" Button für komplett eigene Services
+  - Reset-to-Default via DELETE
+- [x] Fix: `gather_context_for_services` Signature mismatch (entdeckt+gefixt vom Testing Agent)
+- [x] 11 neue pytest Backend-Tests + 15 Unit/E2E Tests alle grün
+
 ### Phase 11 — ForgePilot Integration (DONE 2026-04-18)
 - [x] Neues Backend-Modul `/app/backend/forgepilot.py`
   - `get_forgepilot_url()` → holt URL aus `services` Collection
