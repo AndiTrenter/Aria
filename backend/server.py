@@ -752,6 +752,118 @@ async def get_system_health(request: Request):
         },
     }
 
+@api_router.get("/health/disks")
+async def get_disks_health(request: Request):
+    """Return SMART disk temperatures and basic health info.
+
+    Tries in order:
+      1. smartctl --scan-open / -A (best; requires smartmontools + --cap-add SYS_RAWIO)
+      2. /sys/class/hwmon/*/temp*_input for NVMe (no root needed)
+    Gracefully reports why no data is available.
+    """
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("health", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Health access not permitted")
+
+    import shutil as _sh
+    import subprocess as _sp
+    import re as _re
+    from pathlib import Path as _P
+    import json as _json
+
+    disks: list[dict] = []
+    notes: list[str] = []
+
+    # --- Method 1: smartctl ---
+    smartctl_path = _sh.which("smartctl")
+    if smartctl_path:
+        try:
+            # Scan for devices (JSON output available in smartmontools >= 7.0)
+            scan = _sp.run([smartctl_path, "--scan-open", "-j"], capture_output=True, text=True, timeout=5)
+            scan_devices = []
+            if scan.returncode == 0 and scan.stdout:
+                try:
+                    sd = _json.loads(scan.stdout)
+                    for dev in sd.get("devices", []) or []:
+                        scan_devices.append(dev.get("name"))
+                except _json.JSONDecodeError:
+                    # Fallback: parse plain text output
+                    for line in scan.stdout.splitlines():
+                        m = _re.match(r'^(\S+)\s+-d', line)
+                        if m:
+                            scan_devices.append(m.group(1))
+            # Per-device SMART
+            for dev in [d for d in scan_devices if d]:
+                try:
+                    r = _sp.run([smartctl_path, "-A", "-i", "-H", "-j", dev], capture_output=True, text=True, timeout=8)
+                    if r.returncode in (0, 4, 64) and r.stdout:  # 4/64 = non-fatal SMART warnings
+                        data = _json.loads(r.stdout)
+                        temp = None
+                        temp_raw = data.get("temperature", {})
+                        if isinstance(temp_raw, dict) and "current" in temp_raw:
+                            temp = temp_raw.get("current")
+                        # Also look in attributes
+                        if temp is None:
+                            for a in data.get("ata_smart_attributes", {}).get("table", []) or []:
+                                if (a.get("name") or "").lower() in ("temperature_celsius", "airflow_temperature_cel", "temperature_internal"):
+                                    temp = a.get("raw", {}).get("value")
+                                    break
+                        passed = (data.get("smart_status", {}) or {}).get("passed")
+                        disks.append({
+                            "device": dev,
+                            "model": data.get("model_name") or data.get("model_family") or "",
+                            "serial": data.get("serial_number") or "",
+                            "size_gb": round((data.get("user_capacity", {}) or {}).get("bytes", 0) / (1024**3), 1) if isinstance(data.get("user_capacity"), dict) else 0,
+                            "temperature_c": temp,
+                            "smart_passed": passed,
+                            "source": "smartctl",
+                        })
+                except Exception as e:
+                    notes.append(f"{dev}: {str(e)[:80]}")
+        except Exception as e:
+            notes.append(f"smartctl scan failed: {str(e)[:80]}")
+    else:
+        notes.append("smartctl nicht gefunden. Installiere 'smartmontools' und starte den Container mit --cap-add=SYS_RAWIO (oder --privileged), dann werden Festplatten-Temperaturen hier sichtbar.")
+
+    # --- Method 2: NVMe via hwmon (no root) ---
+    if not disks:
+        try:
+            hwmon_root = _P("/sys/class/hwmon")
+            if hwmon_root.exists():
+                for hwdir in hwmon_root.iterdir():
+                    try:
+                        name_file = hwdir / "name"
+                        name = name_file.read_text().strip() if name_file.exists() else ""
+                        if not name or "nvme" not in name.lower():
+                            continue
+                        for tfile in hwdir.glob("temp*_input"):
+                            try:
+                                millideg = int(tfile.read_text().strip())
+                                temp = round(millideg / 1000.0, 1)
+                                disks.append({
+                                    "device": f"/dev/{name}",
+                                    "model": name,
+                                    "serial": "",
+                                    "size_gb": 0,
+                                    "temperature_c": temp,
+                                    "smart_passed": None,
+                                    "source": "hwmon",
+                                })
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+        except Exception as e:
+            notes.append(f"hwmon read failed: {str(e)[:80]}")
+
+    return {
+        "available": bool(disks),
+        "disks": disks,
+        "notes": notes,
+        "smartctl_installed": bool(smartctl_path),
+    }
+
+
 @api_router.get("/health/docker")
 async def get_docker_containers(request: Request):
     user = await get_current_user(request)
@@ -760,7 +872,6 @@ async def get_docker_containers(request: Request):
     
     if not DOCKER_AVAILABLE:
         return {"available": False, "containers": [], "message": "Docker Socket nicht verfügbar"}
-    
     try:
         containers = docker_client.containers.list(all=True)
         result = []
@@ -871,10 +982,10 @@ async def update_settings(request: Request, payload: dict = Body(...)):
         # Auto-start Telegram bot when token is saved
         if key == "telegram_bot_token" and str_value and "..." not in str_value:
             try:
-                telegram_bot.start_bot()
-                logger.info("Telegram bot (re)started after token update")
+                await telegram_bot.restart_bot()
+                logger.info("Telegram bot restarted after token update")
             except Exception as e:
-                logger.warning(f"Telegram bot start failed: {e}")
+                logger.warning(f"Telegram bot restart failed: {e}")
         logger.info(f"Settings saved: {saved_keys}")
         return {"message": "Settings updated", "saved": saved_keys}
     except Exception as e:
@@ -971,6 +1082,75 @@ async def admin_delete_service_registry(service_id: str, request: Request):
     """Delete a registry override. For defaults this reverts to default; for custom it removes the service entirely."""
     await require_admin(request)
     result = await db.service_registry.delete_one({"service_id": service_id})
+    return {"success": True, "deleted": result.deleted_count}
+
+
+# ==================== ADMIN TELEGRAM DIAGNOSTICS ====================
+@api_router.post("/admin/telegram/test")
+async def admin_telegram_test(request: Request, body: dict = Body(default={})):
+    """Test Telegram bot token: validates via getMe, clears webhook, returns bot info.
+
+    Body can optionally contain {"token": "..."} to test a specific token
+    without saving it. Otherwise uses the currently-saved token.
+    """
+    await require_admin(request)
+    provided = (body or {}).get("token", "").strip() if isinstance(body, dict) else ""
+    token = provided or await telegram_bot.get_bot_token()
+    if not token:
+        return {"ok": False, "stage": "token", "message": "Kein Token konfiguriert. Hinterlege einen gültigen Bot-Token in den Einstellungen."}
+    return await telegram_bot.test_token(token)
+
+
+@api_router.get("/admin/telegram/status")
+async def admin_telegram_status(request: Request):
+    """Get current Telegram bot polling runtime status."""
+    await require_admin(request)
+    status = telegram_bot.get_status()
+    status["token_configured"] = bool(await telegram_bot.get_bot_token())
+    return status
+
+
+@api_router.post("/admin/telegram/restart")
+async def admin_telegram_restart(request: Request):
+    """Force restart of the Telegram polling loop (e.g. after removing stale webhook)."""
+    await require_admin(request)
+    token = await telegram_bot.get_bot_token()
+    if not token:
+        raise HTTPException(400, "Kein Token konfiguriert")
+    await telegram_bot.restart_bot()
+    # Give the new loop a moment to initialise (getMe + clear webhook)
+    await asyncio.sleep(1.5)
+    return {"success": True, "status": telegram_bot.get_status()}
+
+
+# ==================== ADMIN: CHAT ROUTER HISTORY ====================
+
+@api_router.get("/admin/router-history")
+async def admin_router_history(request: Request, limit: int = 100):
+    """Recent routing decisions (message → selected services)."""
+    await require_admin(request)
+    limit = max(1, min(500, int(limit)))
+    entries = await db.chat_route_log.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    # Enrich with user name
+    user_ids = list({e.get("user_id") for e in entries if e.get("user_id")})
+    names = {}
+    for uid in user_ids:
+        try:
+            u = await db.users.find_one({"_id": ObjectId(uid)}, {"_id": 0, "name": 1, "email": 1})
+            if u:
+                names[uid] = u.get("name") or u.get("email") or ""
+        except Exception:
+            pass
+    for e in entries:
+        e["user_name"] = names.get(e.get("user_id", ""), "")
+    return entries
+
+
+@api_router.delete("/admin/router-history")
+async def admin_router_history_clear(request: Request):
+    """Clear routing history."""
+    await require_admin(request)
+    result = await db.chat_route_log.delete_many({})
     return {"success": True, "deleted": result.deleted_count}
 
 
@@ -1093,6 +1273,19 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     is_simple = route_result.get("is_simple", False)
     
     logger.info(f"Router: '{message_text[:60]}' → services={routed_services}, simple={is_simple}")
+
+    # Log routing decision for Admin inspection (capped history)
+    try:
+        await db.chat_route_log.insert_one({
+            "user_id": user_id,
+            "session_id": session_id,
+            "message": message_text[:240],
+            "services": routed_services,
+            "is_simple": is_simple,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
 
     # Step 1a: ForgePilot Sticky-Session — wenn die letzte Assistenten-Antwort
     # aus ForgePilot kam (z.B. offene Rückfrage), leite Follow-up-Nachricht

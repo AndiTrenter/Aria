@@ -1,0 +1,74 @@
+{
+  "summary": "Tested iteration-10 features (Telegram diagnostics, Router-History, SMART /api/health/disks). Created /app/backend/tests/test_telegram_router_disks.py (15 tests, all passing). Frontend flows verified via Playwright: Telegram test button shows clear 'Kein Token' message with DISABLED token, restart returns 400 with user-friendly toast, Router-History block is present in KI-ROUTER tab and loads entries (chat POST persists to chat_route_log), clear button works. Health page loads and SMART section is correctly hidden when no disks are detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Health > SMART notes hint",
+        "issue": "In the preview run the element [data-testid=smart-notes] was NOT rendered even though the backend /api/health/disks returns smartctl_installed=false AND notes=['smartctl nicht gefunden ...']. The visibility condition in Health.jsx line 264 is '!smartDisks.smartctl_installed && smartDisks.notes && smartDisks.notes.length > 0' — if the initial state had smartctl_installed=false and the first fetchSmartDisks() failed silently (e.g. 401 during first auth hydration), the notes array stays empty and the hint never shows. Consider (a) logging fetchSmartDisks errors, (b) re-fetching on auth-ready, or (c) falling back to a hardcoded German note when the fetch fails so users always see why temperatures are not available.",
+        "affected_selectors": ["[data-testid=smart-notes]"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Admin > Einstellungen (Telegram block)",
+        "issues": [
+          "There are two data-testids on sibling elements: 'settings-telegram' (legacy) and 'settings-telegram-block' (new). Consider removing the legacy one to avoid ambiguity in future tests.",
+          "Restart error path bubbles TWO toasts ('AxiosError: Request failed with status code 400' + 'Kein Token konfiguriert'). The axios error toast is noise — swallow axios error and only show the user-friendly message."
+        ]
+      }
+    ]
+  },
+  "passed_tests": [
+    "Backend: GET /api/admin/telegram/status requires admin (401 without auth)",
+    "Backend: GET /api/admin/telegram/status → running=false, token_configured=false (DISABLED in preview)",
+    "Backend: POST /api/admin/telegram/test {} → ok=false, stage=token, clear message",
+    "Backend: POST /api/admin/telegram/test {'token':'fakebadtoken:...'} → ok=false, stage=getMe, helpful message",
+    "Backend: POST /api/admin/telegram/test requires admin",
+    "Backend: POST /api/admin/telegram/restart requires admin",
+    "Backend: POST /api/admin/telegram/restart with disabled token → 400 'Kein Token konfiguriert'",
+    "Backend: GET/DELETE /api/admin/router-history require admin",
+    "Backend: POST /api/chat populates chat_route_log (entry visible in GET /api/admin/router-history with user_id,user_name,message,services,is_simple,timestamp)",
+    "Backend: DELETE /api/admin/router-history returns deleted count and empties history",
+    "Backend: GET /api/health/disks requires admin; returns {available,disks,notes,smartctl_installed} with smartctl_installed=false + smartctl-hint in preview",
+    "Backend regression: GET /api/admin/service-registry still 200",
+    "Backend regression: POST /api/chat still 200 (no signature bug)",
+    "Frontend Admin KI-ROUTER: router-history block visible, refresh loads 1 entry, clear button present",
+    "Frontend Admin Einstellungen: Telegram block has 'Verbindung testen','Bot neustart','Status' buttons; badge shows INAKTIV; test button surfaces 'Kein Token konfiguriert' message; restart shows same message as toast",
+    "Frontend /health: page loads, SMART/TEMPERATUREN header correctly hidden (no disks in preview)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_telegram_router_disks.py",
+    "/app/test_reports/pytest/pytest_iteration10.xml"
+  ],
+  "action_items": [
+    "(Low) Fix Health.jsx so the smartctl hint is always visible when smartctl_installed=false — either refetch after auth or render a static fallback note. Currently the element is absent on first load in the preview.",
+    "(Low) Deduplicate telegram-test block data-testids: remove legacy 'settings-telegram' and keep only 'settings-telegram-block'.",
+    "(Low) Suppress raw AxiosError toast on /telegram/restart 400 — only show the German 'Kein Token konfiguriert' message."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1958 lines — still exceeds the 700-line guideline. Split telegram/router-history/health-disks into dedicated routers.",
+    "/api/health/disks shells out to smartctl with fixed timeouts (5s/8s) — fine, but wrap with try/except TimeoutExpired explicitly (currently caught via generic Exception).",
+    "admin_router_history reads up to 500 entries; there's no TTL or capped log cleanup. Consider a scheduled purge or TTL index on chat_route_log.timestamp to prevent unbounded growth.",
+    "telegram_bot.get_bot_token filters 'DISABLED', '...' placeholders, len<20 — good, but this logic should also be applied server-side before calling test_token (currently only filtered when body.token is empty)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_telegram_router_disks.py (new — 15 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 pytest)",
+    "frontend": "95% (all core flows OK; SMART-notes element missing is the only deviation)"
+  },
+  "test_credentials": {
+    "admin": {"email": "andi.trenter@gmail.com", "password": "Speedy@181279", "role": "superadmin"}
+  },
+  "seed_data_creation": "None. Test class TestRouterHistory intentionally deletes chat_route_log between tests to assert the new-entry contract. No persistent data left behind.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend for iteration 10 is solid: Telegram diagnostics (status/test/restart), Router-History (GET/DELETE + chat persistence), and /api/health/disks all behave per contract. Auth on the preview uses httpOnly cookies via /api/auth/login — if reusing requests.Session(), a FRESH session is required for negative auth tests (see fresh_client fixture). Telegram token is intentionally DISABLED in preview; don't treat 'Kein Token konfiguriert' as a bug. SMART endpoint returns notes w/ 'smartctl nicht gefunden' in preview; frontend currently doesn't render the hint reliably — see action items.",
+  "rca_of_the_issue": "No blocker. Minor Health.jsx race: smartDisks state is initialised with notes=[], so the !installed && notes.length>0 guard evaluates false if the fetch hasn't returned yet or returned an auth error. Since backend is 200 under auth, the most likely cause is the fetch running before the auth cookie/header is attached."
+}

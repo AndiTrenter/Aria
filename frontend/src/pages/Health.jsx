@@ -55,6 +55,7 @@ const Health = () => {
   const { theme } = useTheme();
   const [system, setSystem] = useState(EMPTY_SYSTEM);
   const [docker, setDocker] = useState({ available: false, containers: [], running: 0, stopped: 0 });
+  const [smartDisks, setSmartDisks] = useState({ available: false, disks: [], notes: [], smartctl_installed: false });
   const [services, setServices] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -207,22 +208,64 @@ const Health = () => {
               <span className={`font-bold ${isLcars ? "text-xs tracking-widest text-orange-400" : "text-sm text-purple-300"}`}>SPEICHER</span>
             </div>
             <div className="space-y-3">
-              {disks.length > 0 ? disks.map((disk, i) => (
-                <div key={i} className="bg-gray-900/40 rounded-lg p-3">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-300 truncate max-w-[60%]" title={disk.mountpoint}>{disk.mountpoint}</span>
-                    <span className={`font-bold ${disk.percent > 90 ? "text-red-400" : disk.percent > 70 ? "text-orange-400" : "text-green-400"}`}>{disk.percent}%</span>
+              {disks.length > 0 ? disks.map((disk, i) => {
+                // Match SMART disk by device prefix
+                const smart = smartDisks.disks.find(s => disk.device && s.device && (s.device === disk.device || disk.device.startsWith(s.device)));
+                return (
+                  <div key={i} className="bg-gray-900/40 rounded-lg p-3">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-300 truncate max-w-[60%]" title={disk.mountpoint}>{disk.mountpoint}</span>
+                      <span className={`font-bold ${disk.percent > 90 ? "text-red-400" : disk.percent > 70 ? "text-orange-400" : "text-green-400"}`}>{disk.percent}%</span>
+                    </div>
+                    <ProgressBar percent={disk.percent} />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1 items-center">
+                      <span>{disk.used_gb} GB / {disk.total_gb} GB</span>
+                      <span className="flex items-center gap-2">
+                        {smart?.temperature_c != null && (
+                          <span className={`font-bold ${smart.temperature_c >= 55 ? "text-red-400" : smart.temperature_c >= 45 ? "text-orange-400" : "text-cyan-400"}`}
+                            title="SMART-Temperatur" data-testid={`disk-temp-${i}`}>
+                            {smart.temperature_c}°C
+                          </span>
+                        )}
+                        <span>{disk.fstype}</span>
+                      </span>
+                    </div>
                   </div>
-                  <ProgressBar percent={disk.percent} />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>{disk.used_gb} GB / {disk.total_gb} GB</span>
-                    <span>{disk.fstype}</span>
-                  </div>
-                </div>
-              )) : (
+                );
+              }) : (
                 <div className="text-gray-500 text-sm text-center py-4">Keine Festplatten gefunden</div>
               )}
             </div>
+            {/* SMART disks that weren't matched to a mountpoint */}
+            {smartDisks.disks.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-800/60">
+                <div className={`text-[10px] font-bold mb-2 ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "text-purple-300"}`}>SMART / TEMPERATUREN</div>
+                <div className="space-y-1.5">
+                  {smartDisks.disks.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs bg-gray-900/30 rounded px-2 py-1" data-testid={`smart-disk-${i}`}>
+                      <div className="truncate flex-1 min-w-0">
+                        <span className="text-gray-300 font-mono">{s.device}</span>
+                        {s.model && <span className="text-gray-500 ml-2 truncate">{s.model}</span>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {s.smart_passed === false && <span className="text-red-400 font-bold">[SMART FAIL]</span>}
+                        {s.smart_passed === true && <span className="text-green-400 text-[10px]">OK</span>}
+                        {s.temperature_c != null ? (
+                          <span className={`font-bold ${s.temperature_c >= 55 ? "text-red-400" : s.temperature_c >= 45 ? "text-orange-400" : "text-cyan-400"}`}>
+                            {s.temperature_c}°C
+                          </span>
+                        ) : <span className="text-gray-500">—</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!smartDisks.smartctl_installed && smartDisks.notes && smartDisks.notes.length > 0 && (
+              <div className="mt-3 text-[10px] text-gray-500 italic leading-relaxed" style={{ textTransform: "none" }} data-testid="smart-notes">
+                💡 {smartDisks.notes[0]}
+              </div>
+            )}
           </div>
         </div>
 

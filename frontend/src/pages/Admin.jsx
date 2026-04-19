@@ -6,7 +6,8 @@ import {
   Plus, Trash, PencilSimple, Check, X, House, Lightbulb, Power,
   ArrowClockwise, Shield, ShieldCheck, Eye, EyeSlash, Gear,
   User, HardDrives, LockSimple, ArrowsVertical, Thermometer,
-  VideoCamera, SpeakerHigh, Fan, Robot, MagicWand, Lightning
+  VideoCamera, SpeakerHigh, Fan, Robot, MagicWand, Lightning,
+  ClockCounterClockwise
 } from "@phosphor-icons/react";
 
 const DOMAIN_ICONS = {
@@ -91,6 +92,7 @@ const Admin = () => {
   const [regEditing, setRegEditing] = useState(null);
   const [regForm, setRegForm] = useState({ service_id: "", name: "", description: "", capabilities: "", example_queries: "", type: "custom" });
   const [showCreateReg, setShowCreateReg] = useState(false);
+  const [routerHistory, setRouterHistory] = useState([]);
 
   // Settings
   const [showApiKey, setShowApiKey] = useState(false);
@@ -114,6 +116,8 @@ const Admin = () => {
   // Telegram
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramStatus, setTelegramStatus] = useState(null);
+  const [telegramTestResult, setTelegramTestResult] = useState(null);
+  const [telegramTesting, setTelegramTesting] = useState(false);
   // Plex
   const [plexUrl, setPlexUrl] = useState("");
   const [plexToken, setPlexToken] = useState("");
@@ -178,6 +182,20 @@ const Admin = () => {
       setRegistry(data.services || []);
     } catch { setRegistry([]); }
     finally { setRegistryLoading(false); }
+    // Also fetch router history for inspection
+    try {
+      const { data } = await axios.get(`${API}/admin/router-history?limit=30`);
+      setRouterHistory(data || []);
+    } catch { setRouterHistory([]); }
+  };
+
+  const clearRouterHistory = async () => {
+    if (!window.confirm("Router-Historie wirklich löschen?")) return;
+    try {
+      await axios.delete(`${API}/admin/router-history`);
+      setRouterHistory([]);
+      toast.success("Router-Historie gelöscht");
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const saveRegistryOverride = async (service_id, payload) => {
@@ -221,6 +239,41 @@ const Admin = () => {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
+  const refreshTelegramStatus = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/telegram/status`);
+      setTelegramStatus(data);
+    } catch {}
+  };
+
+  const testTelegram = async () => {
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      // If user typed a new token, test against that (without saving). Otherwise test saved token.
+      const looksLikeRealToken = telegramToken && !telegramToken.includes("...") && telegramToken.length > 20;
+      const body = looksLikeRealToken ? { token: telegramToken } : {};
+      const { data } = await axios.post(`${API}/admin/telegram/test`, body);
+      setTelegramTestResult(data);
+      if (data.ok) toast.success(data.message);
+      else toast.error(data.message);
+      await refreshTelegramStatus();
+    } catch (e) {
+      setTelegramTestResult({ ok: false, message: formatApiError(e) });
+      toast.error(formatApiError(e));
+    } finally { setTelegramTesting(false); }
+  };
+
+  const restartTelegram = async () => {
+    setTelegramTesting(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/telegram/restart`);
+      toast.success("Bot neu gestartet");
+      setTelegramStatus(data.status);
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setTelegramTesting(false); }
+  };
+
   const checkHaStatus = async (silent = false) => {
     if (!silent) setHaTesting(true);
     try {
@@ -242,7 +295,7 @@ const Admin = () => {
   };
 
   // Silent auto-check on page load
-  useEffect(() => { checkHaStatus(true); checkCdStatus(true); checkPlexStatus(true); }, [settings]);
+  useEffect(() => { checkHaStatus(true); checkCdStatus(true); checkPlexStatus(true); refreshTelegramStatus(); }, [settings]);
 
   const checkPlexStatus = async (silent = false) => {
     if (!silent) setPlexTesting(true);
@@ -1269,6 +1322,56 @@ const Admin = () => {
               <div className="text-center py-12 text-gray-500 text-sm">Noch keine Dienste geladen — Tab erneut öffnen.</div>
             )}
           </div>
+
+          {/* Router History */}
+          <div className={cardClass} data-testid="router-history-block">
+            <div className="flex items-center gap-3 mb-3">
+              <ClockCounterClockwise size={18} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "ROUTER-HISTORIE" : "Router-Historie"}
+              </h3>
+              <div className="flex-1" />
+              <button onClick={fetchRegistry} className={`${btnClass} py-1 px-2 text-[10px]`} data-testid="router-history-refresh">
+                <ArrowClockwise size={12} />
+              </button>
+              {routerHistory.length > 0 && (
+                <button onClick={clearRouterHistory} className="py-1 px-2 text-[10px] rounded bg-red-900/40 text-red-300 hover:bg-red-800/50" data-testid="router-history-clear">
+                  <Trash size={12} />
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-500 mb-3 leading-relaxed" style={{ textTransform: "none" }}>
+              Die letzten Chat-Anfragen und an welchen Dienst sie geroutet wurden. Entdeckst du eine Fehlentscheidung — passe oben die Dienst-Beschreibung an.
+            </p>
+            {routerHistory.length === 0 ? (
+              <div className="text-center py-6 text-gray-500 text-xs">Noch keine Einträge — sobald ein User chattet erscheint hier die Routing-Entscheidung.</div>
+            ) : (
+              <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                {routerHistory.map((h, i) => (
+                  <div key={i} className={`${isLcars ? "bg-[#0a0a14]" : "bg-purple-950/30"} rounded px-3 py-2 text-xs flex items-start gap-3`} data-testid={`router-history-${i}`} style={{ textTransform: "none" }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-gray-300 truncate" title={h.message}>{h.message}</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        {h.user_name && <span className="mr-2">@{h.user_name}</span>}
+                        <span>{h.timestamp ? new Date(h.timestamp).toLocaleString("de-DE") : ""}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0 flex-wrap justify-end max-w-[40%]">
+                      {h.is_simple ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">SIMPLE</span>
+                      ) : h.services && h.services.length > 0 ? (
+                        h.services.map((s, j) => (
+                          <span key={j} className={`text-[9px] px-1.5 py-0.5 rounded ${isLcars ? "bg-[var(--lcars-orange)]/20 text-[var(--lcars-orange)]" : "bg-purple-800/40 text-purple-200"}`}>{s}</span>
+                        ))
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-500">—</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1477,6 +1580,21 @@ const Admin = () => {
             <div className="flex items-center gap-3 mb-4">
               <Gear size={20} className={isLcars ? "text-[var(--lcars-blue)]" : "text-blue-400"} />
               <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-blue)]" : "font-bold text-purple-200"}`}>{isLcars ? "TELEGRAM BOT" : "Telegram Bot"}</h3>
+              {telegramStatus && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                  telegramStatus.running
+                    ? "bg-green-700/40 text-green-300"
+                    : telegramStatus.token_configured
+                      ? "bg-yellow-700/40 text-yellow-200"
+                      : "bg-gray-700/40 text-gray-400"
+                }`} data-testid="telegram-runtime-badge">
+                  {telegramStatus.running
+                    ? (isLcars ? "LÄUFT" : "Läuft")
+                    : telegramStatus.token_configured
+                      ? (isLcars ? "FEHLER" : "Fehler")
+                      : (isLcars ? "INAKTIV" : "Inaktiv")}
+                </span>
+              )}
             </div>
             <p className={`text-xs mb-4 ${isLcars ? "text-gray-400" : "text-purple-300"}`}>
               {isLcars ? "VERBINDE ARIA MIT TELEGRAM. BENUTZER KÖNNEN PER SPRACH-PIN CHATTEN." : "Verbinde Aria mit Telegram. Benutzer können per Sprach-PIN chatten."}
@@ -1488,8 +1606,61 @@ const Admin = () => {
                 </label>
                 <input type="password" value={telegramToken} onChange={(e) => setTelegramToken(e.target.value)} placeholder="123456789:AAH..." className={`${inputClass} w-full`} data-testid="telegram-token-input" />
               </div>
-              <div className={`p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-500" : "bg-purple-950/30 border border-purple-800/30 text-purple-400"}`}>
-                {isLcars ? "NACH DEM SPEICHERN STARTET DER BOT AUTOMATISCH. BENUTZER SENDEN /START AN @TRENTER_BOT UND MELDEN SICH MIT /PIN XXXXX AN." : "Nach dem Speichern startet der Bot automatisch. Benutzer senden /start an den Bot und melden sich mit /pin XXXXX an."}
+              <div className="flex flex-wrap gap-2">
+                <button onClick={testTelegram} disabled={telegramTesting}
+                  className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 ${telegramTesting ? "opacity-60" : ""}`}
+                  data-testid="telegram-test-button">
+                  {telegramTesting ? <ArrowClockwise size={12} className="animate-spin" /> : <Check size={12} />}
+                  {isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen"}
+                </button>
+                <button onClick={restartTelegram} disabled={telegramTesting}
+                  className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`}
+                  data-testid="telegram-restart-button">
+                  <ArrowClockwise size={12} />
+                  {isLcars ? "BOT NEUSTART" : "Bot neustarten"}
+                </button>
+                <button onClick={refreshTelegramStatus}
+                  className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 opacity-80`}
+                  data-testid="telegram-refresh-status">
+                  <ArrowClockwise size={12} /> {isLcars ? "STATUS" : "Status"}
+                </button>
+              </div>
+              {telegramTestResult && (
+                <div className={`p-3 rounded-lg text-xs ${
+                  telegramTestResult.ok
+                    ? (isLcars ? "bg-green-900/20 border border-green-600/30 text-green-300" : "bg-green-900/20 border border-green-700/30 text-green-200")
+                    : (isLcars ? "bg-red-900/20 border border-red-600/30 text-red-300" : "bg-red-900/20 border border-red-700/30 text-red-200")
+                }`} style={{ textTransform: "none" }} data-testid="telegram-test-result">
+                  <div className="font-bold mb-1">{telegramTestResult.ok ? "✅ " : "❌ "}{telegramTestResult.message}</div>
+                  {telegramTestResult.bot && (
+                    <div className="space-y-0.5 text-[11px] opacity-90">
+                      <div>Bot: <b>@{telegramTestResult.bot.username}</b> ({telegramTestResult.bot.first_name})</div>
+                      <div>ID: {telegramTestResult.bot.id}</div>
+                      {telegramTestResult.webhook_url_was && <div>Webhook entfernt: {telegramTestResult.webhook_url_was}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
+              {telegramStatus && telegramStatus.token_configured && (
+                <div className={`p-3 rounded-lg text-[11px] ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-400" : "bg-purple-950/30 border border-purple-800/30 text-purple-300"}`} style={{ textTransform: "none" }} data-testid="telegram-status-panel">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div>Bot: <b>@{telegramStatus.bot_username || "—"}</b></div>
+                    <div>Polls: <b>{telegramStatus.polls_count}</b></div>
+                    <div>Updates empfangen: <b>{telegramStatus.updates_received}</b></div>
+                    <div>Nachrichten verarbeitet: <b>{telegramStatus.messages_processed}</b></div>
+                    <div className="col-span-2">Letzter Poll: {telegramStatus.last_poll_at || "—"}</div>
+                    {telegramStatus.last_update_at && <div className="col-span-2">Letzte Nachricht: {telegramStatus.last_update_at}</div>}
+                  </div>
+                  {telegramStatus.last_error && (
+                    <div className="mt-2 pt-2 border-t border-red-800/40 text-red-300 font-semibold">
+                      Fehler: {telegramStatus.last_error}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className={`p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-500" : "bg-purple-950/30 border border-purple-800/30 text-purple-400"}`} style={{ textTransform: "none" }}>
+                Nach dem Speichern des Tokens startet der Bot automatisch. Benutzer senden <b>/start</b> an den Bot und melden sich mit <b>/pin XXXXX</b> an.
+                Wenn der Bot nicht reagiert: <b>Verbindung testen</b> prüft Token, entfernt hängende Webhooks und zeigt Diagnose-Infos.
               </div>
             </div>
           </div>
