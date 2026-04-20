@@ -13,6 +13,24 @@ router = APIRouter(prefix="/api/plex")
 db = None
 get_current_user = None
 
+# Shared HTTP client with connection pooling for image proxy.
+# Reusing one client prevents pool exhaustion when a grid of 30+ posters
+# hits the proxy simultaneously (each new AsyncClient opens a fresh TCP
+# connection — quickly overwhelms Plex and causes random thumbnail failures).
+_image_client: httpx.AsyncClient | None = None
+
+
+def _get_image_client() -> httpx.AsyncClient:
+    global _image_client
+    if _image_client is None or _image_client.is_closed:
+        _image_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0),
+            follow_redirects=True,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=40),
+        )
+    return _image_client
+
+
 def init(database, auth_func):
     global db, get_current_user
     db = database
@@ -223,38 +241,96 @@ def _format_item(item, base_url, token):
 
 
 @router.get("/image")
-async def proxy_image(request: Request, path: str = ""):
-    """Generic image proxy for Plex. No auth required for images (token in Plex request)."""
+async def proxy_image(request: Request, path: str = "", w: int = 0, h: int = 0):
+    """Image proxy for Plex.
+
+    Uses Plex's `/photo/:/transcode` endpoint which reliably handles:
+      - Internal paths (/library/metadata/.../thumb/...)
+      - External URLs (https://metadata-static.plex.tv/people/...jpg for actor thumbs)
+      - Paths with query strings
+      - Redirects (Plex 301/302 to actual image location)
+
+    Falls back to direct fetch if transcode returns non-image (e.g. 404).
+    """
     url, token = await get_plex_settings()
     if not url or not token or not path:
         raise HTTPException(404)
+
+    client = _get_image_client()
+    # Step 1: Try transcode (best approach — handles external URLs and redirects)
+    transcode_params = {
+        "url": path,
+        "width": w if w > 0 else 400,
+        "height": h if h > 0 else 600,
+        "minSize": 1,
+        "upscale": 1,
+        "X-Plex-Token": token,
+    }
     try:
-        full_url = f"{url}{path}" if path.startswith("/") else f"{url}/{path}"
-        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-            resp = await client.get(full_url, params={"X-Plex-Token": token})
-            if resp.status_code == 200 and resp.content:
-                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
-                    headers={"Cache-Control": "public, max-age=86400"})
-            logger.warning(f"Plex image proxy failed: {resp.status_code} for {path[:120]}")
+        resp = await client.get(f"{url}/photo/:/transcode", params=transcode_params)
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code == 200 and resp.content and content_type.startswith("image/"):
+            return Response(
+                content=resp.content,
+                media_type=content_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        logger.debug(f"Plex transcode fallback ({resp.status_code}, {content_type}) for {path[:120]}")
     except Exception as e:
-        logger.warning(f"Plex image proxy error: {e}")
+        logger.debug(f"Plex transcode error: {e} for {path[:120]}")
+
+    # Step 2: Fallback — direct fetch (only for internal paths starting with /)
+    if path.startswith("/"):
+        try:
+            resp = await client.get(f"{url}{path}", params={"X-Plex-Token": token})
+            content_type = resp.headers.get("content-type", "")
+            if resp.status_code == 200 and resp.content and content_type.startswith("image/"):
+                return Response(
+                    content=resp.content,
+                    media_type=content_type,
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            logger.warning(f"Plex image direct fetch failed ({resp.status_code}) for {path[:120]}")
+        except Exception as e:
+            logger.warning(f"Plex image direct fetch error: {e} for {path[:120]}")
+
+    # Step 3: Fallback — external URL (e.g. metadata-static.plex.tv for actor thumbs)
+    if path.startswith("http://") or path.startswith("https://"):
+        try:
+            resp = await client.get(path)
+            content_type = resp.headers.get("content-type", "")
+            if resp.status_code == 200 and resp.content and content_type.startswith("image/"):
+                return Response(
+                    content=resp.content,
+                    media_type=content_type,
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            logger.warning(f"Plex external image failed ({resp.status_code}) for {path[:120]}")
+        except Exception as e:
+            logger.warning(f"Plex external image error: {e} for {path[:120]}")
+
     raise HTTPException(404)
 
 
 @router.get("/thumb/{rating_key}")
 async def get_thumb_proxy(request: Request, rating_key: str, w: int = 300, h: int = 450):
-    """Proxy thumbnail from Plex via transcode."""
+    """Proxy thumbnail from Plex via transcode (kept for explicit rating_key lookups)."""
     url, token = await get_plex_settings()
     if not url or not token:
         raise HTTPException(404)
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(f"{url}/photo/:/transcode",
-                params={"width": w, "height": h, "minSize": 1, "upscale": 1,
-                         "url": f"/library/metadata/{rating_key}/thumb", "X-Plex-Token": token})
-            if resp.status_code == 200 and resp.content:
-                return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"),
-                    headers={"Cache-Control": "public, max-age=86400"})
+        client = _get_image_client()
+        resp = await client.get(f"{url}/photo/:/transcode", params={
+            "width": w, "height": h, "minSize": 1, "upscale": 1,
+            "url": f"/library/metadata/{rating_key}/thumb", "X-Plex-Token": token,
+        })
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code == 200 and resp.content and content_type.startswith("image/"):
+            return Response(
+                content=resp.content,
+                media_type=content_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
     except Exception as e:
         logger.warning(f"Plex thumb proxy error: {e}")
     raise HTTPException(404)

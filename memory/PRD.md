@@ -250,7 +250,21 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 ### P7 — ForgePilot Integration
 - [x] Siehe Phase 11
 
-### Phase 13 — Telegram Diagnostics + Router-Historie + SMART-Disks (DONE 2026-04-19)
+### Phase 14 — Plex Thumbnail-Fix (DONE 2026-04-19)
+Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder laden nicht, aber Movie-Detail-Cover funktioniert._
+
+**Root Cause (zwei Bugs gleichzeitig):**
+1. **Externe URLs kaputt**: Plex liefert für Schauspieler-Thumbs oft externe URLs wie `https://metadata-static.plex.tv/people/...jpg`. Der alte Proxy baute daraus `http://192.168.1.140:32400/https://metadata-static.plex.tv/...` → 404
+2. **Connection-Pool-Erschöpfung bei parallelen Requests**: Jeder `<img>` im Grid machte einen neuen `httpx.AsyncClient()` → jeweils eigene TCP-Connection. Bei 30+ Filmen im Grid bricht Plex/Backend unter der Last zusammen → zufällige Ausfälle
+
+**Fix in `plex.py`:**
+- Neuer **Shared HTTP Client** (`_get_image_client()`) mit `max_keepalive_connections=20, max_connections=40` — wird für alle Image-Requests wiederverwendet
+- **3-stufiger Proxy** im `/api/plex/image` Endpoint:
+  1. **Plex `/photo/:/transcode`** (primär) — handled interne Pfade, externe URLs, Query-Strings, Redirects. Resized zusätzlich das Bild
+  2. **Direkter Fetch** (Fallback) für interne Pfade
+  3. **External URL Fetch** (Fallback) für `https://...` Pfade
+- Validiert Content-Type (`image/*`) bevor Response geliefert wird — verhindert dass Error-HTML als Bild gesendet wird
+- Tests: 6 Unit-Tests inkl. 30 parallele Requests (`/app/backend/tests/test_plex_images.py`) alle grün
 - [x] **Telegram Bot komplett aufgerüstet**
   - Neuer `test_token()` Helper → getMe + getWebhookInfo + deleteWebhook in einem Call
   - `_status` dict mit running/bot_username/last_poll_at/polls_count/updates_received/last_error
