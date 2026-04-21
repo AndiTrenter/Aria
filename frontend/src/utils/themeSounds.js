@@ -99,7 +99,9 @@ const SIGNATURES = {
 
 // --- Lighter click variants (for every nav/button click — not overbearing) ---
 function lcarsClick(ctx) {
-  playTone(ctx, { freq: 1500, type: "sine", duration: 0.04, volume: 0.09, attack: 0.002, release: 0.03 });
+  // LCARS: 2-tone click (echo of the classic beep) — more distinctive than a single sine
+  playTone(ctx, { freq: 1320, type: "sine", duration: 0.06, volume: 0.16, attack: 0.002, release: 0.04 });
+  playTone(ctx, { freq: 880, type: "sine", duration: 0.05, startAt: 0.04, volume: 0.14, attack: 0.002, release: 0.04 });
 }
 function disneyClick(ctx) {
   playTone(ctx, { freq: 1046.5, type: "sine", duration: 0.08, volume: 0.08, attack: 0.002, release: 0.06 });
