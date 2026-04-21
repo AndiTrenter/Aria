@@ -14,6 +14,15 @@ const Login = () => {
 
   useEffect(() => {
     axios.get(`${API}/version`).then(r => setAriaVersion(r.data?.display || "")).catch(() => {});
+    // One-time notice if user landed here because their session expired
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("reason") === "session-expired") {
+        toast.warning("Deine Sitzung ist abgelaufen — bitte melde dich neu an.", { duration: 5000 });
+        // Clean URL so refresh doesn't re-toast
+        window.history.replaceState({}, "", "/login");
+      }
+    } catch {}
   }, []);
 
   const handleSubmit = async (e) => {

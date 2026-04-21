@@ -34,6 +34,31 @@ axios.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor: when backend says token is invalid (stale after DB reset
+// or expired), automatically purge local session and redirect to login instead
+// of flooding the UI with 401 toast-errors.
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url = error?.config?.url || "";
+    // Don't auto-logout on the login call itself (wrong password should stay a normal 401)
+    const isAuthEndpoint = url.includes("/auth/login") || url.includes("/setup/");
+    if (status === 401 && !isAuthEndpoint) {
+      const hadToken = !!localStorage.getItem('aria_token');
+      if (hadToken) {
+        localStorage.removeItem('aria_token');
+        localStorage.removeItem('aria_user');
+        // Only redirect if we're not already on login page
+        if (typeof window !== "undefined" && window.location && !window.location.pathname.includes("/login")) {
+          window.location.href = "/login?reason=session-expired";
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const AuthContext = createContext(null);
 export const ThemeContext = createContext(null);
 
