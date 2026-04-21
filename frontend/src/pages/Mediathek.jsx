@@ -315,8 +315,9 @@ const Mediathek = () => {
 };
 
 const MediaCard = ({ item, onClick, isLcars, cardBg, formatDuration, cacheVersion }) => {
+  const backend = process.env.REACT_APP_BACKEND_URL || "";
   const busted = item.thumb
-    ? `${process.env.REACT_APP_BACKEND_URL}${item.thumb}${cacheVersion ? (item.thumb.includes('?') ? '&' : '?') + 'v=' + cacheVersion : ''}`
+    ? `${backend}${item.thumb}${cacheVersion ? (item.thumb.includes('?') ? '&' : '?') + 'v=' + cacheVersion : ''}`
     : "";
   return (
     <button onClick={onClick} className={`${cardBg} rounded-xl overflow-hidden transition-all group text-left w-full`} data-testid={`media-${item.rating_key}`}>
