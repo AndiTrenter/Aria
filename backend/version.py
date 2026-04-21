@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "5.6"
+ARIA_VERSION = "5.7"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -29,6 +29,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "5.7", "date": "2026-04-21", "notes": "Settings Backup/Import + Diagnose-UI (verhindert dauerhaften Key-Verlust bei Volume-Reset)"},
     {"version": "5.6", "date": "2026-04-21", "notes": "KRITISCHER FIX: Media-Grid Thumbnails — 'undefined' in Image-URL (process.env.REACT_APP_BACKEND_URL fallback)"},
     {"version": "5.5", "date": "2026-04-19", "notes": "Versionssystem + Plex Thumbnail Cache-Bust + Warm-up beim Login"},
     {"version": "5.4", "date": "2026-04-19", "notes": "Plex Thumbnail-Proxy komplett neu (Transcode + Shared Connection Pool)"},

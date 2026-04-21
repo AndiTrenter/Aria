@@ -282,6 +282,45 @@ const Admin = () => {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
+  // ========== Settings Backup / Diagnose ==========
+  const [settingsDiag, setSettingsDiag] = useState(null);
+
+  const loadSettingsDiag = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings-diagnosis`);
+      setSettingsDiag(data);
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const exportSettings = async (includeSecrets) => {
+    try {
+      const { data } = await axios.get(`${API}/admin/settings-export?include_secrets=${includeSecrets}`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `aria-settings-${includeSecrets ? "full" : "redacted"}-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(includeSecrets ? "Export mit Keys heruntergeladen — sicher aufbewahren!" : "Export (ohne Secrets) heruntergeladen");
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const importSettings = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm(`Settings aus ${file.name} importieren? Vorhandene Keys werden überschrieben.`)) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const { data } = await axios.post(`${API}/admin/settings-import`, parsed);
+      toast.success(`${data.imported} importiert, ${data.skipped} übersprungen (redacted)`);
+      fetchSettings();
+      loadSettingsDiag();
+    } catch (e) { toast.error(formatApiError(e) || "Import fehlgeschlagen"); }
+    event.target.value = "";
+  };
+
   const checkHaStatus = async (silent = false) => {
     if (!silent) setHaTesting(true);
     try {
@@ -619,7 +658,7 @@ const Admin = () => {
       {/* Tabs - scrollable */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2" data-testid="admin-tabs">
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === "audit") fetchAuditLog(); if (tab.id === "router") fetchRegistry(); }}
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === "audit") fetchAuditLog(); if (tab.id === "router") fetchRegistry(); if (tab.id === "settings") loadSettingsDiag(); }}
             className={`px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${
               activeTab === tab.id
                 ? isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-600 text-white"
@@ -1386,6 +1425,65 @@ const Admin = () => {
       {/* ==================== SETTINGS TAB ==================== */}
       {activeTab === "settings" && (
         <div className="space-y-6">
+          {/* Settings Backup / Diagnose */}
+          <div className={cardClass} data-testid="settings-backup-block">
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <HardDrives size={20} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "SETTINGS BACKUP & DIAGNOSE" : "Settings Backup & Diagnose"}
+              </h3>
+              <div className="flex-1" />
+              {settingsDiag && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                  settingsDiag.empty === 0
+                    ? "bg-green-700/40 text-green-300"
+                    : "bg-yellow-700/40 text-yellow-200"
+                }`} data-testid="settings-diag-badge">
+                  {settingsDiag.filled}/{settingsDiag.total} GESETZT
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed" style={{ textTransform: "none" }}>
+              Mach nach jedem erfolgreichen Key-Eintrag einen Export mit Secrets und speichere die Datei sicher.
+              Falls bei einem Update/Redeploy das Mongo-Volume neu erstellt wird, kannst du die Keys per Import in 1 Klick wiederherstellen.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button onClick={loadSettingsDiag} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`} data-testid="settings-diag-refresh">
+                <ArrowClockwise size={12} /> {isLcars ? "DIAGNOSE" : "Diagnose"}
+              </button>
+              <button onClick={() => exportSettings(false)} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 opacity-90`} data-testid="settings-export-redacted">
+                <Eye size={12} /> {isLcars ? "EXPORT (REDACTED)" : "Export (ohne Secrets)"}
+              </button>
+              <button onClick={() => {
+                if (window.confirm("Export MIT Secrets erzeugen? Die Datei enthält dann deine API-Keys im Klartext — behandle sie wie ein Passwort.")) exportSettings(true);
+              }} className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 bg-orange-900/40`} data-testid="settings-export-full">
+                <Shield size={12} /> {isLcars ? "EXPORT MIT SECRETS" : "Export mit Secrets"}
+              </button>
+              <label className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 cursor-pointer`} data-testid="settings-import-btn">
+                <ArrowsVertical size={12} /> {isLcars ? "IMPORT" : "Backup importieren"}
+                <input type="file" accept="application/json" className="hidden" onChange={importSettings} />
+              </label>
+            </div>
+            {settingsDiag && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-[11px]" data-testid="settings-diag-list">
+                {settingsDiag.settings.map((s, i) => (
+                  <div key={i} className={`flex items-center justify-between px-2 py-1 rounded ${s.has_value ? "bg-green-950/30" : "bg-red-950/30"}`}>
+                    <span className="font-mono text-gray-300 truncate" style={{ textTransform: "none" }}>{s.key}</span>
+                    <span className={`flex items-center gap-2 flex-shrink-0 ${s.has_value ? "text-green-400" : "text-red-400"}`}>
+                      {s.preview && <span className="text-gray-500 font-mono">{s.preview}</span>}
+                      {s.has_value ? "✓" : "✗"}
+                    </span>
+                  </div>
+                ))}
+                {settingsDiag.settings.length === 0 && (
+                  <div className="col-span-2 text-center py-4 text-red-400 font-bold">
+                    ⚠ Settings-Collection ist LEER! Importiere ein Backup oder trage die Keys unten neu ein.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* AI Config */}
           <div className={cardClass} data-testid="settings-api-key">
             <div className="flex items-center gap-3 mb-4">

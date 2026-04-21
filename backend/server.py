@@ -1098,7 +1098,101 @@ async def admin_delete_service_registry(service_id: str, request: Request):
     return {"success": True, "deleted": result.deleted_count}
 
 
-# ==================== ADMIN TELEGRAM DIAGNOSTICS ====================
+# ==================== ADMIN: SETTINGS BACKUP / DIAGNOSE ====================
+
+# Keys die als "secret" behandelt werden — Export maskiert sie standardmäßig
+SECRET_SETTING_KEYS = {
+    "openai_api_key", "ha_token", "plex_token", "telegram_bot_token",
+    "casedesk_api_key", "weather_api_key", "jwt_secret",
+    "nextcloud_password", "forgepilot_api_key",
+}
+
+
+@api_router.get("/admin/settings-diagnosis")
+async def admin_settings_diagnosis(request: Request):
+    """Liste aller Settings-Keys mit Status (gesetzt / leer). Zeigt keine Werte.
+    Praktisch um nach einem Update schnell zu sehen welche Keys verloren gingen."""
+    await require_admin(request)
+    docs = await db.settings.find({}, {"_id": 0}).to_list(500)
+    result = []
+    for d in docs:
+        key = d.get("key", "")
+        val = d.get("value", "")
+        is_secret = key in SECRET_SETTING_KEYS
+        has_value = bool(val) and val not in ("DISABLED", "")
+        preview = ""
+        if has_value and not is_secret:
+            preview = str(val)[:60]
+        elif has_value and is_secret:
+            preview = f"***{str(val)[-4:]}" if len(str(val)) > 4 else "***"
+        result.append({
+            "key": key,
+            "is_secret": is_secret,
+            "has_value": has_value,
+            "preview": preview,
+            "length": len(str(val)) if val else 0,
+        })
+    result.sort(key=lambda x: (not x["has_value"], x["key"]))
+    total = len(result)
+    filled = sum(1 for r in result if r["has_value"])
+    return {"settings": result, "total": total, "filled": filled, "empty": total - filled}
+
+
+@api_router.get("/admin/settings-export")
+async def admin_settings_export(request: Request, include_secrets: bool = False):
+    """Exportiert alle Settings als JSON.
+    `include_secrets=true` enthält auch API-Keys/Tokens im Klartext — NUR für Backup-Zwecke.
+    """
+    await require_admin(request)
+    docs = await db.settings.find({}, {"_id": 0}).to_list(500)
+    if not include_secrets:
+        for d in docs:
+            if d.get("key") in SECRET_SETTING_KEYS:
+                d["value"] = "***REDACTED***"
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "version": ARIA_VERSION,
+        "include_secrets": include_secrets,
+        "count": len(docs),
+        "settings": docs,
+    }
+
+
+@api_router.post("/admin/settings-import")
+async def admin_settings_import(request: Request, body: dict = Body(...)):
+    """Importiert Settings aus einem Export.
+    Skippt Einträge mit ***REDACTED***. Upserted die anderen.
+    """
+    await require_admin(request)
+    settings = body.get("settings") or []
+    if not isinstance(settings, list):
+        raise HTTPException(400, "Erwarte 'settings' als Liste")
+    imported, skipped = 0, 0
+    for s in settings:
+        key = s.get("key")
+        val = s.get("value")
+        if not key:
+            skipped += 1
+            continue
+        if val == "***REDACTED***":
+            skipped += 1
+            continue
+        await db.settings.update_one(
+            {"key": key},
+            {"$set": {"key": key, "value": val, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        imported += 1
+    # Auto-restart bot if telegram token was imported
+    try:
+        if any(s.get("key") == "telegram_bot_token" for s in settings):
+            await telegram_bot.restart_bot()
+    except Exception:
+        pass
+    return {"success": True, "imported": imported, "skipped": skipped}
+
+
+
 @api_router.post("/admin/telegram/test")
 async def admin_telegram_test(request: Request, body: dict = Body(default={})):
     """Test Telegram bot token: validates via getMe, clears webhook, returns bot info.
