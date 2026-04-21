@@ -228,7 +228,7 @@ const LcarsLayout = ({ children }) => {
       <div className="flex flex-1 overflow-hidden">
         <div className="lcars-sidebar sticky top-[50px] h-[calc(100vh-50px)] overflow-auto" data-testid="lcars-sidebar">
           {navItems.map((item) => (
-            <Link key={item.path} to={item.path}
+            <Link key={item.path} to={item.path} onClick={onNavClick}
               className={`lcars-sidebar-item ${location.pathname === item.path ? "active" : ""}`}
               data-testid={`nav-${item.shortLabel.toLowerCase()}`}>
               {item.shortLabel}
@@ -236,7 +236,7 @@ const LcarsLayout = ({ children }) => {
           ))}
           <button
             ref={triggerRef}
-            onClick={() => themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu()}
+            onClick={() => { onNavClick(); themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu(); }}
             className="lcars-sidebar-item w-full flex items-center justify-between gap-2"
             style={{ background: "var(--lcars-tan)" }}
             data-testid="nav-theme">

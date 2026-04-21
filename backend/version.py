@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "6.4"
+ARIA_VERSION = "6.5"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -30,6 +30,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "6.5", "date": "2026-04-21", "notes": "Fix: LCARS-Sidebar-Klicks hatten keinen onClick-Handler → jetzt spielen alle Nav-Klicks im Star-Trek-Theme den Ton"},
     {"version": "6.4", "date": "2026-04-21", "notes": "LCARS-Click-Sound hörbar gemacht (2-Ton statt 1-Ton, Volume+Duration erhöht)"},
     {"version": "6.3", "date": "2026-04-21", "notes": "Sound-Klicks bei JEDEM Menü-Klick (passend zum Theme) + User-Account-Toggle persistiert in DB (sound_effects_enabled)"},
     {"version": "6.2", "date": "2026-04-21", "notes": "Theme-Polish: Pro-Theme Sound-Effekte (procedural via Web Audio), Hover-Preview-Animation mit Akzentfarbe, Sound-Mute-Toggle im Theme-Submenu"},
