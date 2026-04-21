@@ -185,7 +185,12 @@ const AuthProvider = ({ children }) => {
 
   const setTheme = async (newTheme) => {
     if (!THEME_IDS.includes(newTheme)) return;
+    const previous = theme;
     setThemeState(newTheme);
+    // Play theme sound (only when user actively picks a different theme, not on init)
+    if (previous && previous !== newTheme) {
+      import("./utils/themeSounds").then(m => m.playThemeSound(newTheme)).catch(() => {});
+    }
     try {
       await axios.put(`${API}/auth/theme`, { theme: newTheme });
       // Update localStorage

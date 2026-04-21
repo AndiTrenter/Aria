@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "6.1"
+ARIA_VERSION = "6.2"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -30,6 +30,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "6.2", "date": "2026-04-21", "notes": "Theme-Polish: Pro-Theme Sound-Effekte (procedural via Web Audio), Hover-Preview-Animation mit Akzentfarbe, Sound-Mute-Toggle im Theme-Submenu"},
     {"version": "6.1", "date": "2026-04-21", "notes": "Fix: Theme-Submenu wurde von Sidebar-Overflow abgeschnitten → React Portal mit fixed position"},
     {"version": "6.0", "date": "2026-04-21", "notes": "Multi-Theme-System: 4 Themes (Star Trek, Disney, Fortnite, Minesweeper). User-Default in Konto, globaler Default im Admin. Submenu statt Toggle."},
     {"version": "5.8", "date": "2026-04-21", "notes": "Auto-Logout bei 401 (stale JWT nach DB-Wipe invalidiert Session → sauberer Redirect zu Login)"},

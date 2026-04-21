@@ -968,7 +968,41 @@ div[style*="Made with"] {
   cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
-  transition: background 0.1s ease;
+  transition: background 0.1s ease, color 0.15s ease;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+.theme-submenu-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--preview-accent, transparent);
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.35, 1), opacity 0.3s ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.theme-submenu-item:hover::before {
+  opacity: 0.22;
+  transform: translateX(0);
+  animation: themePreviewPulse 1.6s ease-in-out infinite;
+}
+.theme-submenu-item > * {
+  position: relative;
+  z-index: 2;
+}
+@keyframes themePreviewPulse {
+  0%, 100% { opacity: 0.18; filter: saturate(1) brightness(1); }
+  50%      { opacity: 0.32; filter: saturate(1.3) brightness(1.15); }
+}
+.theme-submenu-item:hover .theme-accent-dot {
+  transform: scale(1.4);
+  filter: saturate(1.4) brightness(1.2);
+}
+.theme-accent-dot {
+  transition: transform 0.2s ease, filter 0.2s ease;
 }
 .theme-startrek .theme-submenu-item { color: var(--lcars-orange); text-transform: uppercase; }
 .theme-startrek .theme-submenu-item:hover { background: var(--lcars-orange); color: #000; }

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth, useTheme } from "@/App";
-import { SignOut, Palette, CaretDown } from "@phosphor-icons/react";
+import { SignOut, Palette, CaretDown, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { isThemeSoundMuted, setThemeSoundMuted, playThemeSound } from "@/utils/themeSounds";
 
 const LcarsLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -11,6 +12,7 @@ const LcarsLayout = ({ children }) => {
   const [clock, setClock] = useState(new Date());
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 200 });
+  const [soundMuted, setSoundMuted] = useState(isThemeSoundMuted());
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
@@ -98,6 +100,14 @@ const LcarsLayout = ({ children }) => {
   const ThemeMenuPortal = () => {
     if (!themeMenuOpen) return null;
     const themeClass = `theme-${theme}`;
+    const toggleMute = (e) => {
+      e.stopPropagation();
+      const next = !soundMuted;
+      setSoundMuted(next);
+      setThemeSoundMuted(next);
+      // If unmuting, play a preview so user can confirm
+      if (!next) setTimeout(() => playThemeSound(theme), 50);
+    };
     return createPortal(
       <div className={themeClass}>
         <div
@@ -116,11 +126,22 @@ const LcarsLayout = ({ children }) => {
             <div key={t.id}
               className={`theme-submenu-item ${theme === t.id ? "active" : ""}`}
               onClick={() => handleThemePick(t.id)}
+              onMouseEnter={() => { if (!soundMuted && theme !== t.id) playThemeSound(t.id); }}
+              style={{ "--preview-accent": t.accent }}
               data-testid={`theme-option-${t.id}`}>
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: t.accent, boxShadow: `0 0 6px ${t.accent}` }} />
+              <span className="theme-accent-dot w-3 h-3 rounded-full flex-shrink-0" style={{ background: t.accent, boxShadow: `0 0 6px ${t.accent}` }} />
               <span>{t.label}</span>
             </div>
           ))}
+          <div
+            onClick={toggleMute}
+            className="theme-submenu-item"
+            style={{ borderTop: "1px solid rgba(128,128,128,0.25)", marginTop: 4, paddingTop: 10, opacity: 0.85, fontSize: 11 }}
+            data-testid="theme-sound-toggle"
+            title={soundMuted ? "Sounds aktivieren" : "Sounds stumm schalten"}>
+            {soundMuted ? <SpeakerSlash size={14} /> : <SpeakerHigh size={14} />}
+            <span>{soundMuted ? "Sounds aus" : "Sounds an"}</span>
+          </div>
         </div>
       </div>,
       document.body

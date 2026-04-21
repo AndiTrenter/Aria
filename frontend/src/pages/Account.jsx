@@ -144,17 +144,22 @@ const Account = () => {
           {availableThemes.map(t => {
             const p = THEME_PREVIEWS[t.id] || {};
             const selected = theme === t.id;
+            const accent = p.accent || t.accent;
             return (
               <button
                 key={t.id}
                 onClick={() => { setTheme(t.id); toast.success(`Theme: ${t.label}`); }}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${selected ? "border-[length:2px]" : "border-gray-600 opacity-80 hover:opacity-100"}`}
-                style={selected ? { borderColor: p.accent || t.accent, background: `${p.accent || t.accent}22` } : {}}
+                className={`theme-submenu-item p-4 rounded-lg border-2 transition-all text-left ${selected ? "border-[length:2px]" : "border-gray-600 opacity-80 hover:opacity-100"}`}
+                style={{
+                  "--preview-accent": accent,
+                  ...(selected ? { borderColor: accent, background: `${accent}22` } : {}),
+                  display: "block",
+                }}
                 data-testid={`theme-${t.id}`}>
                 <div className="text-2xl mb-2">{p.icon || "\u{1F3A8}"}</div>
                 <div className="font-bold text-sm" style={{ textTransform: "none" }}>{p.label || t.label}</div>
                 <div className="text-xs text-gray-400" style={{ textTransform: "none" }}>{p.sub || ""}</div>
-                {selected && <div className="mt-2 text-[10px] font-bold" style={{ color: p.accent || t.accent }}>✓ AKTIV</div>}
+                {selected && <div className="mt-2 text-[10px] font-bold" style={{ color: accent }}>\u2713 AKTIV</div>}
               </button>
             );
           })}
