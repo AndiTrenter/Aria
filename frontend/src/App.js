@@ -129,6 +129,7 @@ const AuthProvider = ({ children }) => {
       const { data } = await axios.get(`${API}/auth/me`);
       setUser(data);
       applyTheme(data.theme || globalDefaultTheme);
+      syncSoundPref(data);
       localStorage.setItem('aria_user', JSON.stringify(data));
       return data;
     } catch (e) {
@@ -139,6 +140,7 @@ const AuthProvider = ({ children }) => {
           const userData = JSON.parse(stored);
           setUser(userData);
           applyTheme(userData.theme || globalDefaultTheme);
+          syncSoundPref(userData);
           return userData;
         } catch {}
       }
@@ -146,6 +148,14 @@ const AuthProvider = ({ children }) => {
       localStorage.removeItem('aria_user');
       return null;
     }
+  };
+
+  // Sync user's sound preference from DB to localStorage (used by themeSounds util)
+  const syncSoundPref = (userData) => {
+    try {
+      const enabled = userData?.sound_effects_enabled !== false; // default true
+      localStorage.setItem('aria_sound_muted', enabled ? "0" : "1");
+    } catch {}
   };
 
   const login = async (email, password) => {

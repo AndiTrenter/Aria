@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, Microphone, Palette } from "@phosphor-icons/react";
+import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, SpeakerSlash, Microphone, Palette } from "@phosphor-icons/react";
+import { playThemeSound, setThemeSoundMuted } from "@/utils/themeSounds";
 
 const THEME_PREVIEWS = {
   startrek: { icon: "\u{1F680}", label: "Star Trek", sub: "LCARS Interface", accent: "#FF9900" },
@@ -14,6 +15,28 @@ const THEME_PREVIEWS = {
 const Account = () => {
   const { user, checkAuth } = useAuth();
   const { theme, setTheme, availableThemes } = useTheme();
+  const [soundEnabled, setSoundEnabled] = useState(user?.sound_effects_enabled !== false);
+
+  useEffect(() => {
+    setSoundEnabled(user?.sound_effects_enabled !== false);
+  }, [user?.sound_effects_enabled]);
+
+  const toggleSound = async () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    setThemeSoundMuted(!next);
+    try {
+      await axios.put(`${API}/auth/sound`, { enabled: next });
+      // Play a preview so user hears what they enabled
+      if (next) setTimeout(() => playThemeSound(theme), 80);
+      toast.success(next ? "Sound-Effekte aktiviert" : "Sound-Effekte deaktiviert");
+      checkAuth();
+    } catch (e) {
+      setSoundEnabled(!next); // revert
+      setThemeSoundMuted(next);
+      toast.error(formatApiError(e));
+    }
+  };
   const [services, setServices] = useState([]);
   const [linkForm, setLinkForm] = useState({ service_id: "", username: "", password: "" });
   const [showLinkForm, setShowLinkForm] = useState(false);
@@ -163,6 +186,31 @@ const Account = () => {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Sound Effects */}
+      <div className={`${cardClass} mb-6`}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            {soundEnabled ? <SpeakerHigh size={22} /> : <SpeakerSlash size={22} className="text-gray-500" />}
+            <div>
+              <div className={isLcars ? "text-sm tracking-widest font-bold" : "font-bold text-sm"} style={{ textTransform: "none" }}>
+                Sound-Effekte
+              </div>
+              <div className="text-xs text-gray-500" style={{ textTransform: "none" }}>
+                Spielt bei Menü-Klicks einen kurzen Ton passend zu deinem Theme. Jedes Theme hat seine eigene Signatur.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={toggleSound}
+            className={`relative w-16 h-8 rounded-full transition-colors flex-shrink-0 ${soundEnabled ? "" : "bg-gray-600"}`}
+            style={soundEnabled ? { background: THEME_PREVIEWS[theme]?.accent || "#FF9900" } : {}}
+            data-testid="sound-toggle"
+            aria-label={soundEnabled ? "Sound aus" : "Sound an"}>
+            <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${soundEnabled ? "left-9" : "left-1"}`} />
+          </button>
         </div>
       </div>
 

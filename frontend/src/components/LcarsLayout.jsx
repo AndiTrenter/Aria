@@ -1,9 +1,10 @@
+import axios from "axios";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { useAuth, useTheme } from "@/App";
+import { useAuth, useTheme, API } from "@/App";
 import { SignOut, Palette, CaretDown, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
-import { isThemeSoundMuted, setThemeSoundMuted, playThemeSound } from "@/utils/themeSounds";
+import { isThemeSoundMuted, setThemeSoundMuted, playThemeSound, playThemeClick } from "@/utils/themeSounds";
 
 const LcarsLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -67,6 +68,9 @@ const LcarsLayout = ({ children }) => {
   const isLcars = theme === "startrek";
   const isMinesweeper = theme === "minesweeper";
 
+  // Click-sound helper — plays the light click variant of current theme
+  const onNavClick = () => playThemeClick(theme);
+
   const openThemeMenu = () => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
@@ -100,11 +104,15 @@ const LcarsLayout = ({ children }) => {
   const ThemeMenuPortal = () => {
     if (!themeMenuOpen) return null;
     const themeClass = `theme-${theme}`;
-    const toggleMute = (e) => {
+    const toggleMute = async (e) => {
       e.stopPropagation();
       const next = !soundMuted;
       setSoundMuted(next);
       setThemeSoundMuted(next);
+      // Persist to DB so it survives re-login
+      try {
+        await axios.put(`${API}/auth/sound`, { enabled: !next });
+      } catch { /* tolerate failure — localStorage still works */ }
       // If unmuting, play a preview so user can confirm
       if (!next) setTimeout(() => playThemeSound(theme), 50);
     };
@@ -173,7 +181,7 @@ const LcarsLayout = ({ children }) => {
             <div className="flex-1" />
             <nav className="flex gap-1 flex-wrap items-center">
               {navItems.map((item) => (
-                <Link key={item.path} to={item.path}
+                <Link key={item.path} to={item.path} onClick={onNavClick}
                   className={`${btnBase} transition-all ${location.pathname === item.path ? activeBtn : hoverBtn}`}
                   data-testid={`nav-${item.shortLabel.toLowerCase()}`}>
                   {item.shortLabel}
@@ -181,14 +189,14 @@ const LcarsLayout = ({ children }) => {
               ))}
               <button
                 ref={triggerRef}
-                onClick={() => themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu()}
+                onClick={() => { onNavClick(); themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu(); }}
                 className={`${btnBase} ${hoverBtn} flex items-center gap-1`}
                 data-testid="nav-theme">
                 <Palette size={12} />
                 Theme
                 <CaretDown size={10} />
               </button>
-              <button onClick={logout} className={`${btnBase} ${isMinesweeper ? "hover:bg-red-200" : "text-red-300 hover:bg-red-900/50"}`} data-testid="logout-button">
+              <button onClick={() => { onNavClick(); logout(); }} className={`${btnBase} ${isMinesweeper ? "hover:bg-red-200" : "text-red-300 hover:bg-red-900/50"}`} data-testid="logout-button">
                 <SignOut size={14} />
               </button>
             </nav>
@@ -211,7 +219,7 @@ const LcarsLayout = ({ children }) => {
           <span className="text-xs text-gray-500 ml-3 tracking-wider whitespace-nowrap">{stardate}</span>
         </div>
         <div className="lcars-header-end">
-          <button onClick={logout} className="text-black text-xs font-bold tracking-wider" data-testid="logout-button">
+          <button onClick={() => { onNavClick(); logout(); }} className="text-black text-xs font-bold tracking-wider" data-testid="logout-button">
             ABMELDEN
           </button>
         </div>

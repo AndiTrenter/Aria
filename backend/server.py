@@ -88,7 +88,7 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="User not found")
         if not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="User is deactivated")
-        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "voice": user.get("voice", ""), "voice_pin": user.get("voice_pin", "")}
+        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "sound_effects_enabled": user.get("sound_effects_enabled", True), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "voice": user.get("voice", ""), "voice_pin": user.get("voice_pin", "")}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -261,7 +261,7 @@ async def login(request: LoginRequest, response: Response):
     
     await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": datetime.now(timezone.utc).isoformat()})
     
-    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "access_token": access_token}
+    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "sound_effects_enabled": user.get("sound_effects_enabled", True), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "access_token": access_token}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -284,6 +284,18 @@ async def update_theme(request: Request, theme: str = Body(..., embed=True)):
         raise HTTPException(400, f"Unbekanntes Theme. Erlaubt: {sorted(VALID_THEMES)}")
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"theme": theme}})
     return {"theme": theme}
+
+
+@api_router.put("/auth/sound")
+async def update_sound_preference(request: Request, body: dict = Body(...)):
+    """Toggle per-user sound-effect preference (clicks, theme-switch)."""
+    user = await get_current_user(request)
+    enabled = bool(body.get("enabled"))
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$set": {"sound_effects_enabled": enabled}},
+    )
+    return {"sound_effects_enabled": enabled}
 
 
 @api_router.get("/settings/default-theme")

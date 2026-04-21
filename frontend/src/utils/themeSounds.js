@@ -4,6 +4,9 @@
  */
 
 let audioCtx = null;
+let lastPlayedAt = 0;
+// Prevent machine-gun click sounds — only play once per 80ms
+const MIN_INTERVAL_MS = 80;
 
 function getCtx() {
   if (audioCtx) return audioCtx;
@@ -54,14 +57,12 @@ function playNoise(ctx, { duration = 0.05, startAt = 0, volume = 0.1 }) {
 // ============ PER-THEME SIGNATURES ============
 
 function lcarsBeep(ctx) {
-  // Classic Trek 2-tone: high → low
   playTone(ctx, { freq: 1320, type: "sine", duration: 0.08, startAt: 0, volume: 0.18 });
   playTone(ctx, { freq: 880, type: "sine", duration: 0.1, startAt: 0.09, volume: 0.16 });
 }
 
 function disneySparkle(ctx) {
-  // Ascending magical sparkle — 4 rising sine tones with vibraphone-ish attack
-  const notes = [659.25, 783.99, 987.77, 1318.51]; // E5 G5 B5 E6
+  const notes = [659.25, 783.99, 987.77, 1318.51];
   notes.forEach((f, i) => {
     playTone(ctx, {
       freq: f, type: "sine", duration: 0.2,
@@ -69,12 +70,10 @@ function disneySparkle(ctx) {
       attack: 0.005, release: 0.18,
     });
   });
-  // Add a gentle shimmer overlay
   playTone(ctx, { freq: 2637, type: "triangle", duration: 0.35, startAt: 0.18, volume: 0.05, release: 0.3 });
 }
 
 function fortnitePickup(ctx) {
-  // Bright item-pickup: fast upward sweep + click
   playTone(ctx, {
     freq: 440, sweepTo: 1760, type: "triangle",
     duration: 0.18, volume: 0.18, attack: 0.005, release: 0.05,
@@ -83,7 +82,6 @@ function fortnitePickup(ctx) {
 }
 
 function minesweeperClick(ctx) {
-  // Short, low classic Windows click — noise burst + low thud
   playNoise(ctx, { duration: 0.04, volume: 0.12 });
   playTone(ctx, {
     freq: 180, type: "square",
@@ -99,24 +97,59 @@ const SIGNATURES = {
   minesweeper: minesweeperClick,
 };
 
+// --- Lighter click variants (for every nav/button click — not overbearing) ---
+function lcarsClick(ctx) {
+  playTone(ctx, { freq: 1500, type: "sine", duration: 0.04, volume: 0.09, attack: 0.002, release: 0.03 });
+}
+function disneyClick(ctx) {
+  playTone(ctx, { freq: 1046.5, type: "sine", duration: 0.08, volume: 0.08, attack: 0.002, release: 0.06 });
+  playTone(ctx, { freq: 1760, type: "triangle", duration: 0.06, startAt: 0.02, volume: 0.05, release: 0.05 });
+}
+function fortniteClick(ctx) {
+  playTone(ctx, { freq: 800, sweepTo: 1400, type: "triangle", duration: 0.06, volume: 0.09, attack: 0.002, release: 0.04 });
+}
+function minesweeperLightClick(ctx) {
+  playNoise(ctx, { duration: 0.02, volume: 0.08 });
+  playTone(ctx, { freq: 220, type: "square", duration: 0.02, volume: 0.07, attack: 0.001, release: 0.008 });
+}
+
+const CLICK_SIGNATURES = {
+  startrek: lcarsClick,
+  disney: disneyClick,
+  fortnite: fortniteClick,
+  minesweeper: minesweeperLightClick,
+};
+
 /**
- * Play the sound signature for a theme. Safe to call during/after user gesture.
- * Respects localStorage key 'aria_sound_muted' for opt-out.
+ * Play the full theme signature (e.g. on theme switch).
  */
 export function playThemeSound(themeId) {
   try {
     if (localStorage.getItem("aria_sound_muted") === "1") return;
     const ctx = getCtx();
     if (!ctx) return;
-    // Resume suspended context (browsers require user gesture)
-    if (ctx.state === "suspended") {
-      ctx.resume().catch(() => {});
-    }
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const fn = SIGNATURES[themeId];
     if (fn) fn(ctx);
-  } catch {
-    /* fail silent — sound is a nice-to-have, never blocking */
-  }
+  } catch { /* silent */ }
+}
+
+/**
+ * Lighter click sound — for frequent UI interactions (nav, buttons).
+ * Throttled to max 1/80ms so multi-click-mashing doesn't become noisy.
+ */
+export function playThemeClick(themeId) {
+  try {
+    if (localStorage.getItem("aria_sound_muted") === "1") return;
+    const now = Date.now();
+    if (now - lastPlayedAt < MIN_INTERVAL_MS) return;
+    lastPlayedAt = now;
+    const ctx = getCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const fn = CLICK_SIGNATURES[themeId] || CLICK_SIGNATURES.startrek;
+    fn(ctx);
+  } catch { /* silent */ }
 }
 
 export function setThemeSoundMuted(muted) {
