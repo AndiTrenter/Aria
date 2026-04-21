@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth, useTheme } from "@/App";
 import { SignOut, Palette, CaretDown } from "@phosphor-icons/react";
@@ -9,23 +10,32 @@ const LcarsLayout = ({ children }) => {
   const location = useLocation();
   const [clock, setClock] = useState(new Date());
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  const themeMenuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 200 });
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Close theme menu when clicking outside
+  // Close theme menu when clicking outside (excluding trigger + menu)
   useEffect(() => {
     if (!themeMenuOpen) return;
     const handler = (e) => {
-      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target)) {
-        setThemeMenuOpen(false);
-      }
+      if (triggerRef.current && triggerRef.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setThemeMenuOpen(false);
     };
+    const resize = () => setThemeMenuOpen(false);
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    window.addEventListener("resize", resize);
+    window.addEventListener("scroll", resize, true);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", resize, true);
+    };
   }, [themeMenuOpen]);
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
@@ -55,24 +65,67 @@ const LcarsLayout = ({ children }) => {
   const isLcars = theme === "startrek";
   const isMinesweeper = theme === "minesweeper";
 
-  // Shared theme menu content (used by both layouts)
+  const openThemeMenu = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const menuWidth = 210;
+    const menuHeight = 4 * 38 + 12; // 4 items + padding
+    let top, left;
+    if (isLcars) {
+      // Open to the right of the sidebar button
+      top = rect.top;
+      left = rect.right + 4;
+      // Keep inside viewport vertically
+      if (top + menuHeight > window.innerHeight) top = window.innerHeight - menuHeight - 8;
+    } else {
+      // Open below the top-nav button, right-aligned
+      top = rect.bottom + 4;
+      left = rect.right - menuWidth;
+    }
+    // Clamp to viewport
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+    if (top < 8) top = 8;
+    setMenuPos({ top, left, width: menuWidth });
+    setThemeMenuOpen(true);
+  };
+
   const handleThemePick = (id) => {
     setTheme(id);
     setThemeMenuOpen(false);
   };
-  const ThemeMenu = ({ positionClass }) => (
-    <div className={`theme-submenu ${positionClass}`} data-testid="theme-submenu" ref={themeMenuRef}>
-      {availableThemes.map(t => (
-        <div key={t.id}
-          className={`theme-submenu-item ${theme === t.id ? "active" : ""}`}
-          onClick={() => handleThemePick(t.id)}
-          data-testid={`theme-option-${t.id}`}>
-          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: t.accent, boxShadow: `0 0 6px ${t.accent}` }} />
-          <span>{t.label}</span>
+
+  const ThemeMenuPortal = () => {
+    if (!themeMenuOpen) return null;
+    const themeClass = `theme-${theme}`;
+    return createPortal(
+      <div className={themeClass}>
+        <div
+          ref={menuRef}
+          className="theme-submenu"
+          data-testid="theme-submenu"
+          style={{
+            position: "fixed",
+            top: `${menuPos.top}px`,
+            left: `${menuPos.left}px`,
+            width: `${menuPos.width}px`,
+            zIndex: 9999,
+          }}
+        >
+          {availableThemes.map(t => (
+            <div key={t.id}
+              className={`theme-submenu-item ${theme === t.id ? "active" : ""}`}
+              onClick={() => handleThemePick(t.id)}
+              data-testid={`theme-option-${t.id}`}>
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: t.accent, boxShadow: `0 0 6px ${t.accent}` }} />
+              <span>{t.label}</span>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
-  );
+      </div>,
+      document.body
+    );
+  };
 
   // ============ TOP-NAV LAYOUT (Disney / Fortnite / Minesweeper) ============
   if (!isLcars) {
@@ -105,18 +158,15 @@ const LcarsLayout = ({ children }) => {
                   {item.shortLabel}
                 </Link>
               ))}
-              {/* Theme dropdown */}
-              <div className="relative" ref={themeMenuRef}>
-                <button
-                  onClick={() => setThemeMenuOpen(v => !v)}
-                  className={`${btnBase} ${hoverBtn} flex items-center gap-1`}
-                  data-testid="nav-theme">
-                  <Palette size={12} />
-                  Theme
-                  <CaretDown size={10} />
-                </button>
-                {themeMenuOpen && <ThemeMenu positionClass="right-0 top-full mt-1" />}
-              </div>
+              <button
+                ref={triggerRef}
+                onClick={() => themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu()}
+                className={`${btnBase} ${hoverBtn} flex items-center gap-1`}
+                data-testid="nav-theme">
+                <Palette size={12} />
+                Theme
+                <CaretDown size={10} />
+              </button>
               <button onClick={logout} className={`${btnBase} ${isMinesweeper ? "hover:bg-red-200" : "text-red-300 hover:bg-red-900/50"}`} data-testid="logout-button">
                 <SignOut size={14} />
               </button>
@@ -124,6 +174,7 @@ const LcarsLayout = ({ children }) => {
           </div>
         </header>
         <main>{children}</main>
+        <ThemeMenuPortal />
       </div>
     );
   }
@@ -154,18 +205,15 @@ const LcarsLayout = ({ children }) => {
               {item.shortLabel}
             </Link>
           ))}
-          {/* Theme submenu trigger */}
-          <div className="relative" ref={themeMenuRef}>
-            <button
-              onClick={() => setThemeMenuOpen(v => !v)}
-              className="lcars-sidebar-item w-full flex items-center justify-between gap-2"
-              style={{ background: "var(--lcars-tan)" }}
-              data-testid="nav-theme">
-              <span>THEME</span>
-              <CaretDown size={12} />
-            </button>
-            {themeMenuOpen && <ThemeMenu positionClass="left-full top-0 ml-1" />}
-          </div>
+          <button
+            ref={triggerRef}
+            onClick={() => themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu()}
+            className="lcars-sidebar-item w-full flex items-center justify-between gap-2"
+            style={{ background: "var(--lcars-tan)" }}
+            data-testid="nav-theme">
+            <span>THEME</span>
+            <CaretDown size={12} />
+          </button>
           <div className="lcars-sidebar-spacer" />
           <div className="lcars-sidebar-bottom" />
         </div>
@@ -174,6 +222,8 @@ const LcarsLayout = ({ children }) => {
           {children}
         </div>
       </div>
+
+      <ThemeMenuPortal />
     </div>
   );
 };
