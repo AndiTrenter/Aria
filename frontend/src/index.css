@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Bangers&family=Press+Start+2P&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -684,3 +684,303 @@ div[style*="Made with"] {
     display: contents !important;
   }
 }
+
+/* ============================================
+   FORTNITE THEME — Neon Battle Royale
+   ============================================ */
+.theme-fortnite {
+  --fn-bg: #0b0d1a;
+  --fn-surface: #151a2e;
+  --fn-panel: rgba(22, 28, 48, 0.85);
+  --fn-primary: #00eaff;
+  --fn-accent: #ffd500;
+  --fn-magenta: #ff3ea5;
+  --fn-violet: #7b5cff;
+  --fn-lime: #b3ff00;
+  --fn-text: #e8ecff;
+  --fn-muted: #8b93b8;
+  --fn-success: #39e28b;
+  --fn-danger: #ff5a6b;
+
+  background:
+    radial-gradient(circle at 10% 10%, rgba(255, 62, 165, 0.12), transparent 40%),
+    radial-gradient(circle at 90% 20%, rgba(0, 234, 255, 0.12), transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(123, 92, 255, 0.15), transparent 50%),
+    var(--fn-bg);
+  color: var(--fn-text);
+  font-family: 'Bangers', 'Quicksand', sans-serif;
+  letter-spacing: 0.04em;
+  min-height: 100vh;
+}
+
+.theme-fortnite input, .theme-fortnite textarea, .theme-fortnite select, .theme-fortnite button {
+  font-family: 'Quicksand', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.theme-fortnite h1, .theme-fortnite h2, .theme-fortnite h3,
+.theme-fortnite .disney-title, .theme-fortnite .lcars-header-cap {
+  font-family: 'Bangers', sans-serif !important;
+  letter-spacing: 0.06em;
+  color: var(--fn-accent);
+  text-shadow: 0 0 12px rgba(255, 213, 0, 0.4), 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.theme-fortnite .disney-card,
+.theme-fortnite .lcars-card {
+  background: var(--fn-panel);
+  border: 2px solid rgba(0, 234, 255, 0.25);
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+}
+.theme-fortnite .disney-card::before,
+.theme-fortnite .lcars-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  padding: 2px;
+  background: linear-gradient(135deg, var(--fn-primary), var(--fn-magenta), var(--fn-accent));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.theme-fortnite .disney-button,
+.theme-fortnite .lcars-button {
+  background: linear-gradient(135deg, var(--fn-primary) 0%, var(--fn-violet) 100%);
+  color: #001a1f;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 0 4px 14px rgba(0, 234, 255, 0.4), inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.theme-fortnite .disney-button:hover,
+.theme-fortnite .lcars-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.15);
+  box-shadow: 0 6px 18px rgba(0, 234, 255, 0.55), 0 0 20px rgba(255, 62, 165, 0.25);
+}
+.theme-fortnite .disney-button:active,
+.theme-fortnite .lcars-button:active { transform: translateY(1px); }
+
+.theme-fortnite .disney-input,
+.theme-fortnite .lcars-input {
+  background: rgba(11, 13, 26, 0.7);
+  border: 2px solid rgba(0, 234, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--fn-text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.theme-fortnite .disney-input:focus,
+.theme-fortnite .lcars-input:focus {
+  outline: none;
+  border-color: var(--fn-primary);
+  box-shadow: 0 0 0 3px rgba(0, 234, 255, 0.25);
+}
+
+.theme-fortnite .disney-label,
+.theme-fortnite .lcars-label {
+  color: var(--fn-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+/* Fortnite top nav (uses Disney layout) */
+.theme-fortnite .disney-header {
+  background: rgba(11, 13, 26, 0.9);
+  border-bottom: 2px solid var(--fn-primary);
+  box-shadow: 0 4px 20px rgba(0, 234, 255, 0.15);
+  backdrop-filter: blur(16px);
+}
+
+/* ============================================
+   MINESWEEPER THEME — Windows 95 classic
+   ============================================ */
+.theme-minesweeper {
+  --ms-bg: #008080;                  /* classic teal desktop */
+  --ms-window: #c0c0c0;              /* grey window body */
+  --ms-window-dark: #808080;         /* dark border */
+  --ms-window-light: #ffffff;        /* light border */
+  --ms-text: #000000;
+  --ms-text-light: #ffffff;
+  --ms-title-bar: #000080;           /* navy blue title bar */
+  --ms-mine-red: #ff0000;
+  --ms-number-blue: #0000ff;
+  --ms-disabled: #808080;
+
+  background: var(--ms-bg);
+  color: var(--ms-text);
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  min-height: 100vh;
+  font-size: 12px;
+}
+
+.theme-minesweeper h1, .theme-minesweeper h2, .theme-minesweeper h3 {
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  font-weight: bold;
+  color: var(--ms-text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.theme-minesweeper .disney-title, .theme-minesweeper .lcars-header-cap {
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif !important;
+  color: var(--ms-text) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* Classic 3D raised border */
+.theme-minesweeper .disney-card,
+.theme-minesweeper .lcars-card {
+  background: var(--ms-window);
+  color: var(--ms-text);
+  border-top: 2px solid var(--ms-window-light);
+  border-left: 2px solid var(--ms-window-light);
+  border-right: 2px solid var(--ms-window-dark);
+  border-bottom: 2px solid var(--ms-window-dark);
+  border-radius: 0;
+  padding: 8px;
+  box-shadow: 1px 1px 0 0 #000;
+}
+
+/* Fake title bar on top of cards */
+.theme-minesweeper .disney-card > *:first-child,
+.theme-minesweeper .lcars-card > *:first-child {
+  margin-top: 0;
+}
+
+.theme-minesweeper .disney-button,
+.theme-minesweeper .lcars-button {
+  background: var(--ms-window);
+  color: var(--ms-text);
+  border-top: 2px solid var(--ms-window-light);
+  border-left: 2px solid var(--ms-window-light);
+  border-right: 2px solid var(--ms-window-dark);
+  border-bottom: 2px solid var(--ms-window-dark);
+  border-radius: 0;
+  padding: 4px 16px;
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  min-width: 75px;
+}
+.theme-minesweeper .disney-button:active,
+.theme-minesweeper .lcars-button:active {
+  border-top: 2px solid var(--ms-window-dark);
+  border-left: 2px solid var(--ms-window-dark);
+  border-right: 2px solid var(--ms-window-light);
+  border-bottom: 2px solid var(--ms-window-light);
+}
+.theme-minesweeper .disney-button:hover,
+.theme-minesweeper .lcars-button:hover {
+  filter: brightness(1.02);
+}
+
+.theme-minesweeper .disney-input,
+.theme-minesweeper .lcars-input {
+  background: white;
+  color: black;
+  border-top: 2px solid var(--ms-window-dark);
+  border-left: 2px solid var(--ms-window-dark);
+  border-right: 2px solid var(--ms-window-light);
+  border-bottom: 2px solid var(--ms-window-light);
+  border-radius: 0;
+  padding: 2px 4px;
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.theme-minesweeper .disney-input:focus,
+.theme-minesweeper .lcars-input:focus { outline: 1px dotted #000; outline-offset: -4px; }
+
+.theme-minesweeper .disney-label,
+.theme-minesweeper .lcars-label {
+  color: var(--ms-text);
+  font-size: 11px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Top nav styled as Windows taskbar-ish */
+.theme-minesweeper .disney-header {
+  background: var(--ms-window);
+  border-top: 2px solid var(--ms-window-light);
+  border-bottom: 2px solid var(--ms-window-dark);
+  color: var(--ms-text);
+}
+
+/* Theme submenu (used in sidebar / top-nav) */
+.theme-submenu {
+  position: absolute;
+  min-width: 180px;
+  z-index: 100;
+  padding: 6px 0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.theme-startrek .theme-submenu {
+  background: var(--lcars-panel);
+  border: 1px solid var(--lcars-orange);
+  border-radius: 8px;
+}
+.theme-disney .theme-submenu {
+  background: #2a1760;
+  border: 1px solid #7b5cff;
+  border-radius: 12px;
+}
+.theme-fortnite .theme-submenu {
+  background: var(--fn-panel);
+  border: 2px solid var(--fn-primary);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+}
+.theme-minesweeper .theme-submenu {
+  background: var(--ms-window);
+  border-top: 2px solid var(--ms-window-light);
+  border-left: 2px solid var(--ms-window-light);
+  border-right: 2px solid var(--ms-window-dark);
+  border-bottom: 2px solid var(--ms-window-dark);
+  border-radius: 0;
+}
+.theme-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  transition: background 0.1s ease;
+}
+.theme-startrek .theme-submenu-item { color: var(--lcars-orange); text-transform: uppercase; }
+.theme-startrek .theme-submenu-item:hover { background: var(--lcars-orange); color: #000; }
+.theme-disney .theme-submenu-item { color: #e0d4ff; }
+.theme-disney .theme-submenu-item:hover { background: rgba(255, 255, 255, 0.1); }
+.theme-fortnite .theme-submenu-item { color: var(--fn-text); font-family: 'Bangers', sans-serif; letter-spacing: 0.08em; }
+.theme-fortnite .theme-submenu-item:hover { background: rgba(0, 234, 255, 0.15); color: var(--fn-accent); }
+.theme-minesweeper .theme-submenu-item { color: var(--ms-text); text-transform: none; }
+.theme-minesweeper .theme-submenu-item:hover { background: var(--ms-title-bar); color: var(--ms-text-light); }
+.theme-submenu-item.active::after {
+  content: "✓";
+  margin-left: auto;
+  font-weight: bold;
+}
+

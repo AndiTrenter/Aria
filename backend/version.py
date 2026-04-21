@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "5.8"
+ARIA_VERSION = "6.0"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -25,10 +25,12 @@ ARIA_SERVICES = [
     "Chat",
     "Wetter",
     "Media",
+    "Themes",
 ]
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "6.0", "date": "2026-04-21", "notes": "Multi-Theme-System: 4 Themes (Star Trek, Disney, Fortnite, Minesweeper). User-Default in Konto, globaler Default im Admin. Submenu statt Toggle."},
     {"version": "5.8", "date": "2026-04-21", "notes": "Auto-Logout bei 401 (stale JWT nach DB-Wipe invalidiert Session → sauberer Redirect zu Login)"},
     {"version": "5.7", "date": "2026-04-21", "notes": "Settings Backup/Import + Diagnose-UI (verhindert dauerhaften Key-Verlust bei Volume-Reset)"},
     {"version": "5.6", "date": "2026-04-21", "notes": "KRITISCHER FIX: Media-Grid Thumbnails — 'undefined' in Image-URL (process.env.REACT_APP_BACKEND_URL fallback)"},

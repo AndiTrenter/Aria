@@ -59,6 +59,15 @@ axios.interceptors.response.use(
   }
 );
 
+export const AVAILABLE_THEMES = [
+  { id: "startrek", label: "Star Trek LCARS", accent: "#FF9900" },
+  { id: "disney", label: "Disney Magic", accent: "#c084fc" },
+  { id: "fortnite", label: "Fortnite", accent: "#00eaff" },
+  { id: "minesweeper", label: "Minesweeper 95", accent: "#000080" },
+];
+export const THEME_IDS = AVAILABLE_THEMES.map(t => t.id);
+export const DEFAULT_THEME = "startrek";
+
 export const AuthContext = createContext(null);
 export const ThemeContext = createContext(null);
 
@@ -85,7 +94,24 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [setupRequired, setSetupRequired] = useState(null);
-  const [theme, setThemeState] = useState("startrek");
+  const [theme, setThemeState] = useState(DEFAULT_THEME);
+  const [globalDefaultTheme, setGlobalDefaultTheme] = useState(DEFAULT_THEME);
+
+  // Safe theme setter: only accept known themes
+  const applyTheme = (t) => setThemeState(THEME_IDS.includes(t) ? t : globalDefaultTheme);
+
+  // Fetch global default theme (admin-configured) — used for users without personal pref
+  const fetchGlobalDefaultTheme = async () => {
+    try {
+      const { data } = await axios.get(`${API}/settings/default-theme`);
+      const t = data?.theme;
+      if (THEME_IDS.includes(t)) {
+        setGlobalDefaultTheme(t);
+        // If user has no personal theme set, use the global default
+        if (!user?.theme) setThemeState(t);
+      }
+    } catch {}
+  };
 
   const checkSetupStatus = async () => {
     try {
@@ -102,7 +128,7 @@ const AuthProvider = ({ children }) => {
     try {
       const { data } = await axios.get(`${API}/auth/me`);
       setUser(data);
-      setThemeState(data.theme || "startrek");
+      applyTheme(data.theme || globalDefaultTheme);
       localStorage.setItem('aria_user', JSON.stringify(data));
       return data;
     } catch (e) {
@@ -112,7 +138,7 @@ const AuthProvider = ({ children }) => {
         try {
           const userData = JSON.parse(stored);
           setUser(userData);
-          setThemeState(userData.theme || "startrek");
+          applyTheme(userData.theme || globalDefaultTheme);
           return userData;
         } catch {}
       }
@@ -131,7 +157,7 @@ const AuthProvider = ({ children }) => {
     localStorage.setItem('aria_user', JSON.stringify(data));
     // Now set user state (this triggers Dashboard re-render)
     setUser(data);
-    setThemeState(data.theme || "startrek");
+    applyTheme(data.theme || globalDefaultTheme);
     // Fire-and-forget: warm Plex thumbnail cache in background so Mediathek loads instantly
     setTimeout(() => {
       axios.get(`${API}/plex/warmup?limit=80`).then(({ data: w }) => {
@@ -158,6 +184,7 @@ const AuthProvider = ({ children }) => {
   };
 
   const setTheme = async (newTheme) => {
+    if (!THEME_IDS.includes(newTheme)) return;
     setThemeState(newTheme);
     try {
       await axios.put(`${API}/auth/theme`, { theme: newTheme });
@@ -176,15 +203,18 @@ const AuthProvider = ({ children }) => {
   useEffect(() => {
     const init = async () => {
       const needsSetup = await checkSetupStatus();
-      if (!needsSetup) await checkAuth();
+      if (!needsSetup) {
+        await fetchGlobalDefaultTheme();
+        await checkAuth();
+      }
       setLoading(false);
     };
     init();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, setupRequired, login, logout, completeSetup, checkAuth }}>
-      <ThemeContext.Provider value={{ theme, setTheme }}>
+    <AuthContext.Provider value={{ user, loading, setupRequired, login, logout, completeSetup, checkAuth, globalDefaultTheme, refreshGlobalDefaultTheme: fetchGlobalDefaultTheme }}>
+      <ThemeContext.Provider value={{ theme, setTheme, availableThemes: AVAILABLE_THEMES }}>
         {children}
       </ThemeContext.Provider>
     </AuthContext.Provider>
@@ -246,10 +276,12 @@ const AppRouter = () => {
     };
   }, [theme]);
 
-  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
+  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : theme === 'fortnite' ? 'bg-[#0b0d1a] text-[#00eaff]' : theme === 'minesweeper' ? 'bg-[#008080] text-black' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
+
+  const themeClass = `theme-${THEME_IDS.includes(theme) ? theme : DEFAULT_THEME}`;
 
   return (
-    <div className={theme === 'startrek' ? 'theme-startrek' : 'theme-disney'}>
+    <div className={themeClass}>
       <Routes>
         <Route path="/setup" element={setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
         <Route path="/login" element={setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />

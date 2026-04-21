@@ -273,11 +273,45 @@ async def logout(response: Response):
 async def get_me(request: Request):
     return await get_current_user(request)
 
+VALID_THEMES = {"startrek", "disney", "fortnite", "minesweeper"}
+DEFAULT_GLOBAL_THEME = "startrek"
+
+
 @api_router.put("/auth/theme")
 async def update_theme(request: Request, theme: str = Body(..., embed=True)):
     user = await get_current_user(request)
+    if theme not in VALID_THEMES:
+        raise HTTPException(400, f"Unbekanntes Theme. Erlaubt: {sorted(VALID_THEMES)}")
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"theme": theme}})
     return {"theme": theme}
+
+
+@api_router.get("/settings/default-theme")
+async def get_default_theme():
+    """Public endpoint: returns the admin-configured global default theme.
+    Used by the frontend to fall back when a user has no personal theme set,
+    and by the Login/Setup screens before a user is authenticated."""
+    doc = await db.settings.find_one({"key": "default_theme"})
+    theme = doc.get("value") if doc else None
+    if theme not in VALID_THEMES:
+        theme = DEFAULT_GLOBAL_THEME
+    return {"theme": theme, "available": sorted(VALID_THEMES)}
+
+
+@api_router.put("/admin/default-theme")
+async def admin_set_default_theme(request: Request, body: dict = Body(...)):
+    """Admin-only: set the global default theme (applied to users without personal pref)."""
+    await require_admin(request)
+    theme = (body.get("theme") or "").strip()
+    if theme not in VALID_THEMES:
+        raise HTTPException(400, f"Unbekanntes Theme. Erlaubt: {sorted(VALID_THEMES)}")
+    await db.settings.update_one(
+        {"key": "default_theme"},
+        {"$set": {"key": "default_theme", "value": theme, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"success": True, "theme": theme}
+
 
 @api_router.put("/auth/pin")
 async def set_pin(request: Request, body: dict = Body(...)):

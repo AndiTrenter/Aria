@@ -2,11 +2,18 @@ import { useState, useEffect } from "react";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, Microphone } from "@phosphor-icons/react";
+import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, Microphone, Palette } from "@phosphor-icons/react";
+
+const THEME_PREVIEWS = {
+  startrek: { icon: "\u{1F680}", label: "Star Trek", sub: "LCARS Interface", accent: "#FF9900" },
+  disney: { icon: "\u{1F3F0}", label: "Disney", sub: "Magical Theme", accent: "#c084fc" },
+  fortnite: { icon: "\u{1F3AE}", label: "Fortnite", sub: "Neon Battle Royale", accent: "#00eaff" },
+  minesweeper: { icon: "\u{1F4BB}", label: "Minesweeper 95", sub: "Windows Classic", accent: "#000080" },
+};
 
 const Account = () => {
   const { user, checkAuth } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, availableThemes } = useTheme();
   const [services, setServices] = useState([]);
   const [linkForm, setLinkForm] = useState({ service_id: "", username: "", password: "" });
   const [showLinkForm, setShowLinkForm] = useState(false);
@@ -124,28 +131,33 @@ const Account = () => {
 
       {/* Theme */}
       <div className={`${cardClass} mb-6`}>
-        <h3 className={isLcars ? "text-sm tracking-widest mb-4" : "font-bold mb-4"}>
-          {isLcars ? "INTERFACE DESIGN" : "Theme wählen"}
-        </h3>
-        <div className="flex gap-4">
-          <button
-            onClick={() => setTheme("startrek")}
-            className={`flex-1 p-4 rounded-lg border-2 transition-all ${theme === "startrek" ? "border-orange-500 bg-orange-500/10" : "border-gray-600"}`}
-            data-testid="theme-startrek"
-          >
-            <div className="text-2xl mb-2">&#128640;</div>
-            <div className="font-bold">Star Trek</div>
-            <div className="text-xs text-gray-400">LCARS Interface</div>
-          </button>
-          <button
-            onClick={() => setTheme("disney")}
-            className={`flex-1 p-4 rounded-lg border-2 transition-all ${theme === "disney" ? "border-purple-500 bg-purple-500/10" : "border-gray-600"}`}
-            data-testid="theme-disney"
-          >
-            <div className="text-2xl mb-2">&#127984;</div>
-            <div className="font-bold">Disney</div>
-            <div className="text-xs text-gray-400">Magical Theme</div>
-          </button>
+        <div className="flex items-center gap-2 mb-4">
+          <Palette size={18} style={{ color: THEME_PREVIEWS[theme]?.accent || "#fff" }} />
+          <h3 className={isLcars ? "text-sm tracking-widest" : "font-bold"}>
+            {isLcars ? "INTERFACE DESIGN" : "Theme wählen"}
+          </h3>
+        </div>
+        <p className="text-xs text-gray-500 mb-3" style={{ textTransform: "none" }}>
+          Wähle dein Standard-Theme. Es wird nach jedem Login aktiviert und ist nur für dich gespeichert.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {availableThemes.map(t => {
+            const p = THEME_PREVIEWS[t.id] || {};
+            const selected = theme === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setTheme(t.id); toast.success(`Theme: ${t.label}`); }}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${selected ? "border-[length:2px]" : "border-gray-600 opacity-80 hover:opacity-100"}`}
+                style={selected ? { borderColor: p.accent || t.accent, background: `${p.accent || t.accent}22` } : {}}
+                data-testid={`theme-${t.id}`}>
+                <div className="text-2xl mb-2">{p.icon || "\u{1F3A8}"}</div>
+                <div className="font-bold text-sm" style={{ textTransform: "none" }}>{p.label || t.label}</div>
+                <div className="text-xs text-gray-400" style={{ textTransform: "none" }}>{p.sub || ""}</div>
+                {selected && <div className="mt-2 text-[10px] font-bold" style={{ color: p.accent || t.accent }}>✓ AKTIV</div>}
+              </button>
+            );
+          })}
         </div>
       </div>
 

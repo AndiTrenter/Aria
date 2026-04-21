@@ -49,8 +49,8 @@ const ROLES = [
 ];
 
 const Admin = () => {
-  const { user } = useAuth();
-  const { theme } = useTheme();
+  const { user, refreshGlobalDefaultTheme } = useAuth();
+  const { theme, availableThemes } = useTheme();
   const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -281,6 +281,29 @@ const Admin = () => {
       toast.success("Plex Thumbnail-Cache geleert — Seite neu laden um Effekt zu sehen");
     } catch (e) { toast.error(formatApiError(e)); }
   };
+
+  // ========== Default Theme ==========
+  const [defaultTheme, setDefaultTheme] = useState("startrek");
+  const [defaultThemeLoaded, setDefaultThemeLoaded] = useState(false);
+
+  const loadDefaultTheme = async () => {
+    try {
+      const { data } = await axios.get(`${API}/settings/default-theme`);
+      setDefaultTheme(data?.theme || "startrek");
+      setDefaultThemeLoaded(true);
+    } catch {}
+  };
+
+  const saveDefaultTheme = async (t) => {
+    try {
+      await axios.put(`${API}/admin/default-theme`, { theme: t });
+      setDefaultTheme(t);
+      toast.success(`Standard-Theme: ${availableThemes.find(a => a.id === t)?.label || t}`);
+      if (refreshGlobalDefaultTheme) refreshGlobalDefaultTheme();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  useEffect(() => { if (activeTab === "settings" && !defaultThemeLoaded) loadDefaultTheme(); }, [activeTab, defaultThemeLoaded]);
 
   // ========== Settings Backup / Diagnose ==========
   const [settingsDiag, setSettingsDiag] = useState(null);
@@ -1425,6 +1448,33 @@ const Admin = () => {
       {/* ==================== SETTINGS TAB ==================== */}
       {activeTab === "settings" && (
         <div className="space-y-6">
+          {/* Default Theme (Admin-wide) */}
+          <div className={cardClass} data-testid="default-theme-block">
+            <div className="flex items-center gap-2 mb-3">
+              <MagicWand size={18} className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-400"} />
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "STANDARD-THEME" : "Standard-Theme für neue User"}
+              </h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-3" style={{ textTransform: "none" }}>
+              Dieses Theme wird allen User-Accounts zugewiesen, die noch keine eigene Auswahl gemacht haben.
+              User können ihre persönliche Einstellung in <b>Konto → Theme wählen</b> treffen — dann überschreibt das diesen Default.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {availableThemes.map(t => (
+                <button key={t.id}
+                  onClick={() => saveDefaultTheme(t.id)}
+                  className={`p-3 rounded-lg border-2 text-xs transition-all text-left ${defaultTheme === t.id ? "" : "border-gray-700 opacity-75 hover:opacity-100"}`}
+                  style={defaultTheme === t.id ? { borderColor: t.accent, background: `${t.accent}22` } : {}}
+                  data-testid={`default-theme-${t.id}`}>
+                  <span className="inline-block w-3 h-3 rounded-full mr-2" style={{ background: t.accent }} />
+                  <span className="font-bold" style={{ textTransform: "none" }}>{t.label}</span>
+                  {defaultTheme === t.id && <span className="block mt-1 text-[10px] font-bold" style={{ color: t.accent }}>✓ AKTIV</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Settings Backup / Diagnose */}
           <div className={cardClass} data-testid="settings-backup-block">
             <div className="flex items-center gap-3 mb-3 flex-wrap">
