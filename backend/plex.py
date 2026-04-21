@@ -5,6 +5,8 @@ Connects to local Plex Media Server for browsing and playing media.
 from fastapi import APIRouter, HTTPException, Request, Response
 import httpx
 import logging
+import asyncio
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,10 @@ get_current_user = None
 # hits the proxy simultaneously (each new AsyncClient opens a fresh TCP
 # connection — quickly overwhelms Plex and causes random thumbnail failures).
 _image_client: httpx.AsyncClient | None = None
+
+# Cache-bust version. Incremented when admin clicks "Cache leeren" — frontend
+# appends this as query param so browser re-fetches all thumbnails.
+_cache_bust_version: int = int(time.time())
 
 
 def _get_image_client() -> httpx.AsyncClient:
@@ -461,3 +467,77 @@ async def build_chat_context(message: str) -> str:
                 parts.append("PLEX ZULETZT HINZUGEFÜGT:\n" + "\n".join(lines))
 
     return "\n\n".join(parts) if parts else ""
+
+
+# ==================== CACHE-BUST + WARM-UP ====================
+
+@router.get("/cache-version")
+async def get_cache_version():
+    """Returns the current cache-bust version.
+    Frontend appends this to image URLs so admin-triggered cache invalidation
+    forces the browser to re-fetch all thumbnails."""
+    return {"version": _cache_bust_version}
+
+
+@router.post("/cache-clear")
+async def clear_cache(request: Request):
+    """Admin-only: bump cache version → all browsers will re-fetch images."""
+    global _cache_bust_version
+    # Simple admin gate (reuses get_current_user injected at init)
+    if get_current_user:
+        try:
+            user = await get_current_user(request)
+            if user.get("role") not in ("admin", "superadmin"):
+                raise HTTPException(403, "Admin only")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(401, "Auth required")
+    _cache_bust_version = int(time.time())
+    return {"success": True, "version": _cache_bust_version}
+
+
+@router.get("/warmup")
+async def warmup_thumbnails(request: Request, limit: int = 100):
+    """Return a list of thumbnail URLs to preload in the browser on login.
+    Browser creates <img> tags from these → populates HTTP cache → grid loads instantly next time.
+    """
+    if get_current_user:
+        try:
+            await get_current_user(request)
+        except Exception:
+            raise HTTPException(401)
+    url, token = await get_plex_settings()
+    if not url or not token:
+        return {"urls": [], "count": 0}
+
+    limit = max(1, min(200, int(limit)))
+    urls: list[str] = []
+
+    # Strategy: pull recently-added (most likely to be viewed) + on-deck (in-progress)
+    try:
+        recent, _ = await plex_request("/library/recentlyAdded", {"X-Plex-Container-Size": str(limit)})
+        if recent:
+            for item in recent.get("MediaContainer", {}).get("Metadata", []) or []:
+                formatted = _format_item(item, url, token)
+                if formatted.get("thumb"):
+                    urls.append(f"{formatted['thumb']}&v={_cache_bust_version}")
+    except Exception as e:
+        logger.warning(f"Warmup recentlyAdded failed: {e}")
+
+    if len(urls) < limit:
+        try:
+            on_deck, _ = await plex_request("/library/onDeck")
+            if on_deck:
+                for item in on_deck.get("MediaContainer", {}).get("Metadata", []) or []:
+                    formatted = _format_item(item, url, token)
+                    if formatted.get("thumb"):
+                        thumb_url = f"{formatted['thumb']}&v={_cache_bust_version}"
+                        if thumb_url not in urls:
+                            urls.append(thumb_url)
+                        if len(urls) >= limit:
+                            break
+        except Exception as e:
+            logger.warning(f"Warmup onDeck failed: {e}")
+
+    return {"urls": urls[:limit], "count": len(urls[:limit]), "cache_version": _cache_bust_version}

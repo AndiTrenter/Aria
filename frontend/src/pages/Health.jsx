@@ -60,6 +60,11 @@ const Health = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [ariaVersion, setAriaVersion] = useState("");
+
+  useEffect(() => {
+    axios.get(`${API}/version`).then(r => setAriaVersion(r.data?.display || "")).catch(() => {});
+  }, []);
 
   const fetchData = async () => {
     setRefreshing(true);
@@ -108,6 +113,14 @@ const Health = () => {
         <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
           {isLcars ? "SYSTEM DIAGNOSTIK" : "System-Gesundheit"}
         </h2>
+        {ariaVersion && (
+          <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+            isLcars ? "bg-[var(--lcars-orange)]/20 text-[var(--lcars-orange)] tracking-widest border border-[var(--lcars-orange)]/40"
+                    : "bg-purple-700/30 text-purple-200 border border-purple-500/40"
+          }`} data-testid="health-aria-version">
+            {ariaVersion}
+          </span>
+        )}
         <div className="flex-1" />
         {lastUpdate && <span className="text-xs text-gray-500">{lastUpdate}</span>}
         <button onClick={() => setAutoRefresh(!autoRefresh)} data-testid="auto-refresh-toggle"

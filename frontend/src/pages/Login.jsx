@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useAuth, useTheme, formatApiError } from "@/App";
+import { useState, useEffect } from "react";
+import { useAuth, useTheme, API, formatApiError } from "@/App";
 import { toast } from "sonner";
+import axios from "axios";
 import { Eye, EyeSlash } from "@phosphor-icons/react";
 
 const Login = () => {
@@ -9,6 +10,11 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
+  const [ariaVersion, setAriaVersion] = useState("");
+
+  useEffect(() => {
+    axios.get(`${API}/version`).then(r => setAriaVersion(r.data?.display || "")).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -83,8 +89,8 @@ const Login = () => {
             <div className="h-2 w-20 bg-[var(--lcars-salmon)] rounded" />
             <div className="h-2 flex-1 bg-[var(--lcars-purple)] rounded-r-full" />
           </div>
-          <p className="text-center text-gray-700 text-[10px] mt-4 tracking-[0.2em]">
-            ARIA V2.0 LCARS INTERFACE
+          <p className="text-center text-gray-700 text-[10px] mt-4 tracking-[0.2em]" data-testid="login-version">
+            ARIA {ariaVersion || "..."} · LCARS INTERFACE
           </p>
         </div>
       </div>
@@ -120,7 +126,7 @@ const Login = () => {
             </button>
           </form>
         </div>
-        <p className="text-center text-purple-400 text-sm mt-6">Aria Dashboard v2.0</p>
+        <p className="text-center text-purple-400 text-sm mt-6" data-testid="login-version">Aria Dashboard · {ariaVersion || "..."}</p>
       </div>
     </div>
   );

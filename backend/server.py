@@ -40,6 +40,7 @@ import telegram_bot
 import plex
 import service_router
 import forgepilot
+from version import ARIA_VERSION, ARIA_SERVICES, version_display
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -607,7 +608,19 @@ async def text_to_speech(request: Request, body: dict = Body(...)):
 
 @api_router.get("/health")
 async def health_check():
-    return {"status": "healthy", "app": "Aria Dashboard", "version": "2.0"}
+    return {"status": "healthy", "app": "Aria Dashboard", "version": "2.0", "aria_version": ARIA_VERSION, "aria_version_display": version_display()}
+
+
+@api_router.get("/version")
+async def get_version():
+    """Public endpoint — returns the currently deployed Aria version.
+    Used by the Login screen and Health page to confirm the build is up-to-date."""
+    return {
+        "version": ARIA_VERSION,
+        "display": version_display(),
+        "services": ARIA_SERVICES,
+    }
+
 
 @api_router.get("/health/services")
 async def get_services_health(request: Request):

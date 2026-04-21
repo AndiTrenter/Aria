@@ -274,6 +274,14 @@ const Admin = () => {
     finally { setTelegramTesting(false); }
   };
 
+  const clearPlexCache = async () => {
+    if (!window.confirm("Thumbnail-Cache leeren? Alle Browser müssen die Bilder neu laden.")) return;
+    try {
+      await axios.post(`${API}/plex/cache-clear`);
+      toast.success("Plex Thumbnail-Cache geleert — Seite neu laden um Effekt zu sehen");
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const checkHaStatus = async (silent = false) => {
     if (!silent) setHaTesting(true);
     try {
@@ -1563,10 +1571,16 @@ const Admin = () => {
                 </label>
                 <input type="password" value={plexToken} onChange={(e) => setPlexToken(e.target.value)} placeholder="X-Plex-Token..." className={`${inputClass} w-full`} data-testid="plex-token-input" />
               </div>
-              <button onClick={() => checkPlexStatus(false)} disabled={plexTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="plex-test-button">
-                {plexTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
-                {plexTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => checkPlexStatus(false)} disabled={plexTesting} className={`${btnClass} text-xs flex items-center gap-2`} data-testid="plex-test-button">
+                  {plexTesting ? <ArrowClockwise size={14} className="animate-spin" /> : null}
+                  {plexTesting ? (isLcars ? "TESTE..." : "Teste...") : (isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen")}
+                </button>
+                <button onClick={clearPlexCache} className={`${btnClass} text-xs flex items-center gap-2 opacity-80`} data-testid="plex-clear-cache-button" title="Zwingt alle Browser die Plex-Thumbnails neu zu laden">
+                  <Trash size={14} />
+                  {isLcars ? "THUMBNAIL-CACHE LEEREN" : "Thumbnail-Cache leeren"}
+                </button>
+              </div>
               {plexStatus && !plexTesting && (
                 <div className={`p-3 rounded-lg text-sm font-bold ${plexStatus.connected ? "bg-green-900/30 text-green-400 border border-green-800/40" : "bg-red-900/30 text-red-400 border border-red-800/40"}`}>
                   {plexStatus.connected ? `Plex verbunden: ${plexStatus.name} (v${plexStatus.version})` : "Nicht erreichbar"}

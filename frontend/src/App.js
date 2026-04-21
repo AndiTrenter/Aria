@@ -107,6 +107,14 @@ const AuthProvider = ({ children }) => {
     // Now set user state (this triggers Dashboard re-render)
     setUser(data);
     setThemeState(data.theme || "startrek");
+    // Fire-and-forget: warm Plex thumbnail cache in background so Mediathek loads instantly
+    setTimeout(() => {
+      axios.get(`${API}/plex/warmup?limit=80`).then(({ data: w }) => {
+        const urls = w?.urls || [];
+        const backend = process.env.REACT_APP_BACKEND_URL || "";
+        urls.forEach(u => { const img = new Image(); img.src = `${backend}${u}`; });
+      }).catch(() => {});
+    }, 600);
     return data;
   };
 

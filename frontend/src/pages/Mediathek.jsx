@@ -17,20 +17,23 @@ const Mediathek = () => {
   const [onDeck, setOnDeck] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
+  const [cacheVersion, setCacheVersion] = useState("");
   const isLcars = theme === "startrek";
 
   const fetchInit = useCallback(async () => {
     try {
-      const [libR, statusR, recentR, deckR] = await Promise.all([
+      const [libR, statusR, recentR, deckR, cacheR] = await Promise.all([
         axios.get(`${API}/plex/libraries`).catch(() => ({ data: [] })),
         axios.get(`${API}/plex/status`).catch(() => ({ data: { connected: false } })),
         axios.get(`${API}/plex/recently-added?limit=12`).catch(() => ({ data: [] })),
         axios.get(`${API}/plex/on-deck`).catch(() => ({ data: [] })),
+        axios.get(`${API}/plex/cache-version`).catch(() => ({ data: { version: "" } })),
       ]);
       setLibraries(libR.data);
       setStatus(statusR.data);
       setRecentlyAdded(recentR.data);
       setOnDeck(deckR.data);
+      setCacheVersion(cacheR.data?.version || "");
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -110,7 +113,7 @@ const Mediathek = () => {
           {/* Poster */}
           <div className="w-48 flex-shrink-0">
             {detail.thumb ? (
-              <img src={`${API}${detail.thumb.startsWith('/api') ? detail.thumb.substring(4) : detail.thumb}`} alt={detail.title} className="w-full rounded-xl shadow-lg" />
+              <img src={`${API}${(detail.thumb.startsWith('/api') ? detail.thumb.substring(4) : detail.thumb)}${cacheVersion ? (detail.thumb.includes('?') ? '&' : '?') + 'v=' + cacheVersion : ''}`} alt={detail.title} className="w-full rounded-xl shadow-lg" />
             ) : (
               <div className={`w-full h-72 rounded-xl flex items-center justify-center ${isLcars ? "bg-[#0a0a14]" : "bg-purple-950/50"}`}>
                 <TypeIcon type={detail.type} />
@@ -155,7 +158,7 @@ const Mediathek = () => {
                   {detail.roles.map((r, i) => (
                     <div key={i} className="flex-shrink-0 w-20 text-center">
                       <div className={`w-16 h-16 mx-auto rounded-full mb-1 flex items-center justify-center text-gray-600 text-lg ${isLcars ? "bg-[#0a0a14]" : "bg-purple-950/50"}`}>
-                      {r.thumb ? <img src={`${API}${r.thumb.startsWith('/api') ? r.thumb.substring(4) : r.thumb}`} className="w-full h-full rounded-full object-cover" alt={r.name} /> : r.name[0]}
+                      {r.thumb ? <img src={`${API}${(r.thumb.startsWith('/api') ? r.thumb.substring(4) : r.thumb)}${cacheVersion ? (r.thumb.includes('?') ? '&' : '?') + 'v=' + cacheVersion : ''}`} className="w-full h-full rounded-full object-cover" alt={r.name} /> : r.name[0]}
                       </div>
                       <div className="text-[10px] font-bold truncate">{r.name}</div>
                       {r.role && <div className="text-[9px] text-gray-500 truncate">{r.role}</div>}
@@ -244,7 +247,7 @@ const Mediathek = () => {
             {isLcars ? `${searchResults.length} TREFFER` : `${searchResults.length} Treffer`}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {searchResults.map(item => <MediaCard key={item.rating_key} item={item} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
+            {searchResults.map(item => <MediaCard key={item.rating_key} item={item} cacheVersion={cacheVersion} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
           </div>
           {searchResults.length === 0 && <p className="text-center text-gray-500 py-8">Keine Ergebnisse</p>}
         </div>
@@ -272,7 +275,7 @@ const Mediathek = () => {
                 {isLcars ? "WEITERSCHAUEN" : "Weiterschauen"}
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                {onDeck.map(item => <MediaCard key={item.rating_key} item={item} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
+                {onDeck.map(item => <MediaCard key={item.rating_key} item={item} cacheVersion={cacheVersion} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
               </div>
             </div>
           )}
@@ -284,7 +287,7 @@ const Mediathek = () => {
                 {isLcars ? "ZULETZT HINZUGEFÜGT" : "Zuletzt hinzugefügt"}
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                {recentlyAdded.map(item => <MediaCard key={item.rating_key} item={item} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
+                {recentlyAdded.map(item => <MediaCard key={item.rating_key} item={item} cacheVersion={cacheVersion} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
               </div>
             </div>
           )}
@@ -296,7 +299,7 @@ const Mediathek = () => {
         <div>
           <p className={`text-xs mb-3 ${isLcars ? "text-gray-500" : "text-purple-400"}`}>{total} {isLcars ? "EINTRÄGE" : "Einträge"}</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {items.map(item => <MediaCard key={item.rating_key} item={item} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
+            {items.map(item => <MediaCard key={item.rating_key} item={item} cacheVersion={cacheVersion} onClick={() => openDetail(item.rating_key)} isLcars={isLcars} cardBg={cardBg} formatDuration={formatDuration} />)}
           </div>
           {items.length === 0 && !loading && <p className="text-center text-gray-500 py-12">Keine Medien gefunden</p>}
         </div>
@@ -311,29 +314,34 @@ const Mediathek = () => {
   );
 };
 
-const MediaCard = ({ item, onClick, isLcars, cardBg, formatDuration }) => (
-  <button onClick={onClick} className={`${cardBg} rounded-xl overflow-hidden transition-all group text-left w-full`} data-testid={`media-${item.rating_key}`}>
-    <div className="aspect-[2/3] relative overflow-hidden bg-gray-900">
-      {item.thumb ? (
-        <img src={`${process.env.REACT_APP_BACKEND_URL}${item.thumb}`} alt={item.title}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          loading="lazy" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-gray-700">
-          <FilmStrip size={32} />
-        </div>
-      )}
-      {item.duration > 0 && (
-        <div className="absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300">{formatDuration(item.duration)}</div>
-      )}
-    </div>
-    <div className="p-2">
-      <div className="text-xs font-bold truncate">{item.title}</div>
-      <div className="text-[10px] text-gray-500 truncate">
-        {item.year}{item.parent_title ? ` | ${item.parent_title}` : ""}{item.grandparent_title ? ` | ${item.grandparent_title}` : ""}
+const MediaCard = ({ item, onClick, isLcars, cardBg, formatDuration, cacheVersion }) => {
+  const busted = item.thumb
+    ? `${process.env.REACT_APP_BACKEND_URL}${item.thumb}${cacheVersion ? (item.thumb.includes('?') ? '&' : '?') + 'v=' + cacheVersion : ''}`
+    : "";
+  return (
+    <button onClick={onClick} className={`${cardBg} rounded-xl overflow-hidden transition-all group text-left w-full`} data-testid={`media-${item.rating_key}`}>
+      <div className="aspect-[2/3] relative overflow-hidden bg-gray-900">
+        {busted ? (
+          <img src={busted} alt={item.title}
+            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            loading="lazy" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-700">
+            <FilmStrip size={32} />
+          </div>
+        )}
+        {item.duration > 0 && (
+          <div className="absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300">{formatDuration(item.duration)}</div>
+        )}
       </div>
-    </div>
-  </button>
-);
+      <div className="p-2">
+        <div className="text-xs font-bold truncate">{item.title}</div>
+        <div className="text-[10px] text-gray-500 truncate">
+          {item.year}{item.parent_title ? ` | ${item.parent_title}` : ""}{item.grandparent_title ? ` | ${item.grandparent_title}` : ""}
+        </div>
+      </div>
+    </button>
+  );
+};
 
 export default Mediathek;
