@@ -400,6 +400,140 @@ async def delete_profile(profile_id: str, request: Request):
     return {"success": True}
 
 
+# ==================== SMARTHOME PAGE TEMPLATES (NEW) ====================
+# Named reusable layouts. Each page has ordered sections, each section has
+# ordered devices with widget type + display size. Assigned to users via
+# users.sh_page_id — overrides the old flat builder config.
+
+import uuid as _uuid
+
+
+def _section_clean(sec: dict) -> dict:
+    """Sanitize one section payload from the admin UI."""
+    items = []
+    for it in sec.get("items", []) or []:
+        eid = (it.get("entity_id") or "").strip()
+        if not eid:
+            continue
+        items.append({
+            "entity_id": eid,
+            "widget": it.get("widget") or "auto",
+            "size": it.get("size") or "normal",  # normal | wide | tall | full
+        })
+    return {
+        "id": sec.get("id") or f"sec-{_uuid.uuid4().hex[:8]}",
+        "title": (sec.get("title") or "").strip() or "Sektion",
+        "room_id": sec.get("room_id") or None,
+        "layout": sec.get("layout") or "grid-2",  # grid-1|grid-2|grid-3|list
+        "items": items,
+    }
+
+
+@router.get("/pages")
+async def list_pages(request: Request):
+    """Admin: list all reusable SmartHome page templates."""
+    await require_admin(request)
+    pages = await db.sh_pages.find({}, {"_id": 0}).sort("name", 1).to_list(200)
+    return pages
+
+
+@router.post("/pages")
+async def create_page(request: Request, body: dict = Body(...)):
+    """Admin: create a new page template."""
+    await require_admin(request)
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Name ist Pflicht")
+    page = {
+        "id": f"page-{_uuid.uuid4().hex[:10]}",
+        "name": name,
+        "description": (body.get("description") or "").strip(),
+        "sections": [_section_clean(s) for s in (body.get("sections") or [])],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.sh_pages.insert_one(page)
+    page.pop("_id", None)
+    return page
+
+
+@router.put("/pages/{page_id}")
+async def update_page(page_id: str, request: Request, body: dict = Body(...)):
+    """Admin: update a page template (name, sections, ordering)."""
+    await require_admin(request)
+    existing = await db.sh_pages.find_one({"id": page_id})
+    if not existing:
+        raise HTTPException(404, "Seite nicht gefunden")
+    update = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if "name" in body:
+        n = (body["name"] or "").strip()
+        if n:
+            update["name"] = n
+    if "description" in body:
+        update["description"] = (body["description"] or "").strip()
+    if "sections" in body:
+        update["sections"] = [_section_clean(s) for s in (body["sections"] or [])]
+    await db.sh_pages.update_one({"id": page_id}, {"$set": update})
+    updated = await db.sh_pages.find_one({"id": page_id}, {"_id": 0})
+    return updated
+
+
+@router.delete("/pages/{page_id}")
+async def delete_page(page_id: str, request: Request):
+    """Admin: delete a page template + unassign from all users."""
+    await require_admin(request)
+    result = await db.sh_pages.delete_one({"id": page_id})
+    # Unassign from any users
+    await db.users.update_many({"sh_page_id": page_id}, {"$unset": {"sh_page_id": ""}})
+    return {"success": True, "deleted": result.deleted_count}
+
+
+@router.put("/users/{user_id}/assign-page")
+async def assign_page_to_user(user_id: str, request: Request, body: dict = Body(...)):
+    """Admin: assign a page (or clear with page_id=null) to a user."""
+    await require_admin(request)
+    page_id = body.get("page_id")
+    if page_id:
+        # Verify page exists
+        exists = await db.sh_pages.find_one({"id": page_id})
+        if not exists:
+            raise HTTPException(404, "Seite nicht gefunden")
+        await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"sh_page_id": page_id}})
+    else:
+        await db.users.update_one({"_id": ObjectId(user_id)}, {"$unset": {"sh_page_id": ""}})
+    return {"success": True, "user_id": user_id, "page_id": page_id}
+
+
+@router.get("/my-page")
+async def get_my_page(request: Request):
+    """Return the page template assigned to the current user, if any.
+    Also enriches device items with their current state from the devices collection.
+    """
+    user = await get_current_user(request)
+    page_id = user.get("sh_page_id")
+    if not page_id:
+        return {"page": None}
+    page = await db.sh_pages.find_one({"id": page_id}, {"_id": 0})
+    if not page:
+        return {"page": None}
+    # Enrich each item with device data
+    all_eids = {it["entity_id"] for sec in page.get("sections", []) for it in sec.get("items", [])}
+    devices = {}
+    if all_eids:
+        async for dev in db.devices.find({"entity_id": {"$in": list(all_eids)}}, {"_id": 0}):
+            devices[dev["entity_id"]] = dev
+    for sec in page.get("sections", []):
+        enriched = []
+        for it in sec.get("items", []):
+            dev = devices.get(it["entity_id"])
+            if dev:
+                merged = {**dev, **it}
+                merged["_perm"] = {"controllable": True, "automation_allowed": True, "voice_allowed": True}
+                enriched.append(merged)
+        sec["items"] = enriched
+    return {"page": page}
+
+
 # ==================== SMARTHOME BUILDER ====================
 
 @router.get("/builder/{user_id}")

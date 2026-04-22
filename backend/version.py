@@ -30,6 +30,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "7.0", "date": "2026-04-21", "notes": "SmartHome Seiten-Templates: Admin erstellt benannte Seiten mit Drag&Drop-Sektionen (Titel/Raum/Layout/Geräte), weist User zu. User sieht exakt die zugewiesene Seite."},
     {"version": "6.5", "date": "2026-04-21", "notes": "Fix: LCARS-Sidebar-Klicks hatten keinen onClick-Handler → jetzt spielen alle Nav-Klicks im Star-Trek-Theme den Ton"},
     {"version": "6.4", "date": "2026-04-21", "notes": "LCARS-Click-Sound hörbar gemacht (2-Ton statt 1-Ton, Volume+Duration erhöht)"},
     {"version": "6.3", "date": "2026-04-21", "notes": "Sound-Klicks bei JEDEM Menü-Klick (passend zum Theme) + User-Account-Toggle persistiert in DB (sound_effects_enabled)"},

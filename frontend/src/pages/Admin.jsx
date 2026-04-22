@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
+import ShPagesBuilder from "@/components/ShPagesBuilder";
 import { toast } from "sonner";
 import {
   Plus, Trash, PencilSimple, Check, X, House, Lightbulb, Power,
@@ -657,6 +658,7 @@ const Admin = () => {
     { id: "rooms", label: isLcars ? "RÄUME" : "Räume" },
     { id: "devices", label: isLcars ? "GERÄTE" : "Geräte" },
     { id: "builder", label: isLcars ? "SH-BUILDER" : "SmartHome Builder" },
+    { id: "sh-pages", label: isLcars ? "SH-SEITEN" : "SmartHome Seiten" },
     { id: "permissions", label: isLcars ? "FREIGABEN" : "Freigaben" },
     { id: "profiles", label: isLcars ? "PROFILE" : "Profile" },
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
@@ -922,6 +924,19 @@ const Admin = () => {
         </div>
       )}
 
+
+      {/* ==================== SMARTHOME SEITEN TAB (NEW: Page Templates) ==================== */}
+      {activeTab === "sh-pages" && (
+        <ShPagesBuilder
+          isLcars={isLcars}
+          cardClass={cardClass}
+          btnClass={btnClass}
+          inputClass={inputClass}
+          users={users}
+          devices={devices}
+          rooms={rooms}
+        />
+      )}
 
       {/* ==================== SMARTHOME BUILDER TAB ==================== */}
       {activeTab === "builder" && (

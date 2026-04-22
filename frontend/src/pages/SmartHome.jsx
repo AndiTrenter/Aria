@@ -133,6 +133,7 @@ const SmartHome = () => {
   const { user } = useAuth();
   const { theme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
+  const [customPage, setCustomPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
@@ -141,6 +142,13 @@ const SmartHome = () => {
 
   const fetchDashboard = useCallback(async () => {
     try {
+      // First, check if admin assigned a custom page template to this user
+      const pageResp = await axios.get(`${API}/smarthome/my-page`).catch(() => ({ data: { page: null } }));
+      if (pageResp.data?.page) {
+        setCustomPage(pageResp.data.page);
+      } else {
+        setCustomPage(null);
+      }
       const { data } = await axios.get(`${API}/smarthome/dashboard`);
       setDashboard(data);
       if (!activeRoom && data.rooms.length > 0) {
@@ -236,6 +244,11 @@ const SmartHome = () => {
         <h2 className={`${isLcars ? "text-lg tracking-widest text-[var(--lcars-orange)]" : "disney-title text-2xl font-bold"}`}>
           {isLcars ? "SMART HOME CONTROL" : "Smart Home"}
         </h2>
+        {customPage && (
+          <span className={`text-xs px-2 py-0.5 rounded ${isLcars ? "bg-[var(--lcars-orange)]/20 text-[var(--lcars-orange)] tracking-wider" : "bg-purple-700/30 text-purple-200"}`} data-testid="sh-custom-page-badge">
+            {customPage.name}
+          </span>
+        )}
         <div className="flex items-center gap-2 ml-2">
           {dashboard?.ha_connected ? (
             <span className="flex items-center gap-1 text-xs text-green-400"><WifiHigh size={14} /> {isLcars ? "HA VERBUNDEN" : "Verbunden"}</span>
@@ -253,6 +266,60 @@ const SmartHome = () => {
           </button>
         )}
       </div>
+
+      {/* Custom Page Template — takes priority over default dashboard */}
+      {customPage && (
+        <div className="space-y-4" data-testid="sh-custom-page">
+          {customPage.description && (
+            <p className="text-xs text-gray-500" style={{ textTransform: "none" }}>{customPage.description}</p>
+          )}
+          {(customPage.sections || []).map(sec => {
+            const gridClass = sec.layout === "grid-1" ? "grid grid-cols-1 gap-4"
+              : sec.layout === "grid-3" ? "grid grid-cols-2 md:grid-cols-3 gap-4"
+              : sec.layout === "list" ? "flex flex-col gap-2"
+              : "grid grid-cols-1 md:grid-cols-2 gap-4";
+            return (
+              <div key={sec.id} className={cardClass} data-testid={`sh-section-${sec.id}`}>
+                <h3 className={`text-sm mb-3 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                  {sec.title}
+                </h3>
+                {sec.items && sec.items.length > 0 ? (
+                  <div className={gridClass}>
+                    {sec.items.map(dev => {
+                      const sizeClass = dev.size === "wide" ? "md:col-span-2"
+                        : dev.size === "tall" ? "row-span-2"
+                        : dev.size === "full" ? "col-span-full"
+                        : "";
+                      return (
+                        <div key={dev.entity_id} className={sizeClass}>
+                          <DeviceWidget
+                            device={dev}
+                            isLcars={isLcars}
+                            onControl={handleControl}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 italic text-center py-4" style={{ textTransform: "none" }}>
+                    Keine Geräte in dieser Sektion
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {(customPage.sections || []).length === 0 && (
+            <div className={`${cardClass} text-center py-12 text-gray-500`} style={{ textTransform: "none" }}>
+              Diese Seite enthält noch keine Sektionen. Der Admin kann im SmartHome-Seiten-Editor welche hinzufügen.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Default dashboard flow — only when no custom page assigned */}
+      {!customPage && (
+      <>
 
       {/* No rooms / Not configured */}
       {(!dashboard?.rooms || dashboard.rooms.length === 0) && !dashboard?.ha_configured && (
@@ -375,6 +442,9 @@ const SmartHome = () => {
             </>
           )}
         </div>
+      )}
+
+      </>
       )}
 
       {/* PIN Dialog */}
