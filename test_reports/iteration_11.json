@@ -1,0 +1,79 @@
+{
+  "summary": "Tested SH-Seiten / SmartHome Page Templates feature (V7.0). Backend CRUD + admin gating + page-not-found handling work correctly (9/11 pytest passing). TWO CRITICAL BUGS found that completely break the end-to-end admin→assign→luzia-sees-page flow: (1) BACKEND: get_current_user in server.py:91 returns a hand-picked user dict that OMITS 'sh_page_id' — so GET /api/smarthome/my-page always returns {'page': null} even after a successful assignment; (2) FRONTEND: ShPagesBuilder.jsx:347 filters users with u.role === 'user', but luzia's role is 'kind', so she (and every non-'user' account like erwachsener/gast/wandtablet) never appears in the assignment dropdown — the UI literally shows 'Keine User-Accounts vorhanden (nur Admins).' Without fixes to both, the feature is non-functional. /api/version correctly returns 7.0.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/smarthome/my-page",
+        "issue": "Always returns {'page': null} for non-admin users because get_current_user (server.py line 91) builds the returned user dict WITHOUT 'sh_page_id'. PUT /api/smarthome/users/{id}/assign-page correctly sets users.sh_page_id in Mongo (returns {'success': true, 'user_id', 'page_id'}), but the JWT principal dict doesn't surface that field so smarthome.get_my_page's `user.get('sh_page_id')` is always None. Fix: add 'sh_page_id': user.get('sh_page_id') to the dict returned by get_current_user.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ShPagesBuilder (Admin > SH-SEITEN > 'Seite einem User zuweisen')",
+        "issue": "Assignment list filters with `u.role === 'user'` at line 347 — but luzia's role is 'kind', and other accounts may be 'erwachsener', 'gast', 'wandtablet'. None of them appear. UI renders the fallback 'Keine User-Accounts vorhanden (nur Admins).' Fix: change the filter to include all non-admin roles, e.g. `!['admin','superadmin'].includes(u.role)`.",
+        "selector": "[data-testid=page-assignments]",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Admin creates page → assigns to luzia → luzia logs in and sees custom SmartHome layout",
+        "issue": "Cannot be completed end-to-end in UI: (a) luzia is not selectable in the assign dropdown (frontend filter bug); (b) even if assigned via direct API call (confirmed via curl/pytest), /api/smarthome/my-page returns null because of the get_current_user sh_page_id omission. So luzia always falls back to the default room-tab view — sh-custom-page testid never renders.",
+        "affected_selectors": ["[data-testid=assign-select-*]", "[data-testid=sh-custom-page]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/version returns {version: '7.0'}",
+    "GET /api/smarthome/pages requires admin (401 without auth, 403 for luzia)",
+    "POST /api/smarthome/pages creates page with name+sections, returns id starting with 'page-'",
+    "POST /api/smarthome/pages without name → 400 'Name ist Pflicht'",
+    "PUT /api/smarthome/pages/{id} updates name, description, sections+items (grid-3 layout, 2 items); list confirms persistence",
+    "PUT /api/smarthome/pages/nonexistent → 404",
+    "DELETE /api/smarthome/pages/{id} removes page and list no longer contains it",
+    "PUT /api/smarthome/users/{id}/assign-page with nonexistent page_id → 404",
+    "PUT /api/smarthome/users/{id}/assign-page rejects non-admin (403)",
+    "Admin UI: SH-SEITEN tab renders sh-pages-builder, 'Neuer Seiten-Name' input + 'Neu erstellen' button, and page-assignments block"
+  ],
+  "failed_tests": [
+    "TestAssignment::test_assign_and_unassign_flow — after successful PUT assign-page, luzia's GET /my-page returns {'page': null} (expected the assigned page)",
+    "TestAssignment::test_delete_page_unassigns_users — same root cause: my-page never sees the assignment, so the 'assigned before delete' assertion fails"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_sh_pages.py",
+    "/app/test_reports/pytest/pytest_iteration11.xml"
+  ],
+  "action_items": [
+    "CRITICAL backend fix: add `'sh_page_id': user.get('sh_page_id')` to the returned dict in server.py get_current_user (around line 91). Without this, the whole my-page flow is dead.",
+    "CRITICAL frontend fix: in /app/frontend/src/components/ShPagesBuilder.jsx line 347 (and the empty-state check on line 361), replace `u.role === 'user'` with `!['admin','superadmin'].includes(u.role)` so luzia (role=kind) and other non-admin roles appear.",
+    "After both fixes: re-run pytest test_sh_pages.py — the two failing tests should pass. Also manually verify luzia sees sh-custom-page on /home after assignment."
+  ],
+  "critical_code_review_comments": [
+    "get_current_user hand-constructs the user dict with an explicit field list (server.py:91). Any new user field added elsewhere in the code (like sh_page_id here, or any future per-user config) is silently invisible to endpoints that rely on this dict. Consider returning `{**user, 'id': str(user.pop('_id'))}` or maintaining one central list of exposed fields.",
+    "assign_page_to_user uses ObjectId(user_id) without try/except — a malformed user_id will raise InvalidId and bubble as 500. Wrap to return 400.",
+    "smarthome.get_my_page enriches device data but does NOT apply user permissions — every item is forced `_perm: {controllable: True, automation_allowed: True, voice_allowed: True}`. For a child role like 'kind' this bypasses the device_permissions table. Confirm this is intentional (admin-curated page overrides permissions) or add a permission intersection step.",
+    "ShPagesBuilder.jsx line 99 deduplicates items by entity_id, but moveItem / drag-drop keys use `${it.entity_id}-${itemIdx}` — swapping two items of different entity_ids produces fresh keys so React re-mounts; harmless for now but causes focus/state loss on nested inputs.",
+    "No server-side validation that section.room_id exists in rooms collection — a stale room reference just silently shows no devices under that section filter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sh_pages.py (new — 11 pytest cases, 9 passing, 2 intentionally failing to document the bug)"
+  ],
+  "success_rate": {
+    "backend": "82% (9/11 pytest; the 2 failures are the actual sh_page_id bug)",
+    "frontend": "50% (builder UI loads and CRUD controls render, but assignment + end-to-end flow blocked by two bugs above)"
+  },
+  "test_credentials": {
+    "admin": {"email": "andi.trenter@gmail.com", "password": "Speedy@181279", "role": "superadmin"},
+    "child": {"email": "luzia@test.ch", "password": "Test1234!", "role": "kind"}
+  },
+  "seed_data_creation": "TEST_ prefixed pages are created and deleted inside each test; one leftover 'TEST_Tobe_Deleted' from the failing test was manually cleaned up via curl DELETE.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent fixes (a) server.py get_current_user to include sh_page_id and (b) ShPagesBuilder.jsx role filter, re-run `REACT_APP_BACKEND_URL=<preview-url> pytest /app/backend/tests/test_sh_pages.py -v` — all 11 should pass. Then do a Playwright E2E: admin login → Admin → SH-SEITEN → create page → add section → add item → save → assign to Luzia via dropdown → logout → login as luzia@test.ch → visit /home → assert [data-testid=sh-custom-page] visible and [data-testid=sh-custom-page-badge] shows the page name. Then unassign → luzia sees room-tab dashboard again (sh-custom-page absent). The frontend filter also needs to exclude role 'readonly' from being assigned (debatable — mirror backend role list).",
+  "rca_of_the_issue": "Two independent bugs converge on the same symptom: 1) Backend: get_current_user (server.py:73-91) returns an explicitly shaped dict that was authored before sh_page_id was introduced — any downstream `user.get('sh_page_id')` lookup is always None, so /api/smarthome/my-page short-circuits to {'page': null}. The assignment endpoint DOES persist sh_page_id correctly (verified via `await db.users.update_one({'_id': ObjectId(user_id)}, {'$set': {'sh_page_id': page_id}})`). 2) Frontend: the assignments dropdown filter was written assuming role taxonomy {'admin','user'}, but Aria's schema uses {'superadmin','admin','erwachsener','kind','gast','wandtablet','readonly'}. luzia is 'kind'. The empty state triggers and the dropdown is unreachable. Both need fixing before any end-to-end flow can succeed."
+}

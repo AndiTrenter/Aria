@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "6.5"
+ARIA_VERSION = "7.0"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
