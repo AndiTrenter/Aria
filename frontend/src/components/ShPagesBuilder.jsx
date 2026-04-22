@@ -18,6 +18,14 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState(null);
   const [newName, setNewName] = useState("");
+  const [assignments, setAssignments] = useState({}); // user_id → page_id (live)
+
+  // Seed assignments from users prop whenever users list changes
+  useEffect(() => {
+    const map = {};
+    (users || []).forEach(u => { if (u.sh_page_id) map[u.id] = u.sh_page_id; });
+    setAssignments(map);
+  }, [users]);
 
   const loadPages = async () => {
     setLoading(true);
@@ -139,6 +147,7 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
   const assignToUser = async (userId, pageId) => {
     try {
       await axios.put(`${API}/smarthome/users/${userId}/assign-page`, { page_id: pageId || null });
+      setAssignments(prev => ({ ...prev, [userId]: pageId || null }));
       toast.success(pageId ? "Seite zugewiesen" : "Zuweisung entfernt");
     } catch (e) { toast.error(formatApiError(e)); }
   };
@@ -151,6 +160,19 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
 
   return (
     <div className="space-y-4" data-testid="sh-pages-builder">
+      {/* How-To Banner */}
+      <div className={`p-3 rounded-lg text-xs leading-relaxed ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-orange)]/30 text-gray-300" : "bg-purple-950/30 border border-purple-700/40 text-purple-200"}`} style={{ textTransform: "none" }}>
+        <div className={`font-bold mb-1 ${isLcars ? "text-[var(--lcars-orange)] tracking-wider" : "text-purple-100"}`}>
+          {isLcars ? "SO FUNKTIONIERT ES" : "So funktioniert es"}
+        </div>
+        <ol className="list-decimal list-inside space-y-0.5">
+          <li>Neuen Seiten-Namen unten eingeben und "Erstellen" klicken (z.B. "Luzia").</li>
+          <li>Auf die Seite klicken (Stift-Icon) → Sektionen hinzufügen → Geräte in die Sektion ziehen.</li>
+          <li>Im Block <b>"Seite einem User zuweisen"</b> ganz unten bei Luzia die Seite "Luzia" aus der Dropdown wählen.</li>
+          <li>Luzia sieht beim Öffnen von SmartHome <b>nur</b> diese Seite — nicht mehr die Raum-Tabs.</li>
+        </ol>
+      </div>
+
       <div className={cardClass}>
         <h3 className={`text-sm mb-2 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
           {isLcars ? "SMARTHOME SEITEN-TEMPLATES" : "SmartHome Seiten-Templates"}
@@ -339,16 +361,28 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
       )}
 
       {/* User assignment */}
-      <div className={cardClass} data-testid="page-assignments">
-        <h3 className={`text-sm mb-3 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+      <div className={`${cardClass} ${isLcars ? "ring-2 ring-[var(--lcars-orange)]/40" : "ring-2 ring-purple-500/40"}`} data-testid="page-assignments">
+        <h3 className={`text-sm mb-1 flex items-center gap-2 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+          <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] ${isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-500 text-white"}`}>3</span>
           {isLcars ? "SEITE EINEM USER ZUWEISEN" : "Seite einem User zuweisen"}
         </h3>
+        <p className="text-[11px] text-gray-500 mb-3" style={{ textTransform: "none" }}>
+          Wähle rechts für jeden User die gewünschte SmartHome-Seite. Ab dann sieht dieser User ausschließlich diese Seite.
+        </p>
         <div className="space-y-1">
-          {(users || []).filter(u => !["admin", "superadmin"].includes(u.role)).map(u => (
-            <div key={u.id} className="flex items-center gap-2 px-2 py-1 rounded bg-black/20" data-testid={`assign-row-${u.id}`}>
-              <span className="flex-1 truncate text-sm" style={{ textTransform: "none" }}>{u.name || u.email}</span>
+          {(users || []).filter(u => !["admin", "superadmin"].includes(u.role)).map(u => {
+            const currentPageId = assignments[u.id] || "";
+            const assignedPage = pages.find(p => p.id === currentPageId);
+            return (
+            <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-black/20" data-testid={`assign-row-${u.id}`}>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm truncate" style={{ textTransform: "none" }}>{u.name || u.email}</div>
+                <div className="text-[10px] text-gray-500" style={{ textTransform: "none" }}>
+                  {u.role} · {assignedPage ? <span className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>→ {assignedPage.name}</span> : <span className="text-gray-600">Standard-Ansicht (Raum-Tabs)</span>}
+                </div>
+              </div>
               <select
-                defaultValue={u.sh_page_id || ""}
+                value={currentPageId}
                 onChange={e => assignToUser(u.id, e.target.value)}
                 className={`${inputClass} text-xs`}
                 style={{ textTransform: "none" }}
@@ -357,7 +391,8 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
                 {pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
-          ))}
+            );
+          })}
           {(users || []).filter(u => !["admin", "superadmin"].includes(u.role)).length === 0 && (
             <div className="text-xs text-gray-500 text-center py-3" style={{ textTransform: "none" }}>
               Keine User-Accounts vorhanden (nur Admins).

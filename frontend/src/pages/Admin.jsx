@@ -53,6 +53,7 @@ const Admin = () => {
   const { user, refreshGlobalDefaultTheme } = useAuth();
   const { theme, availableThemes } = useTheme();
   const [activeTab, setActiveTab] = useState("users");
+  const [builderSubTab, setBuilderSubTab] = useState("pages"); // "pages" = Seiten-Templates, "devices" = alte Geräte-Checkliste
   const [users, setUsers] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
@@ -658,7 +659,6 @@ const Admin = () => {
     { id: "rooms", label: isLcars ? "RÄUME" : "Räume" },
     { id: "devices", label: isLcars ? "GERÄTE" : "Geräte" },
     { id: "builder", label: isLcars ? "SH-BUILDER" : "SmartHome Builder" },
-    { id: "sh-pages", label: isLcars ? "SH-SEITEN" : "SmartHome Seiten" },
     { id: "permissions", label: isLcars ? "FREIGABEN" : "Freigaben" },
     { id: "profiles", label: isLcars ? "PROFILE" : "Profile" },
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
@@ -925,22 +925,49 @@ const Admin = () => {
       )}
 
 
-      {/* ==================== SMARTHOME SEITEN TAB (NEW: Page Templates) ==================== */}
-      {activeTab === "sh-pages" && (
-        <ShPagesBuilder
-          isLcars={isLcars}
-          cardClass={cardClass}
-          btnClass={btnClass}
-          inputClass={inputClass}
-          users={users}
-          devices={devices}
-          rooms={rooms}
-        />
-      )}
-
-      {/* ==================== SMARTHOME BUILDER TAB ==================== */}
+      {/* ==================== SMARTHOME BUILDER TAB (mit Sub-Tabs: Seiten-Templates / Geräte-Checkliste) ==================== */}
       {activeTab === "builder" && (
         <div>
+          {/* Sub-Tab Switcher */}
+          <div className="flex gap-2 mb-4 flex-wrap" data-testid="builder-subtabs">
+            <button
+              onClick={() => setBuilderSubTab("pages")}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                builderSubTab === "pages"
+                  ? isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-600 text-white"
+                  : isLcars ? "bg-[var(--lcars-purple)]/15 text-[var(--lcars-purple)] border border-[var(--lcars-purple)]/30" : "bg-purple-900/20 text-purple-400 border border-purple-800/30"
+              }`}
+              data-testid="builder-subtab-pages"
+            >
+              {isLcars ? "SEITEN-TEMPLATES (NEU)" : "Seiten-Templates (Neu)"}
+            </button>
+            <button
+              onClick={() => setBuilderSubTab("devices")}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                builderSubTab === "devices"
+                  ? isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-600 text-white"
+                  : isLcars ? "bg-[var(--lcars-purple)]/15 text-[var(--lcars-purple)] border border-[var(--lcars-purple)]/30" : "bg-purple-900/20 text-purple-400 border border-purple-800/30"
+              }`}
+              data-testid="builder-subtab-devices"
+            >
+              {isLcars ? "GERÄTE-CHECKLISTE (ALT)" : "Geräte-Checkliste (Alt)"}
+            </button>
+          </div>
+
+          {builderSubTab === "pages" && (
+            <ShPagesBuilder
+              isLcars={isLcars}
+              cardClass={cardClass}
+              btnClass={btnClass}
+              inputClass={inputClass}
+              users={users}
+              devices={devices}
+              rooms={rooms}
+            />
+          )}
+
+          {builderSubTab === "devices" && (
+            <div>
           <div className={`mb-4 p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-orange)]/20 text-gray-400" : "bg-purple-950/30 border border-purple-800/30 text-purple-300"}`}>
             {isLcars ? "SMARTHOME SEITEN-BUILDER — LEGE PRO BENUTZER FEST WELCHE GERÄTE/WIDGETS AUF DER SMARTHOME-SEITE ANGEZEIGT WERDEN." : "SmartHome Seiten-Builder — Lege pro Benutzer fest welche Geräte/Widgets auf der SmartHome-Seite angezeigt werden."}
           </div>
@@ -1037,6 +1064,8 @@ const Admin = () => {
             </div>
           )}
           {!builderUser && <div className="text-center py-12 text-gray-500">{isLcars ? "BENUTZER AUSWÄHLEN" : "Wähle einen Benutzer"}</div>}
+            </div>
+          )}
         </div>
       )}
 
