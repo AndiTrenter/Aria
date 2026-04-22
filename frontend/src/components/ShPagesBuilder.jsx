@@ -344,7 +344,7 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
           {isLcars ? "SEITE EINEM USER ZUWEISEN" : "Seite einem User zuweisen"}
         </h3>
         <div className="space-y-1">
-          {(users || []).filter(u => u.role === "user").map(u => (
+          {(users || []).filter(u => !["admin", "superadmin"].includes(u.role)).map(u => (
             <div key={u.id} className="flex items-center gap-2 px-2 py-1 rounded bg-black/20" data-testid={`assign-row-${u.id}`}>
               <span className="flex-1 truncate text-sm" style={{ textTransform: "none" }}>{u.name || u.email}</span>
               <select
@@ -358,7 +358,7 @@ const ShPagesBuilder = ({ isLcars, cardClass, btnClass, inputClass, users, devic
               </select>
             </div>
           ))}
-          {(users || []).filter(u => u.role === "user").length === 0 && (
+          {(users || []).filter(u => !["admin", "superadmin"].includes(u.role)).length === 0 && (
             <div className="text-xs text-gray-500 text-center py-3" style={{ textTransform: "none" }}>
               Keine User-Accounts vorhanden (nur Admins).
             </div>

@@ -1,0 +1,50 @@
+{
+  "summary": "RETEST of iteration_11 fixes for SH-Seiten (SmartHome Page Templates). BOTH critical bugs are now fixed. Backend pytest /app/backend/tests/test_sh_pages.py: 11/11 PASS (previously 9/11). Key regression tests TestAssignment::test_assign_and_unassign_flow and TestAssignment::test_delete_page_unassigns_users now PASS — confirming get_current_user (server.py:91) correctly surfaces sh_page_id, so GET /api/smarthome/my-page returns the assigned page for non-admin users. Frontend Playwright E2E: admin login → /admin → SH-SEITEN tab → created 'TEST_Luzia_E2E_V12' page → 'Seite einem User zuweisen' block now correctly shows LUZIA (role=kind) with testid assign-row-<id> — the empty-state 'Keine User-Accounts vorhanden' no longer renders. Dropdown lists the created page; assigning triggers 'Seite zugewiesen' toast. Un-assign via '— Standard (kein Template) —' works. /api/version correctly returns 7.1. Only the version assertion in the pytest file still referenced 7.0 — updated to 7.1 (test-only fix).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/version returns {version: '7.1', display: 'V 7.1'}",
+    "TestPagesCrud::test_list_requires_admin",
+    "TestPagesCrud::test_non_admin_cannot_list (luzia gets 403)",
+    "TestPagesCrud::test_full_crud (create → update → list verify → delete)",
+    "TestPagesCrud::test_create_requires_name (400)",
+    "TestPagesCrud::test_update_nonexistent_returns_404",
+    "TestAssignment::test_my_page_default_none (luzia with no assignment → {page: null})",
+    "TestAssignment::test_assign_and_unassign_flow — PUT assign-page then luzia GET /my-page returns the full page object; PUT with page_id=null clears it (PREVIOUSLY FAILING, NOW PASS)",
+    "TestAssignment::test_assign_nonexistent_page_returns_404",
+    "TestAssignment::test_non_admin_cannot_assign (luzia 403)",
+    "TestAssignment::test_delete_page_unassigns_users — after DELETE, luzia my-page returns null (PREVIOUSLY FAILING, NOW PASS)",
+    "Frontend UI: SH-SEITEN tab renders ShPagesBuilder with page-assignments block containing assign-row-<luzia_id> (role=kind now included)",
+    "Frontend UI: Assignment dropdown lists '— Standard (kein Template) —' and the created page; selecting it shows 'Seite zugewiesen' toast"
+  ],
+  "failed_tests": [],
+  "test_report_links": [
+    "/app/backend/tests/test_sh_pages.py",
+    "/app/test_reports/pytest/pytest_iteration12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "get_current_user (server.py:91) now includes sh_page_id. RECOMMENDATION: still consider returning `{**user, 'id': str(user['_id'])}` (drop _id) to avoid silently omitting any future field. A central serializer would prevent this class of bug.",
+    "assign_page_to_user still calls ObjectId(user_id) without try/except — a malformed user_id raises InvalidId and bubbles as 500. Wrap to return 400. (Not regressed by this fix.)",
+    "smarthome.get_my_page forces _perm={controllable,automation_allowed,voice_allowed}=True for every item — admin-curated pages bypass per-device permissions for kind/readonly. Confirm this is intentional or add a permission-intersection pass.",
+    "ShPagesBuilder.jsx role filter `!['admin','superadmin'].includes(u.role)` now correctly includes kind/erwachsener/gast/wandtablet/readonly. Minor note: a 'readonly' user could still be assigned a template — acceptable since the template is read-only-friendly.",
+    "No server-side validation that section.room_id exists in rooms collection (pre-existing, not regressed)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sh_pages.py (test assertion updated from version 7.0 → 7.1 to match ARIA_VERSION bump in /app/backend/version.py)"
+  ],
+  "success_rate": { "backend": "100% (11/11 pytest)", "frontend": "100% on the assignment flow (luzia selectable + assign + unassign + toast verified)" },
+  "test_credentials": {
+    "admin": {"email": "andi.trenter@gmail.com", "password": "Speedy@181279", "role": "superadmin"},
+    "child": {"email": "luzia@test.ch", "password": "Test1234!", "role": "kind"}
+  },
+  "seed_data_creation": "Test pages prefixed with TEST_ were created and deleted in each test. One leftover 'TEST_Luzia_E2E_V12' from Playwright was cleaned up via DELETE /api/smarthome/pages/{id}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both iteration_11 critical bugs are now verified fixed. Full backend pytest suite passes. The assignment dropdown in Admin > SH-SEITEN now correctly lists all non-admin users (role=kind/erwachsener/gast/wandtablet/readonly). Playwright note: do NOT use page.context.clear_cookies() mid-test for re-login — in this app calling clear_cookies then goto('/login') loses the input fields (likely an auth-context flicker). Instead use a fresh browser context per user or rely on logout button. I verified the luzia-side /my-page behavior via pytest (test_assign_and_unassign_flow) rather than via a second-browser-context UI login, which is equivalent.",
+  "rca_of_the_issue": "Iteration_11 had two converging bugs: (1) get_current_user hand-built a user dict missing sh_page_id → downstream /my-page always saw None; (2) ShPagesBuilder filter `u.role === 'user'` excluded luzia (role=kind). Main agent fixed both at server.py:91 and ShPagesBuilder.jsx:347+361. Verified via 11/11 pytest + UI screenshot showing luzia row with working dropdown. Only test artifact requiring update was the version assertion (7.0 → 7.1), done in this iteration."
+}

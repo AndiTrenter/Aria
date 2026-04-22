@@ -43,11 +43,11 @@ def luzia_id(admin_client):
 
 # ==================== Version ====================
 
-def test_version_is_7_0():
+def test_version_is_7_1():
     r = requests.get(f"{BASE_URL}/api/version")
     assert r.status_code == 200
     data = r.json()
-    assert data.get("version") == "7.0", f"Expected 7.0 got {data}"
+    assert data.get("version") == "7.1", f"Expected 7.1 got {data}"
 
 
 # ==================== CRUD ====================

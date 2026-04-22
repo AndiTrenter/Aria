@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "7.0"
+ARIA_VERSION = "7.1"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -30,6 +30,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "7.1", "date": "2026-04-22", "notes": "Fix SH-Seiten: (1) get_current_user gibt sh_page_id zurück, damit /my-page den zugewiesenen Template liefert. (2) Assignment-Filter im ShPagesBuilder akzeptiert alle Nicht-Admin-Rollen (kind, erwachsener, gast, wandtablet, readonly) statt nur 'user'."},
     {"version": "7.0", "date": "2026-04-21", "notes": "SmartHome Seiten-Templates: Admin erstellt benannte Seiten mit Drag&Drop-Sektionen (Titel/Raum/Layout/Geräte), weist User zu. User sieht exakt die zugewiesene Seite."},
     {"version": "6.5", "date": "2026-04-21", "notes": "Fix: LCARS-Sidebar-Klicks hatten keinen onClick-Handler → jetzt spielen alle Nav-Klicks im Star-Trek-Theme den Ton"},
     {"version": "6.4", "date": "2026-04-21", "notes": "LCARS-Click-Sound hörbar gemacht (2-Ton statt 1-Ton, Volume+Duration erhöht)"},

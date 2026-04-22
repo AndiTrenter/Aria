@@ -88,7 +88,7 @@ async def get_current_user(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="User not found")
         if not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="User is deactivated")
-        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "sound_effects_enabled": user.get("sound_effects_enabled", True), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "voice": user.get("voice", ""), "voice_pin": user.get("voice_pin", "")}
+        return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "sound_effects_enabled": user.get("sound_effects_enabled", True), "allowed_services": user.get("allowed_services", []), "service_accounts": user.get("service_accounts", {}), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "voice": user.get("voice", ""), "voice_pin": user.get("voice_pin", ""), "sh_page_id": user.get("sh_page_id")}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
