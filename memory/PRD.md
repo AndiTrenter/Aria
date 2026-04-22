@@ -322,6 +322,32 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
   - 3 E2E-Tests (Full-Flow, Sticky-Session, DB-Persistence)
   - Alle grün
 
+### Phase 12 — Themes, Sound & Versionierung (DONE 2026-04-21)
+- Multi-Theme-System: Star Trek (LCARS), Disney, Fortnite, Minesweeper
+- Theme-Submenu via React Portal (löst Sidebar-Overflow-Clipping)
+- Pro-Theme procedurale Sound-Effekte (Web Audio API, keine externen Dateien)
+- User-Default-Theme im Konto, globaler Default im Admin, Sound-Mute-Toggle (persistiert als `users.sound_effects_enabled`)
+- Settings Backup/Import + Diagnose-UI (verhindert Key-Verlust bei Volume-Reset)
+- Auto-Logout bei 401 (sauberer Redirect wenn JWT stale)
+- Versionssystem: `/app/backend/version.py` als SSOT; `/api/version` Endpoint
+
+### Phase 13 — SH-Seiten / SmartHome Page Templates (DONE 2026-04-22, V 7.1)
+- [x] Admin-Tab "SH-SEITEN" im Admin-Panel (`ShPagesBuilder.jsx`)
+  - Benannte Seiten-Templates (z.B. "Luzia's Home")
+  - Sektionen mit Titel, optional Raum-Filter, Layout-Variante (grid-1/2/3 oder Liste)
+  - Geräte-Items pro Sektion mit Größen-Varianten (normal/breit/hoch/voll)
+  - Drag & Drop + Hoch/Runter-Buttons zum Reordering von Sektionen & Items
+  - User-Assignment-Block: jede Nicht-Admin-Rolle (kind/erwachsener/gast/wandtablet/readonly) bekommt ein Dropdown mit den Templates
+- [x] Backend (`/app/backend/smarthome.py`)
+  - Collection `sh_pages` mit `{id, name, description, sections:[{id,title,room_id,layout,items:[{entity_id,widget,size}]}], created_at, updated_at}`
+  - Endpoints: `GET/POST/PUT/DELETE /api/smarthome/pages` (admin-only)
+  - `PUT /api/smarthome/users/{user_id}/assign-page` (setzt/entfernt `users.sh_page_id`)
+  - `GET /api/smarthome/my-page` (returns enriched page or `{page: null}`)
+  - `get_current_user` reicht `sh_page_id` durch (Fix in Phase 13)
+- [x] Frontend SmartHome.jsx rendert zugewiesenes Template (Sektionen, Grid-Layouts, Gerätegrößen) und fällt auf Standard-Room-Tabs zurück wenn nicht zugewiesen
+- [x] Testing: `/app/backend/tests/test_sh_pages.py` (11/11 pytest grün); Playwright E2E der Assignment-Flow validiert
+
+
 ## API Endpoints
 - Auth: POST /login, GET /me
 - Smart Home: GET/POST /smarthome/rooms, GET/POST /smarthome/devices, GET/PUT /smarthome/permissions, POST /smarthome/sync, POST /smarthome/control, GET /smarthome/dashboard
