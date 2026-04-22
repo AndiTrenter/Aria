@@ -693,6 +693,29 @@ async def get_services_health(request: Request):
     
     return health_results
 
+
+@api_router.get("/health/integrations")
+async def get_integrations_health(request: Request):
+    """Quick-Check aller Aria-Fach-Dienste (Weather, HA, CaseDesk, Plex, ForgePilot, System).
+    Liefert pro Service: configured (Settings gesetzt) + reachable (Ping erfolgreich)."""
+    await get_current_user(request)
+    result = []
+    from service_router import DEFAULT_REGISTRY, check_service_available
+    for svc in DEFAULT_REGISTRY:
+        sid = svc["service_id"]
+        try:
+            available = await check_service_available(sid)
+        except Exception as e:
+            available = False
+            logger.warning(f"integrations-health {sid} failed: {e}")
+        result.append({
+            "service_id": sid,
+            "name": svc["name"],
+            "type": svc["type"],
+            "available": bool(available),
+        })
+    return result
+
 @api_router.get("/health/system")
 async def get_system_health(request: Request):
     user = await get_current_user(request)
@@ -1443,23 +1466,38 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     # Step 1a: ForgePilot Sticky-Session — wenn die letzte Assistenten-Antwort
     # aus ForgePilot kam (z.B. offene Rückfrage), leite Follow-up-Nachricht
     # automatisch wieder dorthin. So landet der Rückfrage-Dialog beim richtigen System.
+    #
+    # WICHTIG: Sticky wird gebrochen, wenn der Router die neue Nachricht eindeutig
+    # einem anderen Dienst zuordnet (casedesk/plex/weather/homeassistant/system).
+    # Sonst würden Dokumenten-/Wetter-/Smart-Home-Fragen von ForgePilot beantwortet,
+    # das dann halluziniert (z.B. Playwright-Output statt CaseDesk-Treffer).
+    NON_DEV_SERVICES = {"casedesk", "plex", "weather", "homeassistant", "system"}
+    router_picked_non_dev = any(s in NON_DEV_SERVICES for s in routed_services)
+
     last_assistant = await db.chat_messages.find_one(
         {"session_id": session_id, "role": "assistant"},
         {"_id": 0, "routed_to": 1, "forgepilot_meta": 1},
         sort=[("timestamp", -1)],
     )
-    if last_assistant:
+    if last_assistant and not router_picked_non_dev:
         meta = last_assistant.get("forgepilot_meta") or {}
         routed_to = last_assistant.get("routed_to") or []
         if "forgepilot" in routed_to and (meta.get("ask_user") or meta.get("still_running")):
             if "forgepilot" not in routed_services:
                 routed_services = ["forgepilot"] + [s for s in routed_services if s != "forgepilot"]
                 logger.info(f"Sticky ForgePilot: Follow-up auf offene Rückfrage/Arbeit → forgepilot")
+    elif last_assistant and router_picked_non_dev and "forgepilot" in routed_services:
+        # Router will explizit auf einen Fach-Dienst. Entferne forgepilot aus der Liste.
+        routed_services = [s for s in routed_services if s != "forgepilot"]
+        logger.info(f"Sticky-Break: Router routet auf {routed_services} (non-dev) → forgepilot entfernt")
 
-    # Step 1b: ForgePilot Delegation — wenn ForgePilot gebraucht wird,
-    # delegieren wir vollständig an ForgePilot (eigener autonomer Agent) und
-    # lassen Aria die Antwort freundlich umformulieren.
-    if "forgepilot" in routed_services:
+    # Step 1b: ForgePilot Delegation — wenn ForgePilot der EINZIGE gebrauchte Dienst
+    # ist (reine Code-/Dev-Frage), delegieren wir vollständig an ForgePilot und
+    # lassen Aria die Antwort freundlich umformulieren. Wenn daneben ein anderer
+    # Fach-Dienst gebraucht wird, fallen wir auf normalen Aria-Chat mit Context
+    # zurück (damit ForgePilot keine CaseDesk/Plex-Fragen übernimmt).
+    non_dev_in_route = [s for s in routed_services if s in NON_DEV_SERVICES]
+    if "forgepilot" in routed_services and not non_dev_in_route:
         forge_result = await forgepilot.query_forgepilot(message_text, session_id, user_id)
         friendly = await forgepilot.friendly_rephrase(forge_result, message_text)
 
@@ -1481,6 +1519,10 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     live_context = ""
     if routed_services:
         live_context = await gather_context_for_services(routed_services, msg_lower, message_text)
+
+    # Flag: Service wurde geroutet aber lieferte keinen Kontext → Aria muss das transparent
+    # kommunizieren statt zu halluzinieren "ich kann nicht auf Dokumente zugreifen".
+    routed_but_empty = bool(routed_services) and not live_context
     
     # Step 3: Load chat history
     history = await db.chat_messages.find({"session_id": session_id}).sort("timestamp", 1).limit(50).to_list(50)
@@ -1493,6 +1535,15 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         # Add routing info to system prompt
         if routed_services:
             system_prompt += f"\n\n[ROUTING: Diese Anfrage wurde an folgende Dienste geroutet: {', '.join(routed_services)}. Nutze die bereitgestellten Daten.]"
+        if routed_but_empty:
+            system_prompt += (
+                f"\n\n[WICHTIG: Die Dienste {', '.join(routed_services)} wurden angefragt, "
+                f"lieferten aber KEINE Treffer oder sind gerade nicht erreichbar. "
+                f"Sage das dem User EHRLICH und KURZ (z.B. 'Ich habe im Dokumentenarchiv nach "
+                f"XY gesucht, aber nichts gefunden.') statt generisch zu antworten oder zu "
+                f"behaupten du könntest keine Dokumente lesen. Biete konkret an, mit anderen "
+                f"Suchbegriffen nochmal zu suchen.]"
+            )
         
         gpt_messages = [{"role": "system", "content": system_prompt}]
         
@@ -1712,7 +1763,7 @@ async def get_chat_history(session_id: str, request: Request):
     user = await get_current_user(request)
     messages = await db.chat_messages.find(
         {"session_id": session_id, "user_id": user["id"]},
-        {"_id": 0, "role": 1, "content": 1, "timestamp": 1}
+        {"_id": 0, "role": 1, "content": 1, "timestamp": 1, "routed_to": 1}
     ).sort("timestamp", 1).to_list(100)
     return messages
 

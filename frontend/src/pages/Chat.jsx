@@ -248,16 +248,22 @@ const Chat = () => {
                     ? isLcars ? "bg-[var(--lcars-orange)]/15 border border-[var(--lcars-orange)]/30 text-[var(--lcars-orange)]" : "bg-purple-700/50 text-purple-100"
                     : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/30 text-gray-300" : "bg-purple-900/30 text-purple-200"
                 }`} style={{ textTransform: "none", letterSpacing: "normal" }}>
-                  {msg.routed_to && (
-                    <div className={`text-[10px] mb-1 flex items-center gap-1 ${isLcars ? "text-[var(--lcars-mauve)]" : "text-purple-400"}`}>
-                      <Circle size={6} weight="fill" className={msg.routed_to.includes("live-data") ? "text-cyan-400" : msg.routed_to === "home-assistant" ? "text-green-400" : "text-green-400"} />
-                      {msg.routed_to === "casedesk" ? "CaseDesk AI"
-                        : msg.routed_to === "forgepilot" ? "ForgePilot"
-                        : msg.routed_to === "home-assistant" ? "Home Assistant"
-                        : msg.routed_to.includes("live-data") ? "Aria AI + Live-Daten"
-                        : "Aria AI"}
-                    </div>
-                  )}
+                  {msg.routed_to && (Array.isArray(msg.routed_to) ? msg.routed_to.length > 0 : msg.routed_to) && (() => {
+                    const arr = Array.isArray(msg.routed_to) ? msg.routed_to : [msg.routed_to];
+                    const labelMap = { casedesk: "CaseDesk AI", forgepilot: "ForgePilot", homeassistant: "Home Assistant", "home-assistant": "Home Assistant", plex: "Plex", weather: "Wetter", system: "System", "live-data": "Aria AI + Live-Daten" };
+                    const labels = arr.map(s => labelMap[s] || s).join(" + ");
+                    const colorCls = arr.includes("forgepilot") ? "text-orange-400"
+                      : arr.includes("casedesk") ? "text-cyan-400"
+                      : arr.includes("plex") ? "text-yellow-400"
+                      : arr.includes("homeassistant") ? "text-green-400"
+                      : "text-green-400";
+                    return (
+                      <div className={`text-[10px] mb-1 flex items-center gap-1 ${isLcars ? "text-[var(--lcars-mauve)]" : "text-purple-400"}`} data-testid={`routed-to-${arr.join("-")}`}>
+                        <Circle size={6} weight="fill" className={colorCls} />
+                        {labels}
+                      </div>
+                    );
+                  })()}
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                   {/* TTS play button for assistant messages */}
                   {msg.role === "assistant" && msg.content && (

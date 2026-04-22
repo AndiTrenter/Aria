@@ -1,0 +1,56 @@
+{
+  "summary": "Backend regression for Aria v7.3 — Sticky-ForgePilot Hijack Fix + Connected-Services Health. New pytest /app/backend/tests/test_sticky_routing.py: 8 PASSED, 1 SKIPPED. Verified: (1) /api/version returns 7.3 with display 'V 7.3'; (2) NEW /api/health/integrations returns the 6 default services (weather, system, homeassistant, casedesk, plex, forgepilot) each with service_id/name/type/available, and requires auth; (3) /api/chat/history/{session_id} returns routed_to as an array; (4) STICKY-BREAK: with a seeded chat_messages doc role=assistant, routed_to=['forgepilot'], forgepilot_meta.still_running=true, sending POST /api/chat with 'Hast du meinen Lohnausweis im Archiv?' does NOT re-fire ForgePilot delegation — assistant-message count stays at 1 (the seed) and route_log shows router picked casedesk; (5) STICKY-POSITIVE: same seed but follow-up 'wie geht es weiter mit dem Bug?' correctly stays on forgepilot (delegation persists routed_to=['forgepilot']); (6) DELEGATION GUARD (unit): monkey-patched service_router.route_message → ['casedesk','forgepilot'] proves process_chat_message does NOT call forgepilot.query_forgepilot when a non-dev service is in the route. The networked mixed-route variant SKIPPED because GPT-router in this preview env consistently returns single-service routes for dual-intent prompts (cannot be forced from the outside without monkey-patching).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/chat", "issue": "When OpenAI completion fails (e.g. 401), no assistant message is persisted on the normal-chat path, so a user sees a transient 'Fehler bei der KI-Verarbeitung' but the chat history later shows no assistant turn at all. Consider persisting an error placeholder so route_log + history stay in sync."},
+      {"endpoint": "/api/chat", "issue": "Step 1 'is_ha_command' keyword detector at server.py:1719-1736 runs BEFORE the GPT router and writes its own (separate) chat_messages without a routed_to field — meaning HA commands won't show a routed_to badge in the frontend. Cosmetic but inconsistent with the fix."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "TestVersion::test_version_is_7_3",
+    "TestIntegrationsHealth::test_returns_six_default_services",
+    "TestIntegrationsHealth::test_each_entry_has_required_fields",
+    "TestIntegrationsHealth::test_requires_auth",
+    "TestChatHistoryRoutedTo::test_history_returns_routed_to_as_array",
+    "TestStickyForgePilotBreak::test_casedesk_question_breaks_forgepilot_sticky",
+    "TestStickyForgePilotKeep::test_dev_followup_keeps_forgepilot_sticky",
+    "TestForgePilotGuardUnit::test_full_delegation_skipped_for_mixed_route"
+  ],
+  "skipped_tests": [
+    "TestForgePilotDelegationGuard::test_mixed_routing_does_not_fully_delegate — GPT-router in this preview env never returns mixed list for dual-intent prompts; covered by the unit-level guard test above."
+  ],
+  "failed_tests": [],
+  "test_report_links": [
+    "/app/backend/tests/test_sticky_routing.py",
+    "/app/test_reports/pytest/sticky_routing_iteration13.xml"
+  ],
+  "action_items": [
+    "(Optional) Persist a placeholder assistant message when the OpenAI completion fails so /chat/history and the route_log don't diverge.",
+    "(Optional) Have the HA-keyword fast-path at server.py:1722-1734 also write a routed_to=['homeassistant'] field on the assistant message for badge consistency."
+  ],
+  "critical_code_review_comments": [
+    "service_router.route_message uses GPT-router with no explicit instruction that multiple services are encouraged. In practice GPT-5.4-mini collapses dual-intent prompts to a single service, which makes the mixed-route scenario hard to exercise end-to-end. If multi-service routing matters operationally, add explicit prompt examples for multi-service answers.",
+    "process_chat_message at server.py:1438-1442 returns plain strings on missing API key / module — but /api/chat returns 200 with that string in 'response'. Consider returning HTTP 503 so the frontend can render an error state instead of an assistant bubble.",
+    "Sticky-break logic correctly handles the routed_picked_non_dev case but does NOT clear forgepilot_meta.still_running on the seeded message. So if the user later sends another forgepilot-style follow-up in the same session, sticky will fire again. Acceptable, but document the lifecycle of still_running.",
+    "/api/health/integrations check_service_available silently swallows exceptions per-service. Consider returning {available:false, error:'reason'} so admins can see WHY a service is offline.",
+    "The `assert REACT_APP_BACKEND_URL.rstrip(...)` pattern in tests crashes if the env var is unset (this happened in our first run). Pre-existing pattern in test_sh_pages.py — fine but a clearer pytest.skip would be friendlier."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sticky_routing.py (NEW — 8 pytest cases + 1 monkey-patched unit test for the delegation guard)"
+  ],
+  "success_rate": {"backend": "100% (8/8 executed pytest, 1 environment-dependent SKIP covered by unit test)", "frontend": "not tested this iteration (review_request was backend-only)"},
+  "test_credentials": {
+    "admin": {"email": "andi.trenter@gmail.com", "password": "Speedy@181279", "role": "superadmin"}
+  },
+  "seed_data_creation": "Each sticky test seeds ONE assistant chat_messages doc with session_id prefix 'TEST_sticky_' + a chat_route_log entry. autouse fixture deletes both collections by regex after every test, so no leftover data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "OPENAI_API_KEY in this preview env DOES work for gpt-4o-mini / gpt-5.4-mini for the small router prompt (iteration_12 said it 401s — that was the larger chat completion only). The router consistently returns a single-service answer even for multi-intent German prompts, so the mixed-route delegation-guard E2E case is hard to force without monkey-patching. Use the unit pattern in TestForgePilotGuardUnit (monkey-patches service_router.route_message + forgepilot.query_forgepilot + get_llm_api_key) to exercise the guarded branch deterministically. The route_log collection captures the RAW router decision BEFORE sticky-break/guard logic mutates routed_services, so it cannot be used to verify the post-mutation routed list — for that, inspect either (a) the persisted assistant chat_messages doc when the message DOES persist, or (b) absence of a delegation-path doc when it does not.",
+  "rca_of_the_issue": "ForgePilot hijacked cross-domain queries because process_chat_message had two unconditional sticky/delegation paths: (1) sticky re-added forgepilot to routed_services whenever the previous assistant turn had forgepilot_meta.still_running, regardless of what the new message was about; (2) any presence of forgepilot in routed_services triggered full delegation with friendly_rephrase, returning Playwright/dev output for CaseDesk/Weather questions. Fix at server.py:1474-1499 introduces NON_DEV_SERVICES set + router_picked_non_dev guard for sticky, and non_dev_in_route guard for delegation. Verified: (a) sticky no longer fires when router picks a non-dev service (test_casedesk_question_breaks_forgepilot_sticky), (b) sticky still fires for genuine dev follow-ups (test_dev_followup_keeps_forgepilot_sticky), (c) delegation gated on non_dev_in_route==[] (test_full_delegation_skipped_for_mixed_route via monkey-patch). All three branches green."
+}

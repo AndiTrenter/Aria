@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "7.2"
+ARIA_VERSION = "7.3"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -30,6 +30,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "7.3", "date": "2026-04-22", "notes": "KRITISCHER FIX: Sticky-ForgePilot hijackte Cross-Domain-Queries → Dokument-/Wetter-/Smart-Home-Fragen landeten fälschlich bei ForgePilot und bekamen Dev-Output. Fix: Sticky-Session wird gebrochen, wenn Router eindeutig auf casedesk/plex/weather/homeassistant routet. ForgePilot-Volldelegation nur wenn es der EINZIGE Dienst ist. Zusätzlich: Aria sagt ehrlich wenn ein Dienst keine Treffer liefert statt zu halluzinieren. Service-Badge im Chat zeigt jetzt korrekt alle Routed-To Dienste als Liste. Neuer Endpoint /api/health/integrations für Connected-Services Status."},
     {"version": "7.2", "date": "2026-04-22", "notes": "Admin-UX: SH-Seiten ist jetzt Sub-Tab innerhalb SH-Builder (Seiten-Templates / Geräte-Checkliste). Assignment-Block hervorgehoben mit How-To-Banner und zeigt pro User live die aktuell zugewiesene Seite."},
     {"version": "7.1", "date": "2026-04-22", "notes": "Fix SH-Seiten: (1) get_current_user gibt sh_page_id zurück, damit /my-page den zugewiesenen Template liefert. (2) Assignment-Filter im ShPagesBuilder akzeptiert alle Nicht-Admin-Rollen (kind, erwachsener, gast, wandtablet, readonly) statt nur 'user'."},
     {"version": "7.0", "date": "2026-04-21", "notes": "SmartHome Seiten-Templates: Admin erstellt benannte Seiten mit Drag&Drop-Sektionen (Titel/Raum/Layout/Geräte), weist User zu. User sieht exakt die zugewiesene Seite."},
