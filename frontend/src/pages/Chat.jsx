@@ -3,6 +3,7 @@ import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
 import { PaperPlaneRight, Trash, Plus, Circle, Microphone, SpeakerHigh, Stop } from "@phosphor-icons/react";
+import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 
 const Chat = () => {
   const { user } = useAuth();
@@ -22,8 +23,8 @@ const Chat = () => {
   const isLcars = theme === "startrek";
 
   const hasSpeechAPI = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  const isSecureContext = typeof window !== "undefined" && (window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168."));
-  const canUseMic = hasSpeechAPI;
+  const micCtx = checkMicReady(); // {ok, reason, hint}
+  const canUseMic = micCtx.ok;
 
   useEffect(() => {
     axios.get(`${API}/chat/sessions`).then(r => setSessions(r.data)).catch(() => {});
@@ -76,19 +77,18 @@ const Chat = () => {
 
   // ==================== STT ====================
   const startRecording = async () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      toast.error("Spracherkennung wird in diesem Browser nicht unterstützt. Bitte Chrome oder Edge verwenden.");
+    const ready = checkMicReady();
+    if (!ready.ok) {
+      toast.error(ready.hint, { duration: 12000 });
       return;
     }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     // Request microphone permission first
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop()); // Release immediately, just needed permission
-    } catch (permErr) {
-      toast.error("Mikrofon-Zugriff verweigert. Bitte erlaube den Mikrofon-Zugriff in den Browser-Einstellungen.");
-      console.error("Mic permission error:", permErr);
+    const perm = await requestMicPermission();
+    if (!perm.ok) {
+      toast.error(perm.hint, { duration: 12000 });
+      console.error("Mic permission error:", perm.reason);
       return;
     }
 
@@ -295,16 +295,26 @@ const Chat = () => {
 
           {/* Input */}
           <div className={`p-3 border-t ${isLcars ? "border-[var(--lcars-purple)]/30" : "border-purple-800/30"}`}>
+            {!canUseMic && micCtx.reason === "insecure" && (
+              <div className={`mb-2 p-2 rounded-lg text-[11px] leading-relaxed ${isLcars ? "bg-red-950/30 border border-red-500/30 text-red-300" : "bg-red-950/30 border border-red-500/30 text-red-200"}`}
+                style={{ textTransform: "none" }}
+                data-testid="mic-insecure-banner">
+                <b>Mikrofon blockiert:</b> Aria läuft auf HTTP — Browser erlauben Mikro-Zugriff nur über HTTPS. Setze HTTPS auf (z.B. Cloudflare Tunnel oder Nginx-Proxy-Manager mit Let's Encrypt) — danach funktioniert Spracheingabe automatisch.
+              </div>
+            )}
             <div className="flex gap-2 items-center">
               {/* Mic Button - always shown */}
               <button onClick={toggleRecording}
+                disabled={!canUseMic}
                 className={`p-3 rounded-xl transition-all ${
-                  isRecording
+                  !canUseMic
+                    ? "bg-gray-800/50 text-gray-600 cursor-not-allowed"
+                    : isRecording
                     ? isLcars ? "bg-red-600 text-white animate-pulse" : "bg-red-500 text-white animate-pulse"
                     : isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)] hover:bg-[var(--lcars-purple)]/30" : "bg-purple-800/30 text-purple-400 hover:bg-purple-700/40"
                 }`}
                 data-testid="chat-mic-button"
-                title={isRecording ? "Aufnahme stoppen" : "Sprachnachricht"}
+                title={!canUseMic ? (micCtx.hint || "Mikrofon nicht verfügbar") : isRecording ? "Aufnahme stoppen" : "Sprachnachricht"}
               >
                   {isRecording ? (
                     <div className="relative">

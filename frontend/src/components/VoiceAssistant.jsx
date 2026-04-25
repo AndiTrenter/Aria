@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme, API } from "@/App";
 import axios from "axios";
+import { toast } from "sonner";
 import { Microphone, SpeakerHigh, X, Waveform } from "@phosphor-icons/react";
+import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 
 const VoiceAssistant = () => {
   const { theme } = useTheme();
@@ -171,8 +173,22 @@ const VoiceAssistant = () => {
     try { rec.start(); } catch {}
   };
 
-  const toggleVoice = () => {
+  const toggleVoice = async () => {
     if (state === "idle") {
+      // Pre-flight check: secure context + mic permission
+      const ready = checkMicReady();
+      if (!ready.ok) {
+        toast.error(ready.hint, { duration: 12000 });
+        setError(ready.hint);
+        return;
+      }
+      const perm = await requestMicPermission();
+      if (!perm.ok) {
+        toast.error(perm.hint, { duration: 12000 });
+        setError(perm.hint);
+        return;
+      }
+      setError("");
       startWakeWord();
     } else if (state === "wakeword") {
       startListening();
@@ -198,6 +214,7 @@ const VoiceAssistant = () => {
 
   const hasSpeechAPI = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   if (!hasSpeechAPI) return null;
+  const micCtx = checkMicReady(); // {ok, reason, hint}
 
   const showPanel = state !== "idle" && state !== "wakeword";
 
@@ -208,7 +225,9 @@ const VoiceAssistant = () => {
         onClick={toggleVoice}
         data-testid="voice-assistant-button"
         className={`fixed bottom-6 right-6 z-[9998] w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
-          state === "idle"
+          !micCtx.ok
+            ? "bg-red-900/60 hover:bg-red-800/70"
+            : state === "idle"
             ? isLcars ? "bg-[var(--lcars-purple)] hover:bg-[var(--lcars-mauve)]" : "bg-purple-600 hover:bg-purple-500"
             : state === "wakeword"
             ? isLcars ? "bg-[var(--lcars-blue)] animate-pulse" : "bg-blue-600 animate-pulse"
@@ -218,7 +237,7 @@ const VoiceAssistant = () => {
             ? isLcars ? "bg-[var(--lcars-salmon)]" : "bg-yellow-500"
             : isLcars ? "bg-[var(--lcars-mauve)]" : "bg-green-500"
         }`}
-        title={state === "idle" ? 'Klick zum Starten - sage dann "Aria"' : state === "wakeword" ? 'Warte auf "Aria"... (Klick = Sofort sprechen)' : ""}
+        title={!micCtx.ok ? (micCtx.hint || "Mikrofon nicht verfügbar") : state === "idle" ? 'Klick zum Starten - sage dann "Aria"' : state === "wakeword" ? 'Warte auf "Aria"... (Klick = Sofort sprechen)' : ""}
       >
         {state === "speaking" ? (
           <SpeakerHigh size={24} weight="fill" className="text-black animate-pulse" />
