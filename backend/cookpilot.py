@@ -62,15 +62,35 @@ async def get_cookpilot_settings() -> tuple[str, str]:
 
 
 async def is_available() -> bool:
+    """Cached health probe — avoids 3s blocking call on every chat request."""
     url, secret = await get_cookpilot_settings()
     if not url:
         return False
+    # Cache health result for 60s
+    try:
+        cache = await db.settings.find_one({"key": "_cookpilot_health_cache"})
+        if cache:
+            ts = cache.get("ts")
+            ok = cache.get("ok")
+            if ts and (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds() < 60:
+                return bool(ok)
+    except Exception:
+        pass
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(f"{url}/api/aria/health")
-            return r.status_code == 200
+            ok = r.status_code == 200
     except Exception:
-        return False
+        ok = False
+    try:
+        await db.settings.update_one(
+            {"key": "_cookpilot_health_cache"},
+            {"$set": {"ts": datetime.now(timezone.utc).isoformat(), "ok": ok}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+    return ok
 
 
 # ==================== SSO TOKEN CACHE ====================
@@ -250,8 +270,13 @@ async def update_user_perms(user_id: str, request: Request, body: dict = Body(..
     """Admin: set CookPilot permissions for a specific user."""
     await require_admin(request)
     from bson import ObjectId
+    from bson.errors import InvalidId
+    try:
+        oid = ObjectId(user_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(400, "Ungültige user_id")
     perms = {k: bool(body.get(k)) for k in PERM_KEYS}
-    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"cookpilot_perms": perms}})
+    await db.users.update_one({"_id": oid}, {"$set": {"cookpilot_perms": perms}})
     return {"success": True, "perms": perms}
 
 

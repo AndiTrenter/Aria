@@ -358,3 +358,21 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 - Chat: POST / (mit auto-routing zu HA/CaseDesk/System/Wetter)
 - Weather: GET /
 - Admin: users CRUD, settings (inkl. HA, CaseDesk, Wetter, OpenAI Konfiguration)
+
+### Phase 14 — CookPilot-Integration (DONE 2026-04-28, V 8.0)
+- [x] Backend `/app/backend/cookpilot.py` (~360 Zeilen): SSO via `POST /api/aria/sso` mit shared_secret + external_id, JWT 12h gecached in db.cookpilot_tokens, 13 Proxy-Endpoints (recipes/shopping/pantry/meal-plan/ai), 12 Per-User-Permissions, `is_available()` mit 60s-Health-Cache.
+- [x] Service-Router: neuer `cookpilot` Eintrag (type=kitchen) + Keyword-Fallback (kochen/rezept/einkauf/vorrat/milch/eier/poulet/wochenplan/abendessen u.v.m.). NON_DEV_SERVICES enthält cookpilot → Sticky-ForgePilot wird gebrochen.
+- [x] Chat-Context-Builder: holt Rezepte/Vorrat/Einkaufsliste/Wochenplan abhängig vom Intent
+- [x] Frontend: Sidebar-Eintrag COOKPILOT mit React-Portal-Submenü gefiltert nach User-Rechten; 6 Routes (`/cookpilot/recipes|meal-plan|shopping|pantry|chat|tablet`); CookPilotEmbed mit Iframe + SSO via `?aria_sso=<token>` + postMessage
+- [x] Admin-Tab COOKPILOT: URL + Shared-Secret + Test-Button + 12-Spalten Permissions-Matrix mit Live-Save
+- [x] Settings-Mask: cookpilot_shared_secret ist secret
+- [x] Telegram-Routing: gleicher Router → automatisch mit
+- [x] Tests: 14/14 grün (`/app/backend/tests/test_cookpilot.py`)
+
+### Backlog Phase 15 (CookPilot V2)
+- Native Quick-Action-Buttons in Chat-Replies ("Auf Einkaufsliste setzen")
+- Wandtablet-Steuerung (Admin-Setting "Standardansicht für Küchentablet")
+- Allergy-Sync mit CaseDesk (`POST /api/aria/allergies`)
+- Receipt-OCR (`POST /api/ai/parse-receipt`)
+- CookPilot-Frontend hört auf `aria-sso-token` postMessage (Code-Change auf CookPilot-Seite nötig)
+

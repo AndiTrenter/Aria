@@ -113,12 +113,13 @@ def _last_route_log(db, session_id):
 # ==================== Version ====================
 
 class TestVersion:
-    def test_version_is_7_3(self):
+    def test_version_is_at_least_7_3(self):
         r = requests.get(f"{BASE_URL}/api/version")
         assert r.status_code == 200
         data = r.json()
-        assert data.get("version") == "7.3", f"Expected 7.3 got {data}"
-        assert data.get("display") == "V 7.3"
+        # Version was bumped beyond 7.3 in subsequent releases — accept any >= 7.3
+        v = tuple(int(x) for x in str(data.get("version", "0.0")).split("."))
+        assert v >= (7, 3), f"Expected version >= 7.3, got {data}"
 
 
 # ==================== Connected-Services Health ====================
