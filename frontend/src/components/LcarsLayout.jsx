@@ -17,6 +17,23 @@ const LcarsLayout = ({ children }) => {
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
+  // CookPilot submenu state
+  const [cpMenuOpen, setCpMenuOpen] = useState(false);
+  const [cpMenuPos, setCpMenuPos] = useState({ top: 0, left: 0, width: 200 });
+  const [cpStatus, setCpStatus] = useState(null); // {configured, available, perms, is_admin}
+  const cpTriggerRef = useRef(null);
+  const cpMenuRef = useRef(null);
+
+  // Fetch CookPilot status (perms + availability) once on mount + when user changes
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    axios.get(`${API}/cookpilot/status`)
+      .then(r => { if (!cancelled) setCpStatus(r.data); })
+      .catch(() => { if (!cancelled) setCpStatus(null); });
+    return () => { cancelled = true; };
+  }, [user]);
+
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
@@ -40,6 +57,25 @@ const LcarsLayout = ({ children }) => {
       window.removeEventListener("scroll", resize, true);
     };
   }, [themeMenuOpen]);
+
+  // Close CookPilot menu on outside click
+  useEffect(() => {
+    if (!cpMenuOpen) return;
+    const handler = (e) => {
+      if (cpTriggerRef.current && cpTriggerRef.current.contains(e.target)) return;
+      if (cpMenuRef.current && cpMenuRef.current.contains(e.target)) return;
+      setCpMenuOpen(false);
+    };
+    const resize = () => setCpMenuOpen(false);
+    document.addEventListener("mousedown", handler);
+    window.addEventListener("resize", resize);
+    window.addEventListener("scroll", resize, true);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", resize, true);
+    };
+  }, [cpMenuOpen]);
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const visibleTabs = user?.visible_tabs || ["dash", "home", "chat", "weather", "account"];
@@ -99,6 +135,86 @@ const LcarsLayout = ({ children }) => {
   const handleThemePick = (id) => {
     setTheme(id);
     setThemeMenuOpen(false);
+  };
+
+  // CookPilot submenu — only show items the user has rights to
+  const cpVisible = !!cpStatus && (cpStatus.is_admin || cpStatus.perms?.visible);
+  const cpItems = (() => {
+    if (!cpVisible) return [];
+    const p = cpStatus?.perms || {};
+    const isCpAdmin = cpStatus?.is_admin;
+    const items = [];
+    if (isCpAdmin || p.recipes_view) items.push({ path: "/cookpilot/recipes", label: "REZEPTE", labelN: "Rezepte" });
+    if (isCpAdmin || p.meal_plan_view) items.push({ path: "/cookpilot/meal-plan", label: "WOCHENPLAN", labelN: "Wochenplan" });
+    if (isCpAdmin || p.shopping_view) items.push({ path: "/cookpilot/shopping", label: "EINKAUFSLISTE", labelN: "Einkaufsliste" });
+    if (isCpAdmin || p.pantry_view) items.push({ path: "/cookpilot/pantry", label: "VORRAT", labelN: "Vorrat" });
+    if (isCpAdmin || p.chat) items.push({ path: "/cookpilot/chat", label: "KOCH-CHAT", labelN: "Koch-Chat" });
+    if (isCpAdmin || p.tablet) items.push({ path: "/cookpilot/tablet", label: "KÜCHEN-TABLET", labelN: "Küchen-Tablet" });
+    return items;
+  })();
+
+  const openCpMenu = () => {
+    if (!cpTriggerRef.current) return;
+    const rect = cpTriggerRef.current.getBoundingClientRect();
+    const menuWidth = 220;
+    const menuHeight = cpItems.length * 38 + 12;
+    let top, left;
+    if (isLcars) {
+      top = rect.top;
+      left = rect.right + 4;
+      if (top + menuHeight > window.innerHeight) top = window.innerHeight - menuHeight - 8;
+    } else {
+      top = rect.bottom + 4;
+      left = rect.right - menuWidth;
+    }
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+    if (top < 8) top = 8;
+    setCpMenuPos({ top, left, width: menuWidth });
+    setCpMenuOpen(true);
+  };
+
+  const CookPilotMenuPortal = () => {
+    if (!cpMenuOpen) return null;
+    return createPortal(
+      <div
+        ref={cpMenuRef}
+        className={`fixed z-[10000] rounded-lg shadow-2xl py-1 ${
+          isLcars
+            ? "bg-[#0a0a14] border-2 border-[var(--lcars-orange)]/60"
+            : "bg-purple-950/95 backdrop-blur-lg border border-purple-500/40"
+        }`}
+        style={{ top: cpMenuPos.top, left: cpMenuPos.left, width: cpMenuPos.width }}
+        data-testid="cookpilot-submenu"
+      >
+        {cpStatus && !cpStatus.available && (
+          <div className={`text-[10px] px-3 py-1 ${isLcars ? "text-red-400" : "text-red-300"}`} style={{ textTransform: "none" }}>
+            CookPilot offline
+          </div>
+        )}
+        {cpItems.map(item => (
+          <Link
+            key={item.path}
+            to={item.path}
+            onClick={() => { onNavClick(); setCpMenuOpen(false); }}
+            className={`block px-3 py-2 text-xs transition-colors ${
+              location.pathname === item.path
+                ? isLcars ? "bg-[var(--lcars-orange)]/30 text-[var(--lcars-orange)] tracking-wider" : "bg-purple-700/60 text-purple-100"
+                : isLcars ? "text-gray-300 hover:bg-[var(--lcars-orange)]/15 hover:text-[var(--lcars-orange)] tracking-wider" : "text-purple-200 hover:bg-purple-700/40"
+            }`}
+            data-testid={`cookpilot-submenu-${item.path.replace("/cookpilot/", "")}`}
+          >
+            {isLcars ? item.label : item.labelN}
+          </Link>
+        ))}
+        {cpItems.length === 0 && (
+          <div className={`text-[11px] px-3 py-2 ${isLcars ? "text-gray-500" : "text-purple-400"}`} style={{ textTransform: "none" }}>
+            Keine Bereiche freigegeben.
+          </div>
+        )}
+      </div>,
+      document.body
+    );
   };
 
   const ThemeMenuPortal = () => {
@@ -187,6 +303,16 @@ const LcarsLayout = ({ children }) => {
                   {item.shortLabel}
                 </Link>
               ))}
+              {cpVisible && cpItems.length > 0 && (
+                <button
+                  ref={cpTriggerRef}
+                  onClick={() => { onNavClick(); cpMenuOpen ? setCpMenuOpen(false) : openCpMenu(); }}
+                  className={`${btnBase} ${location.pathname.startsWith("/cookpilot") ? activeBtn : hoverBtn} flex items-center gap-1`}
+                  data-testid="nav-cookpilot">
+                  CookPilot
+                  <CaretDown size={10} />
+                </button>
+              )}
               <button
                 ref={triggerRef}
                 onClick={() => { onNavClick(); themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu(); }}
@@ -204,6 +330,7 @@ const LcarsLayout = ({ children }) => {
         </header>
         <main>{children}</main>
         <ThemeMenuPortal />
+        <CookPilotMenuPortal />
       </div>
     );
   }
@@ -234,6 +361,17 @@ const LcarsLayout = ({ children }) => {
               {item.shortLabel}
             </Link>
           ))}
+          {cpVisible && cpItems.length > 0 && (
+            <button
+              ref={cpTriggerRef}
+              onClick={() => { onNavClick(); cpMenuOpen ? setCpMenuOpen(false) : openCpMenu(); }}
+              className={`lcars-sidebar-item w-full flex items-center justify-between gap-2 ${location.pathname.startsWith("/cookpilot") ? "active" : ""}`}
+              style={{ background: cpStatus?.available === false ? "var(--lcars-salmon)" : "var(--lcars-mauve)" }}
+              data-testid="nav-cookpilot">
+              <span>COOKPILOT</span>
+              <CaretDown size={12} />
+            </button>
+          )}
           <button
             ref={triggerRef}
             onClick={() => { onNavClick(); themeMenuOpen ? setThemeMenuOpen(false) : openThemeMenu(); }}
@@ -253,6 +391,7 @@ const LcarsLayout = ({ children }) => {
       </div>
 
       <ThemeMenuPortal />
+      <CookPilotMenuPortal />
     </div>
   );
 };

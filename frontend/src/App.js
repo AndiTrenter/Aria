@@ -17,6 +17,7 @@ import SmartHome from "@/pages/SmartHome";
 import Automations from "@/pages/Automations";
 import KioskMode from "@/pages/KioskMode";
 import Mediathek from "@/pages/Mediathek";
+import CookPilotEmbed from "@/components/CookPilotEmbed";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import LcarsLayout from "@/components/LcarsLayout";
 
@@ -309,6 +310,13 @@ const AppRouter = () => {
         <Route path="/smarthome" element={<ProtectedRoute><LcarsLayout><SmartHome /></LcarsLayout></ProtectedRoute>} />
         <Route path="/automations" element={<ProtectedRoute><LcarsLayout><Automations /></LcarsLayout></ProtectedRoute>} />
         <Route path="/mediathek" element={<ProtectedRoute><LcarsLayout><Mediathek /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="" title="Dashboard" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/recipes" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="recipes" title="Rezepte" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/meal-plan" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="meal-plan" title="Wochenplan" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/shopping" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="shopping" title="Einkaufsliste" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/pantry" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="pantry" title="Vorrat" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/chat" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="chat" title="Koch-Chat" /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/cookpilot/tablet" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="tablet" title="Küchen-Tablet" /></LcarsLayout></ProtectedRoute>} />
         <Route path="/kiosk" element={<ProtectedRoute><KioskMode /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -17,7 +17,12 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from enum import Enum
+
+# Per-request user context — used by gather_context_for_services to pass current
+# user down to per-service context builders (e.g. CookPilot needs the user for SSO).
+_current_user_ctx: ContextVar[dict | None] = ContextVar("_current_user_ctx", default=None)
 
 try:
     from openai import AsyncOpenAI
@@ -1038,7 +1043,7 @@ async def get_settings(request: Request):
     for s in settings:
         key = s["key"]
         val = s.get("value", "")
-        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token") and val:
+        if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token", "cookpilot_shared_secret") and val:
             result[key] = val[:8] + "..." + val[-4:] if len(val) > 12 else val
         else:
             result[key] = val
@@ -1051,7 +1056,7 @@ async def update_settings(request: Request, payload: dict = Body(...)):
         saved_keys = []
         for key, value in payload.items():
             # Skip masked values (already saved)
-            if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token") and value and "..." in value:
+            if key in ("openai_api_key", "weather_api_key", "ha_token", "casedesk_password", "telegram_bot_token", "plex_token", "cookpilot_shared_secret") and value and "..." in value:
                 continue
             # Ensure value is a string
             str_value = str(value) if value is not None else ""
@@ -1173,7 +1178,7 @@ async def admin_delete_service_registry(service_id: str, request: Request):
 SECRET_SETTING_KEYS = {
     "openai_api_key", "ha_token", "plex_token", "telegram_bot_token",
     "casedesk_api_key", "weather_api_key", "jwt_secret",
-    "nextcloud_password", "forgepilot_api_key",
+    "nextcloud_password", "forgepilot_api_key", "cookpilot_shared_secret",
 }
 
 
@@ -1428,11 +1433,36 @@ async def gather_context_for_services(service_ids: list, msg_lower: str, origina
         except Exception as e:
             logger.warning(f"Plex context failed: {e}")
 
+    if "cookpilot" in service_ids:
+        try:
+            import cookpilot as cookpilot_mod
+            # gather_context_for_services is called from chat handler which has user; we pass user via task-local
+            aria_user = _current_user_ctx.get()
+            if aria_user:
+                cp_context = await cookpilot_mod.get_cookpilot_context(original_message or msg_lower, aria_user)
+                if cp_context:
+                    context_parts.append(cp_context)
+        except Exception as e:
+            logger.warning(f"CookPilot context failed: {e}")
+
     return "\n\n".join(context_parts) if context_parts else ""
 
 async def process_chat_message(message_text: str, user_id: str, session_id: str = None) -> str:
     """Core chat processing with intelligent service routing."""
     msg_lower = message_text.lower()
+
+    # Resolve full user dict (used for per-service context like CookPilot SSO)
+    aria_user = None
+    try:
+        from bson import ObjectId
+        u = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
+        if u:
+            u["id"] = str(u["_id"])
+            u.pop("_id", None)
+            aria_user = u
+            _current_user_ctx.set(aria_user)
+    except Exception as e:
+        logger.debug(f"resolve user for chat: {e}")
     
     api_key = await get_llm_api_key()
     if not api_key:
@@ -1471,7 +1501,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     # einem anderen Dienst zuordnet (casedesk/plex/weather/homeassistant/system).
     # Sonst würden Dokumenten-/Wetter-/Smart-Home-Fragen von ForgePilot beantwortet,
     # das dann halluziniert (z.B. Playwright-Output statt CaseDesk-Treffer).
-    NON_DEV_SERVICES = {"casedesk", "plex", "weather", "homeassistant", "system"}
+    NON_DEV_SERVICES = {"casedesk", "plex", "weather", "homeassistant", "system", "cookpilot"}
     router_picked_non_dev = any(s in NON_DEV_SERVICES for s in routed_services)
 
     last_assistant = await db.chat_messages.find_one(
@@ -2141,6 +2171,11 @@ app.include_router(casedesk.router)
 # Initialize Plex module
 plex.init(db, get_current_user)
 app.include_router(plex.router)
+
+# Initialize CookPilot module
+import cookpilot  # noqa: E402
+cookpilot.init(db, get_current_user, require_admin)
+app.include_router(cookpilot.router)
 
 # Initialize Service Router
 service_router.init(db, get_llm_api_key)

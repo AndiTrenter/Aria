@@ -125,6 +125,12 @@ const Admin = () => {
   const [plexToken, setPlexToken] = useState("");
   const [plexStatus, setPlexStatus] = useState(null);
   const [plexTesting, setPlexTesting] = useState(false);
+  // CookPilot
+  const [cpUrl, setCpUrl] = useState("");
+  const [cpSecret, setCpSecret] = useState("");
+  const [cpStatus, setCpStatus] = useState(null);
+  const [cpTestResult, setCpTestResult] = useState(null);
+  const [cpTesting, setCpTesting] = useState(false);
 
   const VOICE_OPTIONS = [
     { id: "alloy", name: "Alloy", desc: "Neutral, freundlich" },
@@ -165,6 +171,8 @@ const Admin = () => {
       if (s.default_voice) setDefaultVoice(s.default_voice);
       if (s.telegram_bot_token) setTelegramToken(s.telegram_bot_token);
       if (s.plex_url) setPlexUrl(s.plex_url);
+      if (s.cookpilot_url) setCpUrl(s.cookpilot_url);
+      if (s.cookpilot_shared_secret) setCpSecret(s.cookpilot_shared_secret);
     } catch (e) { console.error(e); }
   }, []);
 
@@ -555,6 +563,8 @@ const Admin = () => {
     if (telegramToken) payload.telegram_bot_token = telegramToken;
     if (plexUrl) payload.plex_url = plexUrl;
     if (plexToken) payload.plex_token = plexToken;
+    if (cpUrl) payload.cookpilot_url = cpUrl;
+    if (cpSecret) payload.cookpilot_shared_secret = cpSecret;
     if (Object.keys(payload).length === 0) {
       toast.error("Keine Änderungen eingegeben");
       setSaveResult({ type: "error", msg: "Bitte zuerst Werte eingeben" });
@@ -577,6 +587,8 @@ const Admin = () => {
       if (payload.telegram_bot_token) saved.push("Telegram Bot");
       if (payload.plex_url) saved.push("Plex URL");
       if (payload.plex_token) saved.push("Plex Token");
+      if (payload.cookpilot_url) saved.push("CookPilot URL");
+      if (payload.cookpilot_shared_secret) saved.push("CookPilot Secret");
       const msg = `Gespeichert: ${saved.join(", ")}`;
       toast.success(msg);
       setSaveResult({ type: "success", msg });
@@ -590,6 +602,9 @@ const Admin = () => {
       }
       if (payload.plex_url || payload.plex_token) {
         setTimeout(() => checkPlexStatus(false), 500);
+      }
+      if (payload.cookpilot_url || payload.cookpilot_shared_secret) {
+        setTimeout(() => checkCookpilotStatus(), 500);
       }
     } catch (e) {
       const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
@@ -606,6 +621,33 @@ const Admin = () => {
   const selectedUserObj = users.find(u => u.id === selectedUser);
   const roomDevices = selectedRoom ? devices.filter(d => d.room_id === selectedRoom) : [];
   const unassignedDevices = devices.filter(d => !d.room_id);
+
+  // ==================== COOKPILOT ====================
+  const checkCookpilotStatus = async () => {
+    try {
+      const { data } = await axios.get(`${API}/cookpilot/status`);
+      setCpStatus(data);
+    } catch { setCpStatus(null); }
+  };
+  const testCookpilot = async () => {
+    setCpTesting(true);
+    setCpTestResult(null);
+    try {
+      const { data } = await axios.post(`${API}/cookpilot/test`);
+      setCpTestResult(data);
+      checkCookpilotStatus();
+    } catch (e) {
+      setCpTestResult({ ok: false, step: "exception", detail: e.response?.data?.detail || e.message });
+    } finally { setCpTesting(false); }
+  };
+  const setCpUserPerms = async (userId, perms) => {
+    try {
+      await axios.put(`${API}/cookpilot/admin/users/${userId}/perms`, perms);
+      toast.success("CookPilot-Rechte gespeichert");
+      fetchAll();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
+  };
+  useEffect(() => { if (activeTab === "cookpilot") checkCookpilotStatus(); }, [activeTab]);
 
   // SmartHome Builder handlers
   const loadBuilderConfig = async (userId) => {
@@ -664,6 +706,7 @@ const Admin = () => {
     { id: "audit", label: isLcars ? "AUDIT-LOG" : "Audit-Log" },
     { id: "services", label: isLcars ? "DIENSTE" : "Dienste" },
     { id: "router", label: isLcars ? "KI-ROUTER" : "KI-Router" },
+    { id: "cookpilot", label: isLcars ? "COOKPILOT" : "CookPilot" },
     { id: "settings", label: isLcars ? "EINSTELLUNGEN" : "Einstellungen" },
   ];
 
@@ -1485,6 +1528,122 @@ const Admin = () => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== COOKPILOT TAB ==================== */}
+      {activeTab === "cookpilot" && (
+        <div className="space-y-4" data-testid="cookpilot-admin-tab">
+          <div className={cardClass}>
+            <div className="flex items-center gap-3 mb-3">
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "COOKPILOT VERBINDUNG" : "CookPilot Verbindung"}
+              </h3>
+              {cpStatus && (
+                <span className={`text-[10px] px-2 py-0.5 rounded ${cpStatus.available ? "bg-green-700/30 text-green-300" : cpStatus.configured ? "bg-yellow-700/30 text-yellow-300" : "bg-red-700/30 text-red-300"}`}>
+                  {cpStatus.available ? `online${cpStatus.version ? " · v" + cpStatus.version : ""}` : cpStatus.configured ? "konfiguriert · offline" : "nicht konfiguriert"}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mb-3 leading-relaxed" style={{ textTransform: "none" }}>
+              Aria spricht mit CookPilot Container-zu-Container über den Aria-Endpoint <code className="text-[10px]">POST /api/aria/sso</code>. Der <b>Shared Secret</b> muss in CookPilot unter <b>Admin → Aria</b> identisch eingetragen sein.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={`text-[10px] block mb-1 ${isLcars ? "tracking-wider text-gray-400" : "text-purple-400"}`}>{isLcars ? "COOKPILOT URL" : "CookPilot URL"}</label>
+                <input value={cpUrl} onChange={e => setCpUrl(e.target.value)} placeholder="http://192.168.1.140:8010"
+                  className={`${inputClass} w-full text-xs`} style={{ textTransform: "none" }} data-testid="cookpilot-url-input" />
+              </div>
+              <div>
+                <label className={`text-[10px] block mb-1 ${isLcars ? "tracking-wider text-gray-400" : "text-purple-400"}`}>{isLcars ? "SHARED SECRET" : "Shared Secret"}</label>
+                <input type="password" value={cpSecret} onChange={e => setCpSecret(e.target.value)} placeholder="(leer lassen = unverändert)"
+                  className={`${inputClass} w-full text-xs`} style={{ textTransform: "none" }} data-testid="cookpilot-secret-input" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3 flex-wrap">
+              <button onClick={handleSaveSettings} disabled={saving} className={`${btnClass} py-1 px-3 text-xs`} data-testid="cookpilot-save">
+                {saving ? "Speichern..." : isLcars ? "SPEICHERN" : "Speichern"}
+              </button>
+              <button onClick={testCookpilot} disabled={cpTesting} className={`${btnClass} py-1 px-3 text-xs opacity-90`} data-testid="cookpilot-test">
+                {cpTesting ? "Teste..." : isLcars ? "VERBINDUNG TESTEN" : "Verbindung testen"}
+              </button>
+              {cpStatus?.available && cpUrl && (
+                <a href={cpUrl} target="_blank" rel="noreferrer" className={`${btnClass} py-1 px-3 text-xs opacity-80 inline-flex items-center`} style={{ textTransform: "none" }}>
+                  CookPilot öffnen ↗
+                </a>
+              )}
+            </div>
+            {cpTestResult && (
+              <div className={`mt-3 p-2 rounded text-xs ${cpTestResult.ok ? "bg-green-950/40 border border-green-500/30 text-green-200" : "bg-red-950/40 border border-red-500/30 text-red-200"}`} data-testid="cookpilot-test-result" style={{ textTransform: "none" }}>
+                {cpTestResult.ok ? `✓ Verbindung OK (Mapping als ${cpTestResult.role}: ${cpTestResult.user_id?.slice(0, 12)}...)` : `✗ Schritt "${cpTestResult.step}": ${cpTestResult.detail}`}
+              </div>
+            )}
+          </div>
+
+          {/* Per-User Permissions */}
+          <div className={cardClass}>
+            <h3 className={`text-sm mb-2 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+              {isLcars ? "BENUTZER-RECHTE" : "Benutzer-Rechte"}
+            </h3>
+            <p className="text-[11px] text-gray-500 mb-3" style={{ textTransform: "none" }}>
+              Pro Benutzer feinkörnig steuern, was er in CookPilot sehen und bearbeiten darf. Admins haben automatisch alle Rechte. Änderungen werden sofort gespeichert.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]" data-testid="cookpilot-perms-table">
+                <thead>
+                  <tr className={isLcars ? "text-[var(--lcars-orange)]" : "text-purple-300"}>
+                    <th className="text-left py-1 pr-2 sticky left-0 bg-inherit">User</th>
+                    {[
+                      ["visible", "Sichtbar"],
+                      ["recipes_view", "Rezepte"],
+                      ["recipes_edit", "Rez. bearb."],
+                      ["shopping_view", "Einkauf"],
+                      ["shopping_edit", "Eink. bearb."],
+                      ["pantry_view", "Vorrat"],
+                      ["pantry_edit", "Vorr. bearb."],
+                      ["meal_plan_view", "Wochenplan"],
+                      ["meal_plan_edit", "Plan bearb."],
+                      ["chat", "Koch-Chat"],
+                      ["tablet", "Tablet"],
+                      ["admin", "CP-Admin"],
+                    ].map(([k, l]) => <th key={k} className="px-1 py-1 text-center font-normal" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>{l}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.filter(u => !["admin", "superadmin"].includes(u.role)).map(u => {
+                    const cur = u.cookpilot_perms || {
+                      visible: true, recipes_view: true, recipes_edit: false,
+                      shopping_view: true, shopping_edit: true, pantry_view: true,
+                      pantry_edit: false, meal_plan_view: true, meal_plan_edit: false,
+                      chat: true, tablet: false, admin: false,
+                    };
+                    const togglePerm = (key) => {
+                      const next = { ...cur, [key]: !cur[key] };
+                      setCpUserPerms(u.id, next);
+                    };
+                    return (
+                      <tr key={u.id} className="border-t border-gray-700/30" data-testid={`cookpilot-perm-row-${u.id}`}>
+                        <td className="py-1 pr-2 sticky left-0 bg-inherit" style={{ textTransform: "none" }}>
+                          <div className="font-bold text-xs">{u.name || u.email}</div>
+                          <div className="text-[9px] text-gray-500">{u.role}</div>
+                        </td>
+                        {["visible", "recipes_view", "recipes_edit", "shopping_view", "shopping_edit", "pantry_view", "pantry_edit", "meal_plan_view", "meal_plan_edit", "chat", "tablet", "admin"].map(k => (
+                          <td key={k} className="px-1 py-1 text-center">
+                            <input type="checkbox" checked={!!cur[k]} onChange={() => togglePerm(k)}
+                              className="cursor-pointer"
+                              data-testid={`cookpilot-perm-${u.id}-${k}`} />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {users.filter(u => !["admin", "superadmin"].includes(u.role)).length === 0 && (
+                    <tr><td colSpan={13} className="text-center py-4 text-gray-500 text-xs" style={{ textTransform: "none" }}>Keine User-Accounts vorhanden (nur Admins).</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

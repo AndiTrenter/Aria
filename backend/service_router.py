@@ -74,6 +74,29 @@ DEFAULT_REGISTRY = [
             "Erstelle ein FastAPI Backend mit JWT Auth",
         ],
     },
+    {
+        "service_id": "cookpilot",
+        "name": "CookPilot",
+        "type": "kitchen",
+        "description": "Küchen-Assistent: Rezepte suchen/anlegen, Einkaufsliste verwalten, Vorrat/Lebensmittelbestand prüfen, Wochenplan/Mahlzeiten planen, Rezeptvorschläge anhand vorhandener Zutaten",
+        "capabilities": [
+            "Rezepte suchen/anzeigen/anlegen/bearbeiten",
+            "Einkaufsliste lesen, ergänzen, abhaken",
+            "Vorrat/Pantry abfragen + ergänzen",
+            "Wochenplan / Menüplan",
+            "Rezeptvorschläge aus vorhandenen Lebensmitteln",
+            "MHD/Mindestbestand-Warnungen",
+        ],
+        "example_queries": [
+            "Was kann ich heute kochen?",
+            "Füge Milch und Eier zur Einkaufsliste hinzu",
+            "Welche Lebensmittel sind noch da?",
+            "Suche ein schnelles Rezept mit Reis und Poulet",
+            "Was läuft bald ab?",
+            "Plane Abendessen für morgen",
+            "Setze Eier auf gekauft",
+        ],
+    },
 ]
 
 
@@ -123,6 +146,9 @@ async def check_service_available(service_id):
     elif service_id == "forgepilot":
         import forgepilot as fp_mod
         return await fp_mod.is_available()
+    elif service_id == "cookpilot":
+        import cookpilot as cp_mod
+        return await cp_mod.is_available()
     return False
 
 
@@ -178,6 +204,8 @@ Beispiele:
 "Hast du meinen Lohnausweis?" → {{"services": ["casedesk"], "is_simple": false}}
 "Schreibe Email an Max über die Rechnung" → {{"services": ["casedesk"], "is_simple": false}}
 "Hast du den Film Matrix?" → {{"services": ["plex"], "is_simple": false}}
+"Was kann ich heute kochen?" → {{"services": ["cookpilot"], "is_simple": false}}
+"Füge Milch zur Einkaufsliste" → {{"services": ["cookpilot"], "is_simple": false}}
 "Was ist 2+2?" → {{"services": [], "is_simple": true}}
 "Wie warm ist es und hast du neue Filme?" → {{"services": ["weather", "plex"], "is_simple": false}}"""},
                             {"role": "user", "content": message}
@@ -217,6 +245,15 @@ def _keyword_fallback(message: str, services: list) -> dict:
         "casedesk": ["email", "mail", "dokument", "rechnung", "lohn", "fall", "aufgabe", "termin", "kalender", "brief", "schreibe"],
         "plex": ["film", "serie", "musik", "plex", "schauen", "mediathek", "stream"],
         "forgepilot": ["projekt", "code", "build", "git", "entwickl", "programmier", "python", "javascript", "react", "fastapi", "bug", "debug", "funktion", "api", "frontend", "backend", "schreibe mir", "erstelle mir", "script", "skript"],
+        "cookpilot": [
+            "kochen", "koche", "rezept", "rezepte", "einkauf", "einkaufsliste", "shopping",
+            "vorrat", "vorräte", "lebensmittel", "bestand", "küche", "kueche", "backen",
+            "menü", "menu", "menüplan", "menuplan", "wochenplan", "essensplan", "mahlzeit",
+            "mhd", "mindestbestand", "abgelaufen", "läuft ab", "kassenzettel", "abendessen",
+            "frühstück", "fruehstueck", "mittagessen", "zutat", "zutaten", "milch", "eier",
+            "butter", "brot", "käse", "kaese", "wurst", "gemüse", "gemuese", "obst",
+            "fleisch", "poulet", "reis", "pasta", "nudeln", "abhaken", "gekauft",
+        ],
     }
     
     available_ids = {s["service_id"] for s in services}
