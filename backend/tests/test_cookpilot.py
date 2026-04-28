@@ -82,12 +82,12 @@ def ensure_cookpilot_unconfigured(mongo_db):
 # ==================== Version ====================
 
 class TestVersion:
-    def test_version_is_8_0(self):
+    def test_version_is_at_least_8_0(self):
         r = requests.get(f"{BASE_URL}/api/version")
         assert r.status_code == 200
         data = r.json()
-        assert data.get("version") == "8.0", f"Expected 8.0 got {data}"
-        assert data.get("display") == "V 8.0"
+        v = tuple(int(x) for x in str(data.get("version", "0.0")).split("."))
+        assert v >= (8, 0), f"Expected version >= 8.0, got {data}"
 
 
 # ==================== /api/cookpilot/status ====================

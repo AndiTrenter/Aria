@@ -411,13 +411,29 @@ async def get_cookpilot_context(message: str, aria_user: dict) -> str:
     if not token:
         return ""
 
+    def _fmt_qty(it: dict) -> str:
+        """Format a pantry/shopping item's quantity — be explicit so GPT doesn't
+        mistake the unit for the value."""
+        qty = it.get("quantity")
+        unit = (it.get("unit") or "").strip()
+        # quantity can be number, string, None
+        if qty in (None, "", 0, "0", "0.0") or (isinstance(qty, float) and qty == 0):
+            if unit:
+                return f"(Menge nicht erfasst, Einheit {unit})"
+            return "(Menge nicht erfasst)"
+        return f"{qty} {unit}".strip()
+
     headers = {"Authorization": f"Bearer {token}"}
     try:
         async with httpx.AsyncClient(timeout=6.0) as client:
             # Decide which collections to fetch based on intent
             wants_recipes = any(k in msg for k in ["rezept", "kochen", "backen", "essen", "menü", "menu", "gericht", "vorschlag"])
             wants_shopping = any(k in msg for k in ["einkauf", "einkaufsliste", "shopping", "kaufen", "besorg"])
-            wants_pantry = any(k in msg for k in ["vorrat", "vorräte", "lebensmittel", "bestand", "noch da", "abgelaufen", "mhd"])
+            wants_pantry = any(k in msg for k in [
+                "vorrat", "vorräte", "lebensmittel", "bestand", "noch da", "abgelaufen", "mhd",
+                "wieviel", "wie viel", "wieviele", "wie viele", "habe ich", "haben wir",
+                "hab ich", "ist noch", "sind noch", "im kühlschrank", "im kuehlschrank",
+            ])
             wants_meal_plan = any(k in msg for k in ["wochenplan", "menüplan", "menuplan", "essensplan", "wochen", "morgen", "übermorgen"])
 
             # If unspecific cooking question, fetch recipes + pantry as defaults
@@ -444,14 +460,27 @@ async def get_cookpilot_context(message: str, aria_user: dict) -> str:
                     r = await client.get(f"{url}/api/pantry", headers=headers)
                     if r.status_code == 200:
                         items = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
-                        if items:
+                        # If the user asks about a specific item ("wieviel milch"), filter to it
+                        focus_keywords = [w for w in msg.replace("?", "").replace(",", " ").split() if len(w) >= 4 and w not in {"wieviel", "wie viel", "wieviele", "haben", "habe", "hast", "noch", "vorrat", "lebensmittel", "ist", "sind", "vom", "von", "mit", "ohne", "auf", "den", "die", "das", "dem", "der", "ein", "eine", "einen", "einer", "kühlschrank", "kuehlschrank"}]
+                        focused = []
+                        for fk in focus_keywords:
+                            for it in items:
+                                if fk in (it.get("name") or "").lower():
+                                    focused.append(it)
+                        if focused:
+                            parts.append(f"\n--- CookPilot Vorrat (Treffer für deine Frage: {len(focused)}) ---")
+                            for it in focused[:10]:
+                                name = it.get("name", "?")
+                                exp = it.get("expires_at") or it.get("best_before") or ""
+                                parts.append(f"- {name}: {_fmt_qty(it)}" + (f" (MHD: {str(exp)[:10]})" if exp else ""))
+                        elif items:
                             parts.append(f"\n--- CookPilot Vorrat ({len(items)} Positionen) ---")
                             for it in items[:15]:
                                 name = it.get("name", "?")
-                                qty = it.get("quantity", "")
-                                unit = it.get("unit", "")
                                 exp = it.get("expires_at") or it.get("best_before") or ""
-                                parts.append(f"- {name}: {qty} {unit}".strip() + (f" (MHD: {str(exp)[:10]})" if exp else ""))
+                                parts.append(f"- {name}: {_fmt_qty(it)}" + (f" (MHD: {str(exp)[:10]})" if exp else ""))
+                        else:
+                            parts.append("\n--- CookPilot Vorrat: leer ---")
                 except Exception as e:
                     logger.debug(f"cp pantry fetch: {e}")
 
@@ -464,7 +493,7 @@ async def get_cookpilot_context(message: str, aria_user: dict) -> str:
                         if open_items:
                             parts.append(f"\n--- CookPilot Einkaufsliste (offen: {len(open_items)}) ---")
                             for it in open_items[:20]:
-                                parts.append(f"- {it.get('name', '?')}" + (f" ({it.get('quantity', '')} {it.get('unit', '')})".rstrip() if it.get('quantity') else ""))
+                                parts.append(f"- {it.get('name', '?')}: {_fmt_qty(it)}")
                 except Exception as e:
                     logger.debug(f"cp shopping fetch: {e}")
 
