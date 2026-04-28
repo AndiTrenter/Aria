@@ -24,6 +24,14 @@ const LcarsLayout = ({ children }) => {
   const cpTriggerRef = useRef(null);
   const cpMenuRef = useRef(null);
 
+  // Aria version (shown in sidebar footer / top-nav)
+  const [ariaVersion, setAriaVersion] = useState("");
+  useEffect(() => {
+    axios.get(`${API}/version`)
+      .then(r => setAriaVersion(r.data?.display || ""))
+      .catch(() => {});
+  }, []);
+
   // Fetch CookPilot status (perms + availability) once on mount + when user changes
   useEffect(() => {
     if (!user) return;
@@ -293,6 +301,11 @@ const LcarsLayout = ({ children }) => {
         <header className="disney-header py-3 px-6 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto flex items-center gap-3">
             <Link to="/" className="disney-title text-xl font-bold">Aria</Link>
+            {ariaVersion && (
+              <span className="text-[10px] opacity-70 px-1.5 py-0.5 rounded border border-current/30" data-testid="aria-version" style={{ textTransform: "none" }}>
+                {ariaVersion}
+              </span>
+            )}
             <span className="text-xs opacity-70">{clock.toLocaleDateString("de-DE")} {clock.toLocaleTimeString("de-DE")}</span>
             <div className="flex-1" />
             <nav className="flex gap-1 flex-wrap items-center">
@@ -336,7 +349,7 @@ const LcarsLayout = ({ children }) => {
   }
 
   // ============ LCARS LAYOUT (Star Trek) ============
-  const stardate = `${clock.toLocaleDateString("de-DE")} ${clock.toLocaleTimeString("de-DE")} | STARDATE ${Math.floor(Date.now() / 86400000)}`;
+  const stardate = `${clock.toLocaleDateString("de-DE")} ${clock.toLocaleTimeString("de-DE")} | STARDATE ${Math.floor(Date.now() / 86400000)}${ariaVersion ? " | ARIA " + ariaVersion : ""}`;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -383,6 +396,11 @@ const LcarsLayout = ({ children }) => {
           </button>
           <div className="lcars-sidebar-spacer" />
           <div className="lcars-sidebar-bottom" />
+          {ariaVersion && (
+            <div className="px-2 py-2 text-[10px] tracking-widest text-center text-[var(--lcars-orange)]/70" data-testid="aria-version" style={{ textTransform: "none" }}>
+              ARIA {ariaVersion}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto">

@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "8.1"
+ARIA_VERSION = "8.2"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -31,6 +31,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "8.2", "date": "2026-04-28", "notes": "CookPilot Field-Mapping Fix: CookPilot verwendet 'amount' (nicht 'quantity') und 'checked' (nicht 'bought'). Aria's _fmt_qty akzeptiert jetzt amount/quantity/qty/menge in dieser Reihenfolge — Vorrat/Einkaufsliste-Items mit Menge werden jetzt korrekt als '0.3 Liter' angezeigt. Shopping-Filter erkennt 'checked' UND 'bought' (forward-compat). Proxy-Endpoints für PATCH /pantry/{id}, POST /pantry/{id}/adjust, POST /shopping/{id}/toggle hinzugefügt. Aria-Version jetzt im LCARS-Header (neben Stardate), Disney-Topbar (neben Datum) und LCARS-Sidebar-Footer sichtbar."},
     {"version": "8.1", "date": "2026-04-28", "notes": "CookPilot Chat-Context Fix: (1) Vorrat-Items mit fehlender Menge werden klar als '(Menge nicht erfasst, Einheit X)' formatiert statt '- Milch: Liter' (was GPT als Wert='Liter' missverstand). (2) Pantry-Intent-Keywords erweitert: 'wieviel/wie viel/haben wir/habe ich/im kühlschrank' triggert jetzt CookPilot-Vorrat-Lookup. (3) Wenn der User nach einem konkreten Item fragt ('wieviel milch') wird der Vorrat danach gefiltert und als 'Treffer für deine Frage' zurückgegeben — GPT bekommt nicht mehr 15 unrelevante Items. (4) Einkaufsliste-Formatter verwendet jetzt denselben sauberen Quantity-Formatter."},
     {"version": "8.0", "date": "2026-04-28", "notes": "CookPilot-Integration (Phase 1): neuer Backend-Modul cookpilot.py mit SSO-Token-Handshake (POST /api/aria/sso, X-Aria-Secret), Proxy-Endpoints für Rezepte/Einkaufsliste/Vorrat/Wochenplan, Per-User-Permissions (12 Rechte). Service-Router erkennt Kochen/Rezept/Einkauf/Vorrat-Anfragen und routet automatisch — funktioniert in Chat, Sprache und Telegram. Aria Frontend: neuer Sidebar-Tab CookPilot mit Submenü gefiltert nach User-Rechten + Iframe-Pages für jeden Bereich. Admin-Tab DIENSTE → COOKPILOT für URL/Shared-Secret/Test."},
     {"version": "7.4", "date": "2026-04-22", "notes": "Mikrofon-UX bei HTTP: Klare Fehlermeldung statt stiller Block. Roter Mikro-Button + Banner über Chat-Eingabe + 12s Toast erklären, dass Browser Mikrofon ohne HTTPS sperrt. Neuer Helper /utils/micReady.js prüft secure context + Permission und liefert deutsche Hint-Texte (NotAllowedError, SecurityError, NotFoundError)."},

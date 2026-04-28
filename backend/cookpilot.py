@@ -334,7 +334,14 @@ async def add_shopping(request: Request, body: dict = Body(...)):
 async def update_shopping(item_id: str, request: Request, body: dict = Body(...)):
     user = await get_current_user(request)
     _require_perm(user, "shopping_edit")
-    return await _proxy("PUT", f"/api/shopping/{item_id}", user, json_body=body)
+    return await _proxy("PATCH", f"/api/shopping/{item_id}", user, json_body=body)
+
+
+@router.post("/shopping-list/{item_id}/toggle")
+async def toggle_shopping(item_id: str, request: Request):
+    user = await get_current_user(request)
+    _require_perm(user, "shopping_edit")
+    return await _proxy("POST", f"/api/shopping/{item_id}/toggle", user)
 
 
 @router.delete("/shopping-list/{item_id}")
@@ -362,7 +369,15 @@ async def add_pantry(request: Request, body: dict = Body(...)):
 async def update_pantry(item_id: str, request: Request, body: dict = Body(...)):
     user = await get_current_user(request)
     _require_perm(user, "pantry_edit")
-    return await _proxy("PUT", f"/api/pantry/{item_id}", user, json_body=body)
+    return await _proxy("PATCH", f"/api/pantry/{item_id}", user, json_body=body)
+
+
+@router.post("/pantry/{item_id}/adjust")
+async def adjust_pantry(item_id: str, request: Request, body: dict = Body(...)):
+    """Bump pantry amount by delta (e.g. {delta: -1} when something is consumed)."""
+    user = await get_current_user(request)
+    _require_perm(user, "pantry_edit")
+    return await _proxy("POST", f"/api/pantry/{item_id}/adjust", user, json_body=body)
 
 
 @router.delete("/pantry/{item_id}")
@@ -413,11 +428,17 @@ async def get_cookpilot_context(message: str, aria_user: dict) -> str:
 
     def _fmt_qty(it: dict) -> str:
         """Format a pantry/shopping item's quantity — be explicit so GPT doesn't
-        mistake the unit for the value."""
-        qty = it.get("quantity")
+        mistake the unit for the value. CookPilot uses 'amount' as the canonical
+        field; we also accept 'quantity' / 'qty' / 'menge' for forward-compat."""
+        qty = it.get("amount")
+        if qty in (None, ""):
+            qty = it.get("quantity")
+        if qty in (None, ""):
+            qty = it.get("qty")
+        if qty in (None, ""):
+            qty = it.get("menge")
         unit = (it.get("unit") or "").strip()
-        # quantity can be number, string, None
-        if qty in (None, "", 0, "0", "0.0") or (isinstance(qty, float) and qty == 0):
+        if qty in (None, "", 0, "0", "0.0") or (isinstance(qty, (int, float)) and qty == 0):
             if unit:
                 return f"(Menge nicht erfasst, Einheit {unit})"
             return "(Menge nicht erfasst)"
@@ -489,7 +510,8 @@ async def get_cookpilot_context(message: str, aria_user: dict) -> str:
                     r = await client.get(f"{url}/api/shopping", headers=headers)
                     if r.status_code == 200:
                         items = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
-                        open_items = [it for it in items if not it.get("bought")]
+                        # CookPilot uses 'checked'; older/forward-compat: 'bought'
+                        open_items = [it for it in items if not (it.get("checked") or it.get("bought"))]
                         if open_items:
                             parts.append(f"\n--- CookPilot Einkaufsliste (offen: {len(open_items)}) ---")
                             for it in open_items[:20]:

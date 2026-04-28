@@ -93,6 +93,27 @@ async def test_milch_with_quantity_unit_renders_normally():
 
 
 @pytest.mark.asyncio
+async def test_milch_with_amount_field_renders_correctly():
+    """REGRESSION: CookPilot returns 'amount' (not 'quantity'). Aria must
+    accept amount as primary field. Without this fix Aria would render
+    'Milch: Liter' even when CookPilot has 0.3 stored."""
+    cookpilot.db = _mock_db()
+    pantry_payload = [{"name": "Milch", "unit": "Liter", "amount": 0.3}]
+    class _Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url, headers=None, params=None):
+            return _Resp(pantry_payload if "/pantry" in url else [])
+    with patch("cookpilot.httpx.AsyncClient", lambda *a, **k: _Client()):
+        ctx = await cookpilot.get_cookpilot_context(
+            "wieviel milch haben wir?",
+            {"id": "u1", "email": "x@x", "name": "X", "role": "admin"},
+        )
+    assert "Milch: 0.3 Liter" in ctx, f"BUG: 'amount' field not honored — ctx: {ctx}"
+    assert "Menge nicht erfasst" not in ctx, f"BUG: amount=0.3 incorrectly treated as missing — ctx: {ctx}"
+
+
+@pytest.mark.asyncio
 async def test_focus_filter_isolates_specific_item():
     cookpilot.db = _mock_db()
     pantry_payload = [
