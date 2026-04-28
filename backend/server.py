@@ -1191,6 +1191,10 @@ async def admin_settings_diagnosis(request: Request):
     result = []
     for d in docs:
         key = d.get("key", "")
+        # Skip internal cache keys (prefixed with _) — they're runtime caches,
+        # not configuration keys. Showing them in the diagnose grid is misleading.
+        if key.startswith("_"):
+            continue
         val = d.get("value", "")
         is_secret = key in SECRET_SETTING_KEYS
         has_value = bool(val) and val not in ("DISABLED", "")
@@ -1219,6 +1223,8 @@ async def admin_settings_export(request: Request, include_secrets: bool = False)
     """
     await require_admin(request)
     docs = await db.settings.find({}, {"_id": 0}).to_list(500)
+    # Filter out internal cache keys (prefixed with _) from exports
+    docs = [d for d in docs if not d.get("key", "").startswith("_")]
     if not include_secrets:
         for d in docs:
             if d.get("key") in SECRET_SETTING_KEYS:
