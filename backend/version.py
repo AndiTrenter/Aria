@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "8.4"
+ARIA_VERSION = "8.5"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -31,6 +31,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "8.5", "date": "2026-04-29", "notes": "Star Wars Imperial Theme + 3 neue CookPilot-Action-Patterns: (1) Vorrat-Verbrauch '0.5 Liter Milch getrunken' → POST /pantry/{id}/adjust delta=-0.5; (2) Low-Stock-Query 'was geht zur Neige' → GET /pantry/low-stock + Aria fragt ob alles auf Einkaufsliste; (3) Rezept-zu-Liste 'setze die Zutaten für Lasagne auf die Einkaufsliste' → sucht Rezept + POST /shopping/from-recipe. Theme: pures Schwarz, Imperial-Rot (#E10600), Sterne-Hintergrund, Eckenakzente an Cards, Aurebesh-Style Typo, sharp Buttons mit Glow-Hover."},
     {"version": "8.4", "date": "2026-04-29", "notes": "KRITISCHER FIX: Aria konnte bisher nur Daten LESEN — bei 'Brot zur Einkaufsliste hinzufügen' hat GPT die Bestätigung halluziniert ohne CookPilot je aufzurufen. Jetzt: deterministische Action-Detection mit deutschen Patterns (set/füg/schreib/trag/leg X auf Einkaufsliste, X einkaufen, brauche X, ich habe X gekauft, hak X ab) parsed Items (kommagetrennt + 'und'), führt POST /api/shopping bzw. POST /shopping/{id}/toggle aus, injiziert verifiziertes Resultat in den GPT-Kontext. GPT bestätigt nur was tatsächlich passiert ist oder nennt den Fehler."},
     {"version": "8.3", "date": "2026-04-28", "notes": "Settings-Diagnose: interne Cache-Keys (Prefix '_' wie _cookpilot_health_cache) werden NICHT mehr in der Diagnose-Liste angezeigt — verhinderte fälschliches rotes X. Auch Settings-Export überspringt diese Cache-Keys, damit Backup-Dateien nur echte Config-Keys enthalten."},
     {"version": "8.2", "date": "2026-04-28", "notes": "CookPilot Field-Mapping Fix: CookPilot verwendet 'amount' (nicht 'quantity') und 'checked' (nicht 'bought'). Aria's _fmt_qty akzeptiert jetzt amount/quantity/qty/menge in dieser Reihenfolge — Vorrat/Einkaufsliste-Items mit Menge werden jetzt korrekt als '0.3 Liter' angezeigt. Shopping-Filter erkennt 'checked' UND 'bought' (forward-compat). Proxy-Endpoints für PATCH /pantry/{id}, POST /pantry/{id}/adjust, POST /shopping/{id}/toggle hinzugefügt. Aria-Version jetzt im LCARS-Header (neben Stardate), Disney-Topbar (neben Datum) und LCARS-Sidebar-Footer sichtbar."},

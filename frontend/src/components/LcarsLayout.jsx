@@ -280,21 +280,28 @@ const LcarsLayout = ({ children }) => {
     );
   };
 
-  // ============ TOP-NAV LAYOUT (Disney / Fortnite / Minesweeper) ============
+  // ============ TOP-NAV LAYOUT (Disney / Fortnite / Minesweeper / Star Wars) ============
   if (!isLcars) {
+    const isStarwars = theme === "starwars";
     const btnBase = isMinesweeper
       ? "text-xs px-3 py-0.5 rounded-none border border-transparent"
-      : "text-xs px-3 py-1.5 rounded-full";
+      : isStarwars
+        ? "text-[11px] px-3 py-1.5 rounded-sm tracking-widest uppercase"
+        : "text-xs px-3 py-1.5 rounded-full";
     const activeBtn = isMinesweeper
       ? "bg-[var(--ms-title-bar,#000080)] text-white"
-      : theme === "fortnite"
-        ? "bg-cyan-500/30 text-cyan-100"
-        : "bg-purple-600 text-white";
+      : isStarwars
+        ? "bg-[#E10600] text-white"
+        : theme === "fortnite"
+          ? "bg-cyan-500/30 text-cyan-100"
+          : "bg-purple-600 text-white";
     const hoverBtn = isMinesweeper
       ? "hover:bg-gray-300"
-      : theme === "fortnite"
-        ? "hover:bg-cyan-900/40 text-cyan-200"
-        : "text-purple-300 hover:bg-purple-800/50";
+      : isStarwars
+        ? "text-gray-300 hover:bg-[rgba(225,6,0,0.18)] hover:text-white border border-transparent hover:border-[rgba(225,6,0,0.5)]"
+        : theme === "fortnite"
+          ? "hover:bg-cyan-900/40 text-cyan-200"
+          : "text-purple-300 hover:bg-purple-800/50";
 
     return (
       <div className="min-h-screen relative z-10">

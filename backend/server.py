@@ -278,7 +278,7 @@ async def logout(response: Response):
 async def get_me(request: Request):
     return await get_current_user(request)
 
-VALID_THEMES = {"startrek", "disney", "fortnite", "minesweeper"}
+VALID_THEMES = {"startrek", "starwars", "disney", "fortnite", "minesweeper"}
 DEFAULT_GLOBAL_THEME = "startrek"
 
 

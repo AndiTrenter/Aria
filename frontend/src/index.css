@@ -1018,3 +1018,247 @@ div[style*="Made with"] {
   font-weight: bold;
 }
 
+
+/* ============================================
+ *  STAR WARS — IMPERIAL THEME
+ *  Inspired by Imperial dashboard mock: jet-black, crimson accents,
+ *  thin white-30% borders, Aurebesh-y sharp typography.
+ * ============================================ */
+.theme-starwars {
+  --sw-bg: #000000;
+  --sw-bg-2: #0a0a0c;
+  --sw-bg-3: #14141a;
+  --sw-card: rgba(20, 20, 26, 0.85);
+  --sw-card-hover: rgba(28, 28, 36, 0.95);
+  --sw-border: rgba(255, 255, 255, 0.08);
+  --sw-border-strong: rgba(255, 255, 255, 0.18);
+  --sw-text: #e6e6ea;
+  --sw-text-dim: #8a8a92;
+  --sw-text-faint: #5a5a62;
+  --sw-red: #E10600;
+  --sw-red-dim: #b30500;
+  --sw-red-glow: rgba(225, 6, 0, 0.55);
+  --sw-red-soft: rgba(225, 6, 0, 0.12);
+
+  background: var(--sw-bg);
+  color: var(--sw-text);
+  font-family: 'Rajdhani', 'Bahnschrift', 'Eurostile', 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Subtle starfield background */
+.theme-starwars::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.55), transparent 50%),
+    radial-gradient(1px 1px at 73% 31%, rgba(255,255,255,0.35), transparent 50%),
+    radial-gradient(1.4px 1.4px at 35% 67%, rgba(255,255,255,0.45), transparent 50%),
+    radial-gradient(0.8px 0.8px at 89% 78%, rgba(255,255,255,0.4), transparent 50%),
+    radial-gradient(1px 1px at 22% 88%, rgba(255,255,255,0.3), transparent 50%),
+    radial-gradient(1.2px 1.2px at 58% 12%, rgba(255,255,255,0.5), transparent 50%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  opacity: 0.7;
+}
+
+/* Header — sharp imperial bar with thin red underline */
+.theme-starwars .disney-header {
+  background: linear-gradient(180deg, #050505 0%, #0a0a0c 100%);
+  border: none;
+  border-bottom: 1px solid var(--sw-border);
+  box-shadow: 0 1px 0 var(--sw-red-soft);
+  position: relative;
+}
+.theme-starwars .disney-header::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--sw-red) 30%, var(--sw-red) 70%, transparent);
+  opacity: 0.6;
+}
+.theme-starwars .disney-title {
+  font-family: 'Orbitron', 'Bahnschrift', 'Eurostile', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: #ffffff;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(225, 6, 0, 0.35);
+}
+
+/* Card — black with thin border + faint inner highlight */
+.theme-starwars .disney-card {
+  background: var(--sw-card);
+  border: 1px solid var(--sw-border);
+  border-radius: 6px;
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 200ms, transform 200ms, box-shadow 200ms;
+}
+.theme-starwars .disney-card::before {
+  /* corner accents */
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 28px; height: 28px;
+  border-top: 2px solid var(--sw-red);
+  border-left: 2px solid var(--sw-red);
+  opacity: 0.65;
+  pointer-events: none;
+}
+.theme-starwars .disney-card::after {
+  content: "";
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 28px; height: 28px;
+  border-bottom: 2px solid var(--sw-red);
+  border-right: 2px solid var(--sw-red);
+  opacity: 0.65;
+  pointer-events: none;
+}
+.theme-starwars .disney-card:hover {
+  border-color: var(--sw-border-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px var(--sw-red-soft), 0 8px 30px rgba(0,0,0,0.5);
+}
+
+.theme-starwars .disney-panel {
+  background: rgba(8, 8, 12, 0.85);
+  border: 1px solid var(--sw-border);
+  border-radius: 6px;
+}
+
+/* Buttons — crimson primary, ghost secondary */
+.theme-starwars .disney-button {
+  background: var(--sw-red);
+  color: #fff;
+  border: 1px solid var(--sw-red);
+  border-radius: 4px;
+  padding: 0.5rem 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  position: relative;
+  overflow: hidden;
+  transition: background 180ms, box-shadow 180ms, transform 80ms;
+}
+.theme-starwars .disney-button:hover {
+  background: var(--sw-red-dim);
+  box-shadow: 0 0 24px var(--sw-red-glow);
+}
+.theme-starwars .disney-button:active { transform: translateY(1px); }
+.theme-starwars .disney-button::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -120%;
+  width: 80%; height: 100%;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
+  transition: left 600ms;
+}
+.theme-starwars .disney-button:hover::after { left: 130%; }
+
+/* Inputs */
+.theme-starwars .disney-input,
+.theme-starwars input[type="text"],
+.theme-starwars input[type="email"],
+.theme-starwars input[type="password"],
+.theme-starwars input[type="number"],
+.theme-starwars input[type="search"],
+.theme-starwars textarea,
+.theme-starwars select {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--sw-border);
+  border-radius: 4px;
+  color: var(--sw-text);
+  padding: 0.55rem 0.85rem;
+  letter-spacing: 0.04em;
+}
+.theme-starwars .disney-input:focus,
+.theme-starwars input:focus,
+.theme-starwars textarea:focus,
+.theme-starwars select:focus {
+  outline: none;
+  border-color: var(--sw-red);
+  box-shadow: 0 0 0 1px var(--sw-red-soft);
+}
+
+/* Section / page titles in the dashboards take on Imperial styling */
+.theme-starwars h1,
+.theme-starwars h2,
+.theme-starwars h3,
+.theme-starwars h4 {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+/* "Imperial subtitle" — small red Aurebesh-style line under headings */
+.theme-starwars h1 + .imperial-stamp,
+.theme-starwars h2 + .imperial-stamp {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: var(--sw-red);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Disney glow → crimson */
+.theme-starwars .disney-glow {
+  text-shadow: 0 0 12px var(--sw-red-glow);
+}
+
+/* Top-nav buttons — pill -> sharp rectangle */
+.theme-starwars header.disney-header nav button,
+.theme-starwars header.disney-header nav a {
+  border-radius: 3px !important;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+/* CookPilot offline / red status */
+.theme-starwars .text-red-200,
+.theme-starwars .text-red-300,
+.theme-starwars .text-red-400 { color: var(--sw-red) !important; }
+.theme-starwars .bg-red-500\/30 { background: var(--sw-red-soft); }
+.theme-starwars .border-red-500\/30 { border-color: var(--sw-red); }
+
+/* Theme submenu */
+.theme-starwars .theme-submenu {
+  background: #050505;
+  border: 1px solid var(--sw-red);
+  border-radius: 4px;
+  box-shadow: 0 8px 32px rgba(225, 6, 0, 0.25);
+}
+.theme-starwars .theme-submenu-item {
+  color: var(--sw-text);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+.theme-starwars .theme-submenu-item:hover {
+  background: var(--sw-red-soft);
+  color: #ffffff;
+}
+.theme-starwars .theme-submenu-item.active {
+  background: var(--sw-red);
+  color: #fff;
+}
+
+/* Selection */
+.theme-starwars ::selection {
+  background: var(--sw-red);
+  color: #fff;
+}
+
+/* Scrollbar */
+.theme-starwars ::-webkit-scrollbar { width: 8px; height: 8px; }
+.theme-starwars ::-webkit-scrollbar-track { background: #050505; }
+.theme-starwars ::-webkit-scrollbar-thumb { background: var(--sw-red-dim); border-radius: 0; }
+.theme-starwars ::-webkit-scrollbar-thumb:hover { background: var(--sw-red); }
+

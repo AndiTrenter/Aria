@@ -512,6 +512,67 @@ def _detect_shopping_check(msg: str) -> list[str] | None:
     return None
 
 
+def _detect_pantry_consume(msg: str) -> tuple[str, float, str] | None:
+    """Detect 'I drank/ate/used X amount of Y' → (item_name, delta_negative, unit).
+    Returns (name, delta, unit) where delta is negative.
+    """
+    m = msg.lower().strip()
+    # "Ich habe 0.5 Liter Milch getrunken / aufgebraucht / verbraucht / gegessen"
+    # also "trinke", "esse", "aufgebraucht"
+    pat = (
+        r"(?:ich\s+(?:habe|hab))?\s*"
+        r"(?:gerade\s+)?"
+        r"(?P<amount>\d+(?:[.,]\d+)?)\s*"
+        r"(?P<unit>liter|l|ml|kg|g|gramm|stk|stück|stueck|packung|pkg|dose|dosen|flasche|flaschen|becher|tüte)?\s*"
+        r"(?P<name>.+?)\s+"
+        r"(?:getrunken|gegessen|aufgebraucht|verbraucht|verwendet|aufgemacht|leergemacht|leer\s+gemacht)"
+    )
+    match = re.search(pat, m)
+    if match:
+        try:
+            amount = float(match.group("amount").replace(",", "."))
+            unit = (match.group("unit") or "").strip()
+            name = match.group("name").strip()
+            # Strip leading articles
+            for w in ("ein", "eine", "einen", "einer", "der", "die", "das", "den", "dem", "etwas", "ein paar", "noch"):
+                if name.startswith(w + " "):
+                    name = name[len(w) + 1:]
+            if name:
+                return (name, -amount, unit)
+        except Exception:
+            pass
+    return None
+
+
+def _detect_low_stock_query(msg: str) -> bool:
+    """Detect 'what's running low / under min stock' read intent."""
+    m = msg.lower()
+    triggers = [
+        "unter mindestbestand", "unter dem mindestbestand", "geht zur neige",
+        "geht aus", "wird knapp", "knapp werden", "knapp", "low stock",
+        "muss nachgekauft werden", "muss eingekauft werden", "auffüllen",
+        "was muss ich noch kaufen", "was fehlt",
+    ]
+    return any(t in m for t in triggers)
+
+
+def _detect_recipe_to_shopping(msg: str) -> str | None:
+    """Detect 'add ingredients of recipe X to shopping list' intent. Returns recipe name."""
+    m = msg.lower().strip()
+    patterns = [
+        r"(?:setz(?:e)?|füg(?:e)?|schreib(?:e)?)\s+(?:die\s+)?zutaten\s+(?:für|von|f[üu]r)\s+(.+?)\s+(?:auf\s+(?:die|der)|zur|in\s+die)\s+einkaufs(?:liste)?",
+        r"(?:zutaten\s+(?:für|von)\s+(.+?))\s+(?:einkaufen|auf\s+(?:die|der)\s+einkaufsliste)",
+        r"(?:einkaufsliste\s+für\s+(.+?))\s*$",
+    ]
+    for pat in patterns:
+        match = re.search(pat, m)
+        if match:
+            name = match.group(1).strip().rstrip(".!?")
+            if name:
+                return name
+    return None
+
+
 async def try_execute_cookpilot_action(message: str, aria_user: dict) -> dict | None:
     """Detect a write-action intent in `message`. If matched, execute it
     against CookPilot and return {executed: bool, summary: str, error: str|None}.
@@ -519,6 +580,120 @@ async def try_execute_cookpilot_action(message: str, aria_user: dict) -> dict | 
     """
     perms = get_user_perms(aria_user)
     is_admin = aria_user.get("role") in ("admin", "superadmin")
+
+    async def _http_with_token(meth: str, path: str, **kw):
+        url, _ = await get_cookpilot_settings()
+        if not url:
+            return None
+        token = await _get_user_token(aria_user)
+        if not token:
+            return None
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            kw.setdefault("headers", {})
+            kw["headers"]["Authorization"] = f"Bearer {token}"
+            kw["headers"].setdefault("Content-Type", "application/json")
+            r = await client.request(meth, f"{url}{path}", **kw)
+            return r
+
+    # ---- Pantry: Consume (negative adjust) ----
+    consume = _detect_pantry_consume(message)
+    if consume:
+        if not (is_admin or perms.get("pantry_edit")):
+            return {"executed": False, "summary": "", "error": "Berechtigung 'pantry_edit' fehlt."}
+        name, delta, unit = consume
+        url, _ = await get_cookpilot_settings()
+        if not url:
+            return {"executed": False, "summary": "", "error": "CookPilot nicht konfiguriert."}
+        try:
+            r = await _http_with_token("GET", "/api/pantry")
+            if r is None or r.status_code != 200:
+                return {"executed": False, "summary": "", "error": f"Vorrat nicht ladbar ({r.status_code if r else 'no token'})"}
+            items = r.json() if isinstance(r.json(), list) else []
+            found = next((it for it in items if name.lower() in (it.get("name") or "").lower()), None)
+            if not found:
+                return {"executed": False, "summary": "", "error": f"'{name}' nicht im Vorrat gefunden."}
+            r2 = await _http_with_token("POST", f"/api/pantry/{found['id']}/adjust", json={"delta": delta})
+            if r2 is None or r2.status_code not in (200, 201):
+                return {"executed": False, "summary": "", "error": f"Adjust fehlgeschlagen ({r2.status_code if r2 else 'no resp'})"}
+            new_item = r2.json() if isinstance(r2.json(), dict) else {}
+            new_amount = new_item.get("amount", "?")
+            return {
+                "executed": True, "action": "pantry_consume",
+                "items": [name],
+                "summary": f"✓ Vorrat aktualisiert: {found.get('name', name)} = {new_amount} {found.get('unit', unit) or ''} (Veränderung {delta:+})",
+                "error": None,
+            }
+        except Exception as e:
+            return {"executed": False, "summary": "", "error": f"CookPilot Fehler: {e}"}
+
+    # ---- Low-stock query (read-action with optional auto-add) ----
+    if _detect_low_stock_query(message):
+        if not (is_admin or perms.get("pantry_view")):
+            return {"executed": False, "summary": "", "error": "Berechtigung 'pantry_view' fehlt."}
+        try:
+            r = await _http_with_token("GET", "/api/pantry/low-stock")
+            if r is None:
+                return {"executed": False, "summary": "", "error": "CookPilot nicht erreichbar."}
+            if r.status_code != 200:
+                return {"executed": False, "summary": "", "error": f"Low-stock-Liste fehlt ({r.status_code})"}
+            low = r.json() if isinstance(r.json(), list) else []
+            if not low:
+                return {
+                    "executed": True, "action": "low_stock_check",
+                    "items": [],
+                    "summary": "✓ Alles gut — kein Lebensmittel ist unter Mindestbestand.",
+                    "error": None,
+                }
+            lines = []
+            for it in low[:15]:
+                cur = it.get("amount", 0)
+                mn = it.get("min_amount", 0)
+                u = it.get("unit", "") or ""
+                lines.append(f"{it.get('name', '?')} ({cur} von {mn} {u})".strip())
+            return {
+                "executed": True, "action": "low_stock_check",
+                "items": [it.get("name", "?") for it in low],
+                "summary": "Folgendes ist unter Mindestbestand: " + "; ".join(lines)
+                           + ". Soll ich diese Items auf die Einkaufsliste setzen? (Antworte mit 'Ja, alles auf die Einkaufsliste')",
+                "error": None,
+            }
+        except Exception as e:
+            return {"executed": False, "summary": "", "error": f"CookPilot Fehler: {e}"}
+
+    # ---- Recipe → Shopping list ----
+    recipe_name = _detect_recipe_to_shopping(message)
+    if recipe_name:
+        if not (is_admin or perms.get("shopping_edit")):
+            return {"executed": False, "summary": "", "error": "Berechtigung 'shopping_edit' fehlt."}
+        try:
+            r = await _http_with_token("GET", "/api/recipes", params={"q": recipe_name})
+            if r is None or r.status_code != 200:
+                return {"executed": False, "summary": "", "error": f"Rezept-Suche fehlgeschlagen ({r.status_code if r else 'no token'})"}
+            recipes_list = r.json() if isinstance(r.json(), list) else []
+            # Find by name match (case-insensitive substring)
+            recipe = next((rec for rec in recipes_list if recipe_name.lower() in (rec.get("title") or rec.get("name") or "").lower()), None)
+            if not recipe and recipes_list:
+                recipe = recipes_list[0]  # fallback to first hit
+            if not recipe:
+                return {"executed": False, "summary": "", "error": f"Rezept '{recipe_name}' nicht gefunden."}
+            r2 = await _http_with_token(
+                "POST", "/api/shopping/from-recipe",
+                json={"recipe_id": recipe.get("id"), "servings": recipe.get("servings", 1)},
+            )
+            if r2 is None or r2.status_code not in (200, 201):
+                return {"executed": False, "summary": "", "error": f"from-recipe fehlgeschlagen ({r2.status_code if r2 else 'no resp'})"}
+            data = r2.json() if isinstance(r2.json(), dict) else {}
+            added = data.get("added", 0)
+            merged = data.get("merged", 0)
+            title = recipe.get("title") or recipe.get("name") or recipe_name
+            return {
+                "executed": True, "action": "recipe_to_shopping",
+                "items": [title],
+                "summary": f"✓ Zutaten von '{title}' auf Einkaufsliste: {added} neu, {merged} zusammengeführt.",
+                "error": None,
+            }
+        except Exception as e:
+            return {"executed": False, "summary": "", "error": f"CookPilot Fehler: {e}"}
 
     # ---- Shopping: Add ----
     items = _detect_shopping_add(message)

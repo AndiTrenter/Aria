@@ -62,6 +62,7 @@ axios.interceptors.response.use(
 
 export const AVAILABLE_THEMES = [
   { id: "startrek", label: "Star Trek LCARS", accent: "#FF9900" },
+  { id: "starwars", label: "Star Wars Imperial", accent: "#E10600" },
   { id: "disney", label: "Disney Magic", accent: "#c084fc" },
   { id: "fortnite", label: "Fortnite", accent: "#00eaff" },
   { id: "minesweeper", label: "Minesweeper 95", accent: "#000080" },
@@ -292,7 +293,7 @@ const AppRouter = () => {
     };
   }, [theme]);
 
-  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : theme === 'fortnite' ? 'bg-[#0b0d1a] text-[#00eaff]' : theme === 'minesweeper' ? 'bg-[#008080] text-black' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
+  if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : theme === 'starwars' ? 'bg-black text-[#E10600]' : theme === 'fortnite' ? 'bg-[#0b0d1a] text-[#00eaff]' : theme === 'minesweeper' ? 'bg-[#008080] text-black' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
 
   const themeClass = `theme-${THEME_IDS.includes(theme) ? theme : DEFAULT_THEME}`;
 
