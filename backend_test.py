@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 class AriaAPITester:
-    def __init__(self, base_url: str = "https://github-docker-deploy.preview.emergentagent.com"):
+    def __init__(self, base_url: str = "https://aria-hub-1.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.session = requests.Session()

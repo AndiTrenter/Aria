@@ -430,22 +430,107 @@ _STOP_WORDS = {
 
 
 def _split_items(item_str: str) -> list[str]:
-    """Split 'Brot, Milch und Butter' into ['Brot', 'Milch', 'Butter']."""
+    """Split 'Brot, Milch und Butter' into ['Brot', 'Milch', 'Butter'].
+    Preserves leading numbers/quantities so _parse_qty_unit_name() can extract them.
+    Strips only definite articles and pure filler words.
+    """
     s = item_str.strip().rstrip(".!?")
     # Split on comma OR " und " OR " sowie " OR " plus "
     parts = re.split(r"\s*,\s*|\s+und\s+|\s+sowie\s+|\s+plus\s+|\s*&\s*|\s*\+\s*", s, flags=re.IGNORECASE)
+    # Strip definite articles + filler, but KEEP "ein/eine/zwei/..." since they
+    # may carry quantity info.
+    _ARTICLES = {"der", "die", "das", "den", "dem", "etwas", "noch", "auch", "ja"}
     out = []
     for p in parts:
         p = p.strip()
+        # "ein paar" → drop entirely (imprecise → fall through to default qty=1)
+        p = re.sub(r"^\s*ein\s+paar\s+", "", p, flags=re.IGNORECASE)
         if not p:
             continue
-        # Drop leading articles
         words = p.split()
-        while words and words[0].lower() in {"ein", "eine", "einen", "einer", "ne", "nen", "der", "die", "das", "den", "dem", "etwas", "ein paar", "ne", "noch", "auch"}:
+        while words and words[0].lower() in _ARTICLES:
             words = words[1:]
         if words:
             out.append(" ".join(words).strip())
     return [x for x in out if x and len(x) <= 60]
+
+
+# ---------- Quantity / unit / name parser ----------
+# Units recognized as a prefix on the item name. Order matters in the alternation:
+# longer units first so 'liter' isn't shadowed by 'l'.
+_UNIT_TOKENS = [
+    "liter", "litre", "ml", "kg", "gramm", "gramms",
+    "stück", "stueck", "stk",
+    "packung", "paket", "päckchen", "paeckchen", "pkg", "pack",
+    "dose", "dosen", "flasche", "flaschen", "becher",
+    "tüte", "tuete", "beutel", "bund", "laib", "laibe",
+    "scheibe", "scheiben", "kopf", "köpfe", "koepfe",
+    "tasse", "tassen", "glas", "gläser", "glaeser",
+    "l", "g",  # short units last
+]
+_UNIT_ALT = "|".join(re.escape(u) for u in sorted(_UNIT_TOKENS, key=len, reverse=True))
+
+_GERMAN_NUM_WORDS = {
+    "ein": 1, "eine": 1, "einen": 1, "einer": 1, "eins": 1,
+    "zwei": 2, "drei": 3, "vier": 4, "fünf": 5, "fuenf": 5,
+    "sechs": 6, "sieben": 7, "acht": 8, "neun": 9, "zehn": 10,
+    "elf": 11, "zwölf": 12, "zwoelf": 12,
+}
+
+
+def _parse_qty_unit_name(item_str: str) -> tuple[str, float, str]:
+    """Parse a single item phrase into (name, amount, unit).
+
+    Examples:
+      'Brot'              → ('Brot', 1.0, '')
+      '2 Brot'            → ('Brot', 2.0, '')
+      '2 Liter Milch'     → ('Milch', 2.0, 'Liter')
+      '500g Mehl'         → ('Mehl', 500.0, 'g')
+      '0,5 kg Butter'     → ('Butter', 0.5, 'kg')
+      'eine Flasche Wein' → ('Wein', 1.0, 'Flasche')
+      'drei Eier'         → ('Eier', 3.0, '')
+      'Becher Joghurt'    → ('Joghurt', 1.0, 'Becher')
+    """
+    s = (item_str or "").strip().rstrip(".!?,")
+    if not s:
+        return ("", 1.0, "")
+
+    # 1) Numeric quantity, optionally with unit (with or without space)
+    m = re.match(
+        r"^\s*(?P<amt>\d+(?:[.,]\d+)?)\s*"
+        r"(?:(?P<unit>" + _UNIT_ALT + r")\b\.?)?"
+        r"\s+(?P<name>.+?)\s*$",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        try:
+            amt = float(m.group("amt").replace(",", "."))
+            unit = (m.group("unit") or "").strip().rstrip(".")
+            name = m.group("name").strip()
+            if name:
+                return (name, amt, unit)
+        except Exception:
+            pass
+
+    # 2) German number word ("eine Flasche Wein", "drei Eier")
+    parts = s.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() in _GERMAN_NUM_WORDS:
+        amt = float(_GERMAN_NUM_WORDS[parts[0].lower()])
+        rest = parts[1].strip()
+        # Optional unit after the number word
+        mu = re.match(r"^(" + _UNIT_ALT + r")\b\.?\s+(.+)$", rest, re.IGNORECASE)
+        if mu:
+            return (mu.group(2).strip(), amt, mu.group(1).strip().rstrip("."))
+        return (rest, amt, "")
+
+    # 3) Unit-only prefix ("Becher Joghurt" → 1 Becher Joghurt)
+    mu = re.match(r"^(" + _UNIT_ALT + r")\b\.?\s+(.+)$", s, re.IGNORECASE)
+    if mu:
+        return (mu.group(2).strip(), 1.0, mu.group(1).strip().rstrip("."))
+
+    # 4) Plain name → default amount = 1
+    return (s, 1.0, "")
 
 
 def _detect_shopping_add(msg: str) -> list[str] | None:
@@ -712,16 +797,26 @@ async def try_execute_cookpilot_action(message: str, aria_user: dict) -> dict | 
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 for it in items:
                     try:
+                        name, amount, unit = _parse_qty_unit_name(it)
+                        if not name:
+                            failed.append(f"{it} (leerer Name)")
+                            continue
                         r = await client.post(
                             f"{url}/api/shopping",
                             headers=headers,
-                            json={"name": it, "amount": 0, "unit": "", "category": ""},
+                            json={"name": name, "amount": amount, "unit": unit, "category": ""},
                         )
                         if r.status_code in (200, 201):
-                            added.append(it)
+                            # Show "2 Liter Milch" or just "Brot" in confirmation
+                            label = name
+                            if amount and amount != 1:
+                                label = f"{int(amount) if amount.is_integer() else amount} {unit + ' ' if unit else ''}{name}".strip()
+                            elif unit:
+                                label = f"{unit} {name}"
+                            added.append(label)
                         else:
-                            failed.append(f"{it} ({r.status_code})")
-                            logger.warning(f"shopping add failed for '{it}': {r.status_code} {r.text[:120]}")
+                            failed.append(f"{name} ({r.status_code})")
+                            logger.warning(f"shopping add failed for '{name}': {r.status_code} {r.text[:120]}")
                     except Exception as e:
                         failed.append(f"{it} ({e})")
         except Exception as e:

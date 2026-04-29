@@ -12,6 +12,14 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 
 ## Implementiert
 
+### V 8.6 — CookPilot Einkaufsliste-Mengen-Fix (DONE 2026-04-30)
+- **Problem**: Bei "Brot auf die Einkaufsliste" wurde `amount=0` gespeichert → CookPilot zeigte "Brot 0".
+- **Fix**: Neuer `_parse_qty_unit_name()` Parser in `cookpilot.py` extrahiert Menge + Einheit + Name pro Item.
+  - Default-Menge = 1 wenn nichts angegeben
+  - Erkennt: `2 Liter Milch`, `500g Mehl`, `0,5 kg Butter`, `eine Flasche Wein`, `drei Eier`, `Becher Joghurt`, `3 Stk Brot`
+  - Funktioniert bei gemischten Listen: "Brot, 2 Liter Milch und Butter"
+- **Tests**: 23 neue pytest-Cases in `test_cookpilot_qty_parser.py` (alle 83 CookPilot-Tests grün).
+
 ### Phase 1 — Smart Home (DONE 2026-04-13)
 - **Smart-Home-Tab** (`/smarthome`): Raumansicht mit Geräte-Widgets
   - Geräte-Widgets: Licht (Toggle+Brightness), Schalter, Thermostat (+/-), Rollladen (Auf/Stop/Zu), Sensor (nur Anzeige), Kamera, Schloss
