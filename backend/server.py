@@ -1556,6 +1556,22 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     if routed_services:
         live_context = await gather_context_for_services(routed_services, msg_lower, message_text)
 
+    # Step 2b: CookPilot WRITE actions — if the user said "Brot zur Einkaufsliste",
+    # actually call CookPilot (deterministic) BEFORE GPT replies. Inject the
+    # verified result into context so GPT confirms truthfully (or reports the
+    # error). Without this GPT happily lies "Brot wurde hinzugefügt!".
+    cookpilot_action_result = None
+    if "cookpilot" in routed_services and aria_user:
+        try:
+            import cookpilot as cookpilot_mod
+            cookpilot_action_result = await cookpilot_mod.try_execute_cookpilot_action(message_text, aria_user)
+        except Exception as e:
+            logger.warning(f"CookPilot action exec failed: {e}")
+        if cookpilot_action_result:
+            tag = "[ACTION AUSGEFÜHRT]" if cookpilot_action_result.get("executed") else "[ACTION FEHLGESCHLAGEN]"
+            txt = cookpilot_action_result.get("summary") or cookpilot_action_result.get("error") or ""
+            live_context = (live_context + f"\n\n{tag} {txt}").strip()
+
     # Flag: Service wurde geroutet aber lieferte keinen Kontext → Aria muss das transparent
     # kommunizieren statt zu halluzinieren "ich kann nicht auf Dokumente zugreifen".
     routed_but_empty = bool(routed_services) and not live_context
@@ -1571,6 +1587,21 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         # Add routing info to system prompt
         if routed_services:
             system_prompt += f"\n\n[ROUTING: Diese Anfrage wurde an folgende Dienste geroutet: {', '.join(routed_services)}. Nutze die bereitgestellten Daten.]"
+        if cookpilot_action_result:
+            if cookpilot_action_result.get("executed"):
+                system_prompt += (
+                    f"\n\n[WICHTIG: Eine SCHREIB-AKTION wurde bereits AUSGEFÜHRT bevor du antwortest. "
+                    f"Im Live-Kontext steht das Ergebnis als '[ACTION AUSGEFÜHRT] ...'. "
+                    f"Bestätige dem User KURZ und KONKRET was tatsächlich passiert ist (z.B. 'Brot ist jetzt auf der Einkaufsliste'). "
+                    f"NICHT erfinden, NICHT zusätzliche Aktionen versprechen. Halte die Antwort auf 1-2 Sätze.]"
+                )
+            else:
+                system_prompt += (
+                    f"\n\n[WICHTIG: Der User wollte eine Aktion ausführen, aber sie ist FEHLGESCHLAGEN. "
+                    f"Im Live-Kontext steht der Fehler als '[ACTION FEHLGESCHLAGEN] ...'. "
+                    f"Sag dem User EHRLICH, dass es nicht geklappt hat und nenne kurz den Grund. "
+                    f"NIEMALS so tun als wäre die Aktion gelungen.]"
+                )
         if routed_but_empty:
             system_prompt += (
                 f"\n\n[WICHTIG: Die Dienste {', '.join(routed_services)} wurden angefragt, "

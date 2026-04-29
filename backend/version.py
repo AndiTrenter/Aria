@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "8.3"
+ARIA_VERSION = "8.4"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -31,6 +31,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "8.4", "date": "2026-04-29", "notes": "KRITISCHER FIX: Aria konnte bisher nur Daten LESEN — bei 'Brot zur Einkaufsliste hinzufügen' hat GPT die Bestätigung halluziniert ohne CookPilot je aufzurufen. Jetzt: deterministische Action-Detection mit deutschen Patterns (set/füg/schreib/trag/leg X auf Einkaufsliste, X einkaufen, brauche X, ich habe X gekauft, hak X ab) parsed Items (kommagetrennt + 'und'), führt POST /api/shopping bzw. POST /shopping/{id}/toggle aus, injiziert verifiziertes Resultat in den GPT-Kontext. GPT bestätigt nur was tatsächlich passiert ist oder nennt den Fehler."},
     {"version": "8.3", "date": "2026-04-28", "notes": "Settings-Diagnose: interne Cache-Keys (Prefix '_' wie _cookpilot_health_cache) werden NICHT mehr in der Diagnose-Liste angezeigt — verhinderte fälschliches rotes X. Auch Settings-Export überspringt diese Cache-Keys, damit Backup-Dateien nur echte Config-Keys enthalten."},
     {"version": "8.2", "date": "2026-04-28", "notes": "CookPilot Field-Mapping Fix: CookPilot verwendet 'amount' (nicht 'quantity') und 'checked' (nicht 'bought'). Aria's _fmt_qty akzeptiert jetzt amount/quantity/qty/menge in dieser Reihenfolge — Vorrat/Einkaufsliste-Items mit Menge werden jetzt korrekt als '0.3 Liter' angezeigt. Shopping-Filter erkennt 'checked' UND 'bought' (forward-compat). Proxy-Endpoints für PATCH /pantry/{id}, POST /pantry/{id}/adjust, POST /shopping/{id}/toggle hinzugefügt. Aria-Version jetzt im LCARS-Header (neben Stardate), Disney-Topbar (neben Datum) und LCARS-Sidebar-Footer sichtbar."},
     {"version": "8.1", "date": "2026-04-28", "notes": "CookPilot Chat-Context Fix: (1) Vorrat-Items mit fehlender Menge werden klar als '(Menge nicht erfasst, Einheit X)' formatiert statt '- Milch: Liter' (was GPT als Wert='Liter' missverstand). (2) Pantry-Intent-Keywords erweitert: 'wieviel/wie viel/haben wir/habe ich/im kühlschrank' triggert jetzt CookPilot-Vorrat-Lookup. (3) Wenn der User nach einem konkreten Item fragt ('wieviel milch') wird der Vorrat danach gefiltert und als 'Treffer für deine Frage' zurückgegeben — GPT bekommt nicht mehr 15 unrelevante Items. (4) Einkaufsliste-Formatter verwendet jetzt denselben sauberen Quantity-Formatter."},

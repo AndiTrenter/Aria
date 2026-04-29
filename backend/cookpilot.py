@@ -408,6 +408,203 @@ async def suggest_recipes(request: Request, body: dict = Body(...)):
     return await _proxy("POST", "/api/chat/suggest-recipes", user, json_body=body)
 
 
+# ==================== ACTION EXECUTION (write paths) ====================
+# Aria's chat must be able to actually MUTATE CookPilot data — not just read it.
+# Without this, GPT happily replies "Brot wurde hinzugefügt!" without ever
+# calling the API. We pre-detect write-intents in the user message, execute
+# them deterministically, and feed the verified result back to GPT.
+
+import re
+
+# Common German "noise" words to strip from item parsing
+_STOP_WORDS = {
+    "bitte", "mir", "doch", "noch", "auch", "mal", "kannst", "du", "bitte",
+    "ich", "wir", "mein", "meine", "meinen", "ein", "eine", "einen", "einer",
+    "ein paar", "etwas", "ne", "nen", "der", "die", "das", "den", "dem",
+    "auf", "in", "an", "zu", "und", "oder", "mit", "ohne", "vom", "von",
+    "schreib", "schreibe", "trag", "trage", "trag ein", "tragen", "setze",
+    "setz", "set", "füg", "füge", "fügen", "hinzu", "hinzufügen", "ergänze",
+    "ergänz", "ergänzen", "addiere", "addier", "add", "leg", "lege", "legen",
+    "ist", "sind", "schon", "bereits", "bitte",
+}
+
+
+def _split_items(item_str: str) -> list[str]:
+    """Split 'Brot, Milch und Butter' into ['Brot', 'Milch', 'Butter']."""
+    s = item_str.strip().rstrip(".!?")
+    # Split on comma OR " und " OR " sowie " OR " plus "
+    parts = re.split(r"\s*,\s*|\s+und\s+|\s+sowie\s+|\s+plus\s+|\s*&\s*|\s*\+\s*", s, flags=re.IGNORECASE)
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        # Drop leading articles
+        words = p.split()
+        while words and words[0].lower() in {"ein", "eine", "einen", "einer", "ne", "nen", "der", "die", "das", "den", "dem", "etwas", "ein paar", "ne", "noch", "auch"}:
+            words = words[1:]
+        if words:
+            out.append(" ".join(words).strip())
+    return [x for x in out if x and len(x) <= 60]
+
+
+def _detect_shopping_add(msg: str) -> list[str] | None:
+    """Detect 'add X (and Y) to shopping list' intent. Return list of items or None."""
+    m_lower = msg.lower().strip()
+    # Patterns from highest specificity to lowest. Match on lowercased input but
+    # extract from the ORIGINAL message to preserve casing of item names.
+    patterns = [
+        # "Setze/Schreibe/Trage/Füge X (zur|auf die|in die|zu der|der) Einkaufsliste (hinzu)"
+        r"(?:set(?:z(?:e)?)?|schreib(?:e)?|trag(?:e)?(?:\s+ein)?|füg(?:e)?|leg(?:e)?|pack(?:e)?)\s+(.+?)\s+(?:auf\s+(?:die|der)|zur|in\s+die|zu\s+der|der)\s+einkaufs(?:liste)?",
+        # "X auf die/zur Einkaufsliste (setzen/schreiben)"
+        r"^(.+?)\s+(?:auf\s+die|zur|in\s+die)\s+einkaufs(?:liste)?",
+        # "Ich brauche/Brauchen wir X (einkaufen)"
+        r"(?:ich\s+brauch(?:e)?|brauchen\s+wir|brauchen)\s+(.+?)(?:\s+(?:noch|einkaufen|zum\s+einkaufen|auf\s+der\s+einkaufsliste))?$",
+        # "Kauf/Besorg X ein"
+        r"(?:kauf(?:e)?|besorg(?:e)?)\s+(.+?)\s+ein\s*$",
+        # "X einkaufen"
+        r"^(.+?)\s+einkaufen\s*$",
+        # "Wir müssen/sollten X (kaufen|einkaufen|besorgen)"
+        r"(?:wir\s+müssen|wir\s+sollten|müssen\s+wir|sollten\s+wir)\s+(.+?)\s+(?:kaufen|einkaufen|besorgen)",
+    ]
+    for pat in patterns:
+        match = re.search(pat, m_lower, re.IGNORECASE)
+        if match:
+            # Use the same span on the ORIGINAL message to preserve case
+            start, end = match.span(1)
+            raw = msg.strip()[start:end].strip() if len(msg.strip()) >= end else match.group(1).strip()
+            # Strip leading filler words
+            while True:
+                stripped = raw
+                for w in ("bitte", "doch", "mal", "noch", "auch", "ja", "kannst du", "kann ich"):
+                    if stripped.lower().startswith(w + " "):
+                        stripped = stripped[len(w) + 1:]
+                if stripped == raw:
+                    break
+                raw = stripped
+            # strip trailing filler
+            for w in (" bitte", " danke"):
+                if raw.lower().endswith(w):
+                    raw = raw[: -len(w)].strip()
+            items = _split_items(raw)
+            if items:
+                return items
+    return None
+
+
+def _detect_shopping_check(msg: str) -> list[str] | None:
+    """Detect 'mark X as bought / abhaken' intent."""
+    m_lower = msg.lower().strip()
+    patterns = [
+        r"(?:setz(?:e)?|markier(?:e)?)\s+(.+?)\s+(?:auf\s+gekauft|als\s+gekauft|als\s+erledigt)",
+        r"(?:hak(?:e)?\s+(.+?)\s+ab)",
+        r"(?:hab(?:e)?\s+ich|haben\s+wir)\s+(.+?)\s+(?:gekauft|besorgt)\s*$",
+        r"^(.+?)\s+ist\s+(?:gekauft|besorgt|erledigt)\s*$",
+    ]
+    for pat in patterns:
+        match = re.search(pat, m_lower, re.IGNORECASE)
+        if match:
+            start, end = match.span(1)
+            raw = msg.strip()[start:end].strip() if len(msg.strip()) >= end else match.group(1).strip()
+            items = _split_items(raw)
+            if items:
+                return items
+    return None
+
+
+async def try_execute_cookpilot_action(message: str, aria_user: dict) -> dict | None:
+    """Detect a write-action intent in `message`. If matched, execute it
+    against CookPilot and return {executed: bool, summary: str, error: str|None}.
+    Returns None if no action intent detected (so chat falls through to read-only context).
+    """
+    perms = get_user_perms(aria_user)
+    is_admin = aria_user.get("role") in ("admin", "superadmin")
+
+    # ---- Shopping: Add ----
+    items = _detect_shopping_add(message)
+    if items:
+        if not (is_admin or perms.get("shopping_edit")):
+            return {"executed": False, "summary": "", "error": "Berechtigung 'shopping_edit' fehlt."}
+        url, _ = await get_cookpilot_settings()
+        if not url:
+            return {"executed": False, "summary": "", "error": "CookPilot nicht konfiguriert."}
+        token = await _get_user_token(aria_user)
+        if not token:
+            return {"executed": False, "summary": "", "error": "CookPilot SSO fehlgeschlagen."}
+        added, failed = [], []
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                for it in items:
+                    try:
+                        r = await client.post(
+                            f"{url}/api/shopping",
+                            headers=headers,
+                            json={"name": it, "amount": 0, "unit": "", "category": ""},
+                        )
+                        if r.status_code in (200, 201):
+                            added.append(it)
+                        else:
+                            failed.append(f"{it} ({r.status_code})")
+                            logger.warning(f"shopping add failed for '{it}': {r.status_code} {r.text[:120]}")
+                    except Exception as e:
+                        failed.append(f"{it} ({e})")
+        except Exception as e:
+            return {"executed": False, "summary": "", "error": f"CookPilot nicht erreichbar: {e}"}
+        if not added and failed:
+            return {"executed": False, "summary": "", "error": f"Fehler: {', '.join(failed)}"}
+        summary_parts = []
+        if added:
+            summary_parts.append(f"✓ Auf Einkaufsliste hinzugefügt: {', '.join(added)}")
+        if failed:
+            summary_parts.append(f"Fehler bei: {', '.join(failed)}")
+        return {"executed": True, "action": "shopping_add", "items": added, "summary": " | ".join(summary_parts), "error": None}
+
+    # ---- Shopping: Mark as bought ----
+    items = _detect_shopping_check(message)
+    if items:
+        if not (is_admin or perms.get("shopping_edit")):
+            return {"executed": False, "summary": "", "error": "Berechtigung 'shopping_edit' fehlt."}
+        url, _ = await get_cookpilot_settings()
+        if not url:
+            return {"executed": False, "summary": "", "error": "CookPilot nicht konfiguriert."}
+        token = await _get_user_token(aria_user)
+        if not token:
+            return {"executed": False, "summary": "", "error": "CookPilot SSO fehlgeschlagen."}
+        toggled, missing = [], []
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"Authorization": f"Bearer {token}"}
+                # Fetch full list, find each item by name (case-insensitive)
+                r = await client.get(f"{url}/api/shopping", headers=headers)
+                if r.status_code != 200:
+                    return {"executed": False, "summary": "", "error": f"Liste nicht ladbar ({r.status_code})"}
+                shopping = r.json() if isinstance(r.json(), list) else []
+                for needle in items:
+                    found = next((s for s in shopping if needle.lower() in (s.get("name") or "").lower() and not s.get("checked")), None)
+                    if found:
+                        item_id = found.get("id")
+                        toggle_r = await client.post(f"{url}/api/shopping/{item_id}/toggle", headers=headers)
+                        if toggle_r.status_code in (200, 201):
+                            toggled.append(found.get("name", needle))
+                        else:
+                            missing.append(needle)
+                    else:
+                        missing.append(needle)
+        except Exception as e:
+            return {"executed": False, "summary": "", "error": f"CookPilot Fehler: {e}"}
+        parts = []
+        if toggled:
+            parts.append(f"✓ Als gekauft markiert: {', '.join(toggled)}")
+        if missing:
+            parts.append(f"Nicht gefunden auf Liste: {', '.join(missing)}")
+        if not toggled:
+            return {"executed": False, "summary": "", "error": parts[0] if parts else "Nichts geändert"}
+        return {"executed": True, "action": "shopping_check", "items": toggled, "summary": " | ".join(parts), "error": None}
+
+    return None
+
+
 # ==================== CHAT CONTEXT BUILDER ====================
 async def get_cookpilot_context(message: str, aria_user: dict) -> str:
     """Build CookPilot context for Aria's GPT chat. Returns short text block or ''."""
