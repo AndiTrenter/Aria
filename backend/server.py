@@ -1310,6 +1310,41 @@ async def admin_telegram_restart(request: Request):
     return {"success": True, "status": telegram_bot.get_status()}
 
 
+@api_router.post("/admin/telegram/watchdog")
+async def admin_telegram_watchdog_config(request: Request, body: dict = Body(default={})):
+    """Configure auto-restart watchdog. Body: {enabled, interval_sec, stale_after_sec}.
+    All fields optional — only provided fields are updated."""
+    await require_admin(request)
+    enabled = body.get("enabled")
+    interval = body.get("interval_sec")
+    stale = body.get("stale_after_sec")
+    if interval is not None:
+        try:
+            interval = int(interval)
+        except Exception:
+            raise HTTPException(400, "interval_sec muss eine Zahl sein")
+    if stale is not None:
+        try:
+            stale = int(stale)
+        except Exception:
+            raise HTTPException(400, "stale_after_sec muss eine Zahl sein")
+    wd = await telegram_bot.configure_watchdog(
+        enabled=enabled if enabled is None else bool(enabled),
+        interval_sec=interval,
+        stale_after_sec=stale,
+    )
+    return {"success": True, "watchdog": wd}
+
+
+@api_router.post("/admin/telegram/health-check")
+async def admin_telegram_health_check(request: Request):
+    """Run an on-demand watchdog health check; auto-restart if unhealthy."""
+    await require_admin(request)
+    result = await telegram_bot.force_health_check()
+    result["status"] = telegram_bot.get_status()
+    return result
+
+
 # ==================== ADMIN: CHAT ROUTER HISTORY ====================
 
 @api_router.get("/admin/router-history")
@@ -2226,9 +2261,13 @@ telegram_bot.chat_handler = process_chat_message
 
 @app.on_event("startup")
 async def start_telegram_bot():
+    # Load persisted watchdog config (enabled/interval/stale_after) before starting
+    await telegram_bot.load_watchdog_settings()
     token = await telegram_bot.get_bot_token()
     if token:
         telegram_bot.start_bot()
         logger.info("Telegram bot started")
     else:
         logger.info("Telegram bot token not configured - bot not started")
+    # Watchdog runs regardless — it just no-ops when no token is configured.
+    telegram_bot.start_watchdog()

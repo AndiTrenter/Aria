@@ -284,6 +284,27 @@ const Admin = () => {
     finally { setTelegramTesting(false); }
   };
 
+  const runHealthCheck = async () => {
+    setTelegramTesting(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/telegram/health-check`);
+      if (data.healthy) toast.success("Bot ist gesund — kein Neustart nötig");
+      else toast.warning(`Bot war ungesund (${(data.reasons || []).join(", ")}) → Auto-Neustart durchgeführt`);
+      if (data.status) setTelegramStatus(data.status);
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setTelegramTesting(false); }
+  };
+
+  const updateWatchdog = async (patch) => {
+    try {
+      const { data } = await axios.post(`${API}/admin/telegram/watchdog`, patch);
+      if (data.watchdog) {
+        setTelegramStatus(prev => prev ? { ...prev, watchdog: data.watchdog } : prev);
+      }
+      toast.success("Watchdog-Einstellung gespeichert");
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const clearPlexCache = async () => {
     if (!window.confirm("Thumbnail-Cache leeren? Alle Browser müssen die Bilder neu laden.")) return;
     try {
@@ -376,6 +397,12 @@ const Admin = () => {
 
   // Silent auto-check on page load
   useEffect(() => { checkHaStatus(true); checkCdStatus(true); checkPlexStatus(true); refreshTelegramStatus(); }, [settings]);
+
+  // Auto-refresh Telegram status every 30s while admin tab is open (watchdog visibility)
+  useEffect(() => {
+    const id = setInterval(() => { refreshTelegramStatus(); }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const checkPlexStatus = async (silent = false) => {
     if (!silent) setPlexTesting(true);
@@ -1984,6 +2011,13 @@ const Admin = () => {
                   <ArrowClockwise size={12} />
                   {isLcars ? "BOT NEUSTART" : "Bot neustarten"}
                 </button>
+                <button onClick={runHealthCheck} disabled={telegramTesting}
+                  className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1`}
+                  data-testid="telegram-healthcheck-button"
+                  title="Prüft jetzt ob der Bot gesund ist und startet ihn bei Bedarf neu">
+                  <Check size={12} />
+                  {isLcars ? "HEALTH-CHECK" : "Health-Check"}
+                </button>
                 <button onClick={refreshTelegramStatus}
                   className={`${btnClass} py-1 px-3 text-xs flex items-center gap-1 opacity-80`}
                   data-testid="telegram-refresh-status">
@@ -2021,6 +2055,63 @@ const Admin = () => {
                       Fehler: {telegramStatus.last_error}
                     </div>
                   )}
+                </div>
+              )}
+              {/* Watchdog Auto-Restart */}
+              {telegramStatus && telegramStatus.watchdog && (
+                <div className={`p-3 rounded-lg text-[11px] ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-blue)]/30 text-gray-300" : "bg-blue-950/30 border border-blue-800/30 text-blue-200"}`} style={{ textTransform: "none" }} data-testid="telegram-watchdog-panel">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-bold text-xs flex items-center gap-2">
+                      🛡 Auto-Restart Watchdog
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${telegramStatus.watchdog.enabled ? "bg-green-700/50 text-green-200" : "bg-gray-700/50 text-gray-400"}`}>
+                        {telegramStatus.watchdog.enabled ? "AKTIV" : "AUS"}
+                      </span>
+                    </div>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!telegramStatus.watchdog.enabled}
+                        onChange={(e) => updateWatchdog({ enabled: e.target.checked })}
+                        data-testid="telegram-watchdog-toggle"
+                      />
+                      <span className="text-[10px]">aktivieren</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] opacity-80">Prüf-Intervall (Sek.)</span>
+                      <input
+                        type="number" min="60" step="30"
+                        defaultValue={telegramStatus.watchdog.interval_sec}
+                        onBlur={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          if (v && v !== telegramStatus.watchdog.interval_sec) updateWatchdog({ interval_sec: v });
+                        }}
+                        className={`${inputClass} w-full text-xs`}
+                        data-testid="telegram-watchdog-interval"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] opacity-80">Stale-Schwelle (Sek.)</span>
+                      <input
+                        type="number" min="30" step="15"
+                        defaultValue={telegramStatus.watchdog.stale_after_sec}
+                        onBlur={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          if (v && v !== telegramStatus.watchdog.stale_after_sec) updateWatchdog({ stale_after_sec: v });
+                        }}
+                        className={`${inputClass} w-full text-xs`}
+                        data-testid="telegram-watchdog-stale"
+                      />
+                    </label>
+                    <div>Checks: <b>{telegramStatus.watchdog.checks_count}</b></div>
+                    <div>Auto-Restarts: <b className={telegramStatus.watchdog.restart_count > 0 ? "text-yellow-300" : ""}>{telegramStatus.watchdog.restart_count}</b></div>
+                    {telegramStatus.watchdog.last_check_at && <div className="col-span-2 opacity-80">Letzter Check: {telegramStatus.watchdog.last_check_at}</div>}
+                    {telegramStatus.watchdog.last_action && <div className="col-span-2 opacity-80">Letzte Aktion: <b className={telegramStatus.watchdog.last_action === "restart" ? "text-yellow-300" : ""}>{telegramStatus.watchdog.last_action}</b>{telegramStatus.watchdog.last_reason ? ` — ${telegramStatus.watchdog.last_reason}` : ""}</div>}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-blue-800/30 text-[10px] opacity-70">
+                    Watchdog prüft alle {telegramStatus.watchdog.interval_sec}s ob der Bot pollt + Telegram erreichbar ist. Falls nicht: Webhook löschen + Bot neustarten. Default: 5 Min Intervall, 90s Stale-Schwelle.
+                  </div>
                 </div>
               )}
               <div className={`p-3 rounded-lg text-xs ${isLcars ? "bg-[#0a0a14] border border-[var(--lcars-purple)]/20 text-gray-500" : "bg-purple-950/30 border border-purple-800/30 text-purple-400"}`} style={{ textTransform: "none" }}>

@@ -12,6 +12,18 @@ Aria ist ein zentrales OS-Interface für einen Unraid-Server mit Star Trek LCARS
 
 ## Implementiert
 
+### V 8.7 — Telegram-Bot Auto-Restart Watchdog (DONE 2026-04-30)
+- **Problem**: Bot stieg sporadisch aus (409 Conflict bei parallelem Container, Network-Stalls, stille Polling-Hänger). Manueller Neustart über Admin-Button nötig.
+- **Lösung**: Async Watchdog-Loop in `telegram_bot.py`:
+  - Prüft alle 5 Min (konfigurierbar 60–N Sek.) ob: `running=True`, letzter Poll <90 s alt, getMe ok.
+  - Bei unhealthy → `clear_webhook()` + `restart_bot()` automatisch.
+  - Settings persistiert in DB (`telegram_watchdog_*`).
+- **Neue Endpoints**:
+  - `POST /api/admin/telegram/watchdog` — Settings ändern (enabled/interval_sec/stale_after_sec)
+  - `POST /api/admin/telegram/health-check` — On-Demand-Prüfung
+- **Admin-UI**: Watchdog-Panel mit Toggle, Intervall-/Stale-Eingaben, Counter (Checks, Auto-Restarts), letzte Aktion + Grund. Status-Auto-Refresh alle 30 s. Health-Check-Button neben Bot-Neustart.
+- **Tests**: 10 neue pytests (`test_telegram_watchdog.py`) für Health-Detection, Force-Restart, Persistierung.
+
 ### V 8.6 — CookPilot Einkaufsliste-Mengen-Fix (DONE 2026-04-30)
 - **Problem**: Bei "Brot auf die Einkaufsliste" wurde `amount=0` gespeichert → CookPilot zeigte "Brot 0".
 - **Fix**: Neuer `_parse_qty_unit_name()` Parser in `cookpilot.py` extrahiert Menge + Einheit + Name pro Item.

@@ -31,6 +31,20 @@ _status = {
     "current_offset": 0,
 }
 
+# Watchdog state (auto-restart bot when polling stalls)
+_watchdog_status = {
+    "enabled": True,
+    "interval_sec": 300,           # 5 min default
+    "stale_after_sec": 90,         # last_poll_at older than this → unhealthy
+    "last_check_at": "",
+    "last_action": "",             # 'healthy' | 'restart' | 'no-token'
+    "last_action_at": "",
+    "last_reason": "",
+    "checks_count": 0,
+    "restart_count": 0,
+}
+_watchdog_task = None
+
 TELEGRAM_API = "https://api.telegram.org/bot"
 
 
@@ -178,7 +192,9 @@ async def test_token(token: str) -> dict:
 
 def get_status() -> dict:
     """Returns a snapshot of the runtime status."""
-    return dict(_status)
+    s = dict(_status)
+    s["watchdog"] = dict(_watchdog_status)
+    return s
 
 
 # ==================== USER SESSION MANAGEMENT ====================
@@ -456,3 +472,158 @@ def stop_bot():
         bot_task = None
         _status["running"] = False
         logger.info("Telegram bot polling stopped")
+
+
+# ==================== WATCHDOG ====================
+async def _is_polling_healthy(token: str) -> tuple[bool, list[str]]:
+    """Decide if the bot is currently healthy. Returns (healthy, reasons)."""
+    reasons: list[str] = []
+    if not _status.get("running"):
+        reasons.append("running=false")
+    last_poll = _status.get("last_poll_at") or ""
+    if not last_poll:
+        reasons.append("never polled")
+    else:
+        try:
+            delta = (datetime.now(timezone.utc) - datetime.fromisoformat(last_poll)).total_seconds()
+            stale = _watchdog_status.get("stale_after_sec", 90)
+            if delta > stale:
+                reasons.append(f"last poll {int(delta)}s ago (>{stale}s)")
+        except Exception:
+            reasons.append("last_poll_at unparseable")
+    # Independent reachability probe (catches DNS / network issues)
+    me = await get_bot_info(token)
+    if not me:
+        reasons.append("getMe failed")
+    return (len(reasons) == 0, reasons)
+
+
+async def watchdog_loop():
+    """Periodically health-check the polling loop and auto-restart if stale.
+
+    Why this exists: the bot occasionally goes silent due to:
+      * 409 Conflict (parallel process polling with same token)
+      * Network stalls in long-poll (httpx hangs without raising)
+      * Container restart races
+    A polite auto-restart restores service without admin intervention.
+    """
+    # Small initial grace period so the polling loop has a chance to do its
+    # first poll after app startup before we judge it.
+    await asyncio.sleep(60)
+    while True:
+        try:
+            interval = max(60, int(_watchdog_status.get("interval_sec", 300)))
+            await asyncio.sleep(interval)
+
+            if not _watchdog_status.get("enabled", True):
+                continue
+
+            token = await get_bot_token()
+            now = datetime.now(timezone.utc)
+            _watchdog_status["checks_count"] += 1
+            _watchdog_status["last_check_at"] = now.isoformat()
+
+            if not token:
+                _watchdog_status["last_action"] = "no-token"
+                _watchdog_status["last_reason"] = "Kein Bot-Token konfiguriert"
+                continue
+
+            healthy, reasons = await _is_polling_healthy(token)
+            if healthy:
+                _watchdog_status["last_action"] = "healthy"
+                _watchdog_status["last_reason"] = ""
+                continue
+
+            reason_str = ", ".join(reasons)[:300]
+            logger.warning(f"Telegram watchdog: unhealthy ({reason_str}) → auto-restart")
+            _watchdog_status["last_action"] = "restart"
+            _watchdog_status["last_action_at"] = now.isoformat()
+            _watchdog_status["last_reason"] = reason_str
+            _watchdog_status["restart_count"] += 1
+
+            # Proactively clear any sticky webhook/conflict before restart
+            try:
+                await clear_webhook(token)
+            except Exception:
+                pass
+            try:
+                await restart_bot()
+            except Exception as e:
+                logger.error(f"Telegram watchdog restart failed: {e}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Telegram watchdog loop error: {e}")
+            await asyncio.sleep(30)
+
+
+def start_watchdog():
+    """Start the watchdog loop (idempotent)."""
+    global _watchdog_task
+    if _watchdog_task and not _watchdog_task.done():
+        return
+    _watchdog_task = asyncio.create_task(watchdog_loop())
+    logger.info("Telegram watchdog started")
+
+
+async def configure_watchdog(enabled: bool | None = None, interval_sec: int | None = None,
+                             stale_after_sec: int | None = None) -> dict:
+    """Update watchdog settings at runtime AND persist to DB."""
+    if enabled is not None:
+        _watchdog_status["enabled"] = bool(enabled)
+        await db.settings.update_one(
+            {"key": "telegram_watchdog_enabled"},
+            {"$set": {"value": bool(enabled)}},
+            upsert=True,
+        )
+    if interval_sec is not None:
+        _watchdog_status["interval_sec"] = max(60, int(interval_sec))
+        await db.settings.update_one(
+            {"key": "telegram_watchdog_interval_sec"},
+            {"$set": {"value": max(60, int(interval_sec))}},
+            upsert=True,
+        )
+    if stale_after_sec is not None:
+        _watchdog_status["stale_after_sec"] = max(30, int(stale_after_sec))
+        await db.settings.update_one(
+            {"key": "telegram_watchdog_stale_after_sec"},
+            {"$set": {"value": max(30, int(stale_after_sec))}},
+            upsert=True,
+        )
+    return dict(_watchdog_status)
+
+
+async def load_watchdog_settings():
+    """Load persisted watchdog settings from DB on startup."""
+    try:
+        for key, target in (
+            ("telegram_watchdog_enabled", "enabled"),
+            ("telegram_watchdog_interval_sec", "interval_sec"),
+            ("telegram_watchdog_stale_after_sec", "stale_after_sec"),
+        ):
+            doc = await db.settings.find_one({"key": key})
+            if doc and "value" in doc:
+                _watchdog_status[target] = doc["value"]
+    except Exception as e:
+        logger.warning(f"Watchdog settings load failed: {e}")
+
+
+async def force_health_check() -> dict:
+    """Run an on-demand health check and restart if unhealthy (called from admin UI)."""
+    token = await get_bot_token()
+    if not token:
+        return {"healthy": False, "reasons": ["no token"], "restarted": False}
+    healthy, reasons = await _is_polling_healthy(token)
+    restarted = False
+    if not healthy:
+        try:
+            await clear_webhook(token)
+        except Exception:
+            pass
+        await restart_bot()
+        restarted = True
+        _watchdog_status["restart_count"] += 1
+        _watchdog_status["last_action"] = "restart"
+        _watchdog_status["last_action_at"] = datetime.now(timezone.utc).isoformat()
+        _watchdog_status["last_reason"] = "manual health-check: " + ", ".join(reasons)
+    return {"healthy": healthy, "reasons": reasons, "restarted": restarted}
