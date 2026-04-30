@@ -149,6 +149,10 @@ const Account = () => {
               {user?.role}
             </span>
           </div>
+          <div className="flex-1" />
+          <a href="/konto/profil" className={`text-xs px-3 py-1.5 rounded ${isLcars ? "bg-[var(--lcars-purple)]/20 text-[var(--lcars-purple)] border border-[var(--lcars-purple)]/40" : "bg-purple-800/40 text-purple-200"}`} style={{ textTransform: "none" }} data-testid="link-profile">
+            Profil bearbeiten →
+          </a>
         </div>
       </div>
 

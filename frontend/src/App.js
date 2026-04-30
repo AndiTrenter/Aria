@@ -1,6 +1,6 @@
 import { useEffect, useState, createContext, useContext, useCallback } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -17,6 +17,8 @@ import SmartHome from "@/pages/SmartHome";
 import Automations from "@/pages/Automations";
 import KioskMode from "@/pages/KioskMode";
 import Mediathek from "@/pages/Mediathek";
+import OnboardingWizard from "@/pages/OnboardingWizard";
+import ProfilePage from "@/pages/ProfilePage";
 import CookPilotEmbed from "@/components/CookPilotEmbed";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import LcarsLayout from "@/components/LcarsLayout";
@@ -240,9 +242,24 @@ const AuthProvider = ({ children }) => {
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading, setupRequired } = useAuth();
+  const [onboardingStatus, setOnboardingStatus] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!user) { setOnboardingStatus(null); return; }
+    axios.get(`${API}/profile/me/status`)
+      .then(r => setOnboardingStatus(r.data))
+      .catch(() => setOnboardingStatus({ needs_onboarding: false }));
+  }, [user]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse">Loading...</div></div>;
   if (setupRequired) return <Navigate to="/setup" replace />;
   if (!user) return <Navigate to="/login" replace />;
+  // First-login redirect: if profile needs onboarding AND we're not already on
+  // the wizard or login/setup, push the user through it.
+  if (onboardingStatus?.needs_onboarding && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
   return children;
 };
 
@@ -311,6 +328,8 @@ const AppRouter = () => {
         <Route path="/smarthome" element={<ProtectedRoute><LcarsLayout><SmartHome /></LcarsLayout></ProtectedRoute>} />
         <Route path="/automations" element={<ProtectedRoute><LcarsLayout><Automations /></LcarsLayout></ProtectedRoute>} />
         <Route path="/mediathek" element={<ProtectedRoute><LcarsLayout><Mediathek /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
+        <Route path="/konto/profil" element={<ProtectedRoute><LcarsLayout><ProfilePage /></LcarsLayout></ProtectedRoute>} />
         <Route path="/cookpilot" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="" title="Dashboard" /></LcarsLayout></ProtectedRoute>} />
         <Route path="/cookpilot/recipes" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="recipes" title="Rezepte" /></LcarsLayout></ProtectedRoute>} />
         <Route path="/cookpilot/meal-plan" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="meal-plan" title="Wochenplan" /></LcarsLayout></ProtectedRoute>} />

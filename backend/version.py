@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "8.5"
+ARIA_VERSION = "8.6"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -31,6 +31,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "8.6", "date": "2026-04-29", "notes": "User-Onboarding: beim ersten Login wird der User auf /onboarding umgeleitet — 7-Schritt-Wizard mit Identität, Adresse, Kontakt, Familie (inkl. Kinder-Liste), Gesundheit (Allergien/Diät/Medikamente/Hausarzt), Beruf/Präferenzen, DSGVO-Consent. Pflichtfelder: Vorname + Allergien + Familienstand + Einverständnis. Backend /app/backend/profile.py mit user_profiles-Collection, Service-to-Service-Read via X-Aria-Secret für CaseDesk/CookPilot. Neue /konto/profil Seite zum Anzeigen & Bearbeiten + Consent-Widerruf. Best-effort Push zu CaseDesk (/api/aria/profile) beim Abschluss."},
     {"version": "8.5", "date": "2026-04-29", "notes": "Star Wars Imperial Theme + 3 neue CookPilot-Action-Patterns: (1) Vorrat-Verbrauch '0.5 Liter Milch getrunken' → POST /pantry/{id}/adjust delta=-0.5; (2) Low-Stock-Query 'was geht zur Neige' → GET /pantry/low-stock + Aria fragt ob alles auf Einkaufsliste; (3) Rezept-zu-Liste 'setze die Zutaten für Lasagne auf die Einkaufsliste' → sucht Rezept + POST /shopping/from-recipe. Theme: pures Schwarz, Imperial-Rot (#E10600), Sterne-Hintergrund, Eckenakzente an Cards, Aurebesh-Style Typo, sharp Buttons mit Glow-Hover."},
     {"version": "8.4", "date": "2026-04-29", "notes": "KRITISCHER FIX: Aria konnte bisher nur Daten LESEN — bei 'Brot zur Einkaufsliste hinzufügen' hat GPT die Bestätigung halluziniert ohne CookPilot je aufzurufen. Jetzt: deterministische Action-Detection mit deutschen Patterns (set/füg/schreib/trag/leg X auf Einkaufsliste, X einkaufen, brauche X, ich habe X gekauft, hak X ab) parsed Items (kommagetrennt + 'und'), führt POST /api/shopping bzw. POST /shopping/{id}/toggle aus, injiziert verifiziertes Resultat in den GPT-Kontext. GPT bestätigt nur was tatsächlich passiert ist oder nennt den Fehler."},
     {"version": "8.3", "date": "2026-04-28", "notes": "Settings-Diagnose: interne Cache-Keys (Prefix '_' wie _cookpilot_health_cache) werden NICHT mehr in der Diagnose-Liste angezeigt — verhinderte fälschliches rotes X. Auch Settings-Export überspringt diese Cache-Keys, damit Backup-Dateien nur echte Config-Keys enthalten."},

@@ -2214,6 +2214,11 @@ import cookpilot  # noqa: E402
 cookpilot.init(db, get_current_user, require_admin)
 app.include_router(cookpilot.router)
 
+# Initialize User Profile module (Onboarding + service-to-service profile read)
+import profile as profile_mod  # noqa: E402
+profile_mod.init(db, get_current_user)
+app.include_router(profile_mod.router)
+
 # Initialize Service Router
 service_router.init(db, get_llm_api_key)
 
