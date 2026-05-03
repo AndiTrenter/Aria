@@ -16,7 +16,7 @@ WICHTIG für Agenten: Bei jeder Änderung die Version hier aktualisieren!
   - Fix/Improvement an bestehender Erweiterung → Minor +1
 """
 
-ARIA_VERSION = "8.7"
+ARIA_VERSION = "8.8"
 
 # Aktuelle Services die in die Major-Version einfließen
 ARIA_SERVICES = [
@@ -31,6 +31,7 @@ ARIA_SERVICES = [
 
 # Änderungs-Historie (neueste zuerst) — wird nicht fürs UI gebraucht, nur zur Nachvollziehbarkeit
 ARIA_CHANGELOG = [
+    {"version": "8.8", "date": "2026-04-30", "notes": "E-Mail Draft/Confirm-Flow: Aria erstellt bei 'schreibe E-Mail an X mit Betreff Y und Text Z' jetzt einen lokalen Entwurf in aria_email_drafts (NICHT mehr in CaseDesk — hat kein Entwürfe-Postfach). Aria zeigt/liest den Entwurf vor und wartet auf Bestätigung: 'Aria ja versende die email jetzt' → echter SMTP-Versand via CaseDesk. 'Verwerfen' löscht den Entwurf. Recipient-Email wird optional aus CaseDesk-Kontakten aufgelöst wenn nur Name genannt."},
     {"version": "8.7", "date": "2026-04-29", "notes": "Always-Listening Wake-Word: Aria hört jetzt dauerhaft auf 'Aria' in allen Bereichen des Dashboards (nicht nur Chat-Seite). User-Preference 'always_listening' im Profil persistent gespeichert. Browser-Policy-konform: auto-start nach erster User-Interaktion (click/touch/keydown). Sichtbarer 'Sag Aria'-Pulse neben Mic-Button wenn aktiv. ON/OFF-Toggle direkt über dem Mic-Button. Bei Speech-Out fortgesetzt weiter, bei OFF nur einmalig auf Klick. Komplett themed (LCARS blau / Star Wars rot / Disney blau)."},
     {"version": "8.6", "date": "2026-04-29", "notes": "User-Onboarding: beim ersten Login wird der User auf /onboarding umgeleitet — 7-Schritt-Wizard mit Identität, Adresse, Kontakt, Familie (inkl. Kinder-Liste), Gesundheit (Allergien/Diät/Medikamente/Hausarzt), Beruf/Präferenzen, DSGVO-Consent. Pflichtfelder: Vorname + Allergien + Familienstand + Einverständnis. Backend /app/backend/profile.py mit user_profiles-Collection, Service-to-Service-Read via X-Aria-Secret für CaseDesk/CookPilot. Neue /konto/profil Seite zum Anzeigen & Bearbeiten + Consent-Widerruf. Best-effort Push zu CaseDesk (/api/aria/profile) beim Abschluss."},
     {"version": "8.5", "date": "2026-04-29", "notes": "Star Wars Imperial Theme + 3 neue CookPilot-Action-Patterns: (1) Vorrat-Verbrauch '0.5 Liter Milch getrunken' → POST /pantry/{id}/adjust delta=-0.5; (2) Low-Stock-Query 'was geht zur Neige' → GET /pantry/low-stock + Aria fragt ob alles auf Einkaufsliste; (3) Rezept-zu-Liste 'setze die Zutaten für Lasagne auf die Einkaufsliste' → sucht Rezept + POST /shopping/from-recipe. Theme: pures Schwarz, Imperial-Rot (#E10600), Sterne-Hintergrund, Eckenakzente an Cards, Aurebesh-Style Typo, sharp Buttons mit Glow-Hover."},

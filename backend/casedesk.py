@@ -405,7 +405,12 @@ async def get_casedesk_context(message: str) -> str:
 
 
 async def execute_casedesk_action(action_type: str, data: dict) -> dict:
-    """Execute a CaseDesk action (create task, event, send email)."""
+    """Execute a CaseDesk action (create task, event, send email).
+    Note: E-Mail-Versand läuft über den Zwei-Schritt-Flow in server.py
+    (Entwurf in Aria → User-Bestätigung im Chat → echter Versand).
+    Der send_email-Branch hier wird nur von ForgePilot oder direkten API-Calls
+    noch genutzt — normale Chat-Flows schicken durch das neue Aria-Draft-System.
+    """
     url, email, pw = await get_casedesk_settings()
     if not url:
         return {"success": False, "message": "CaseDesk nicht konfiguriert"}
@@ -498,3 +503,191 @@ async def execute_casedesk_action(action_type: str, data: dict) -> dict:
         return {"success": False, "message": f"E-Mail konnte nicht erstellt werden: {err}"}
 
     return {"success": False, "message": f"Unbekannte Aktion: {action_type}"}
+
+
+# ==================== EMAIL DRAFT / CONFIRM FLOW ====================
+# Aria speichert E-Mail-Entwürfe in ihrer eigenen Mongo (aria_email_drafts)
+# damit der User sie im Chat bestätigen kann BEVOR wirklich versendet wird.
+# CaseDesk hat kein echtes Entwürfe-Postfach, daher machen wir das bei uns.
+
+import re as _re
+
+
+def _detect_email_intent(msg: str) -> dict | None:
+    """Detect 'schreibe/sende/schicke eine E-Mail an X mit Betreff Y und Text Z'.
+    Returns {recipient_name|None, recipient_email|None, subject, body} or None.
+    """
+    m = msg.strip()
+    if not _re.search(r"(?:e\s*-?\s*mail|mail|nachricht)", m, _re.IGNORECASE):
+        return None
+    if not _re.search(r"(?:schreib(?:e)?|send(?:e)?|schick(?:e)?|verfass(?:e)?|erstell(?:e)?|entwirf|verschick(?:e)?)",
+                      m, _re.IGNORECASE):
+        return None
+
+    recipient_name = None
+    recipient_email = None
+    # email address
+    em = _re.search(r"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})", m)
+    if em:
+        recipient_email = em.group(1)
+    # name after "an <X>"
+    name_match = _re.search(r"\ban\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\s\.\-]{1,60}?)(?:\s+mit\s+dem\s+betreff|\s+mit\s+betreff|\s+betreff|\s+über|\s*,|\s*$)", m, _re.IGNORECASE)
+    if name_match:
+        recipient_name = name_match.group(1).strip().rstrip(",.")
+    # subject
+    subj = ""
+    sm = _re.search(r"(?:mit\s+(?:dem\s+)?betreff|betreff(?:\s*:)?|subject(?:\s*:)?)\s*[\"\'\u201E\u201C]?(.+?)[\"\'\u201D\u201C]?(?:\s+und\s+(?:dem\s+)?(?:text|inhalt|body|nachricht)|\s*\.\s*|\s*,\s*text|$)", m, _re.IGNORECASE)
+    if sm:
+        subj = sm.group(1).strip().strip('"').strip("'").rstrip(".,")
+    # body / text
+    body = ""
+    bm = _re.search(r"(?:mit\s+(?:dem\s+)?(?:text|inhalt|body|nachricht)|text(?:\s*:)?|inhalt(?:\s*:)?)\s*[\"\'\u201E\u201C]?(.+?)[\"\'\u201D\u201C]?\s*$", m, _re.IGNORECASE | _re.DOTALL)
+    if bm:
+        body = bm.group(1).strip().strip('"').strip("'")
+
+    if not (recipient_name or recipient_email):
+        return None
+    return {
+        "recipient_name": recipient_name,
+        "recipient_email": recipient_email,
+        "subject": subj or "(kein Betreff)",
+        "body": body or "",
+    }
+
+
+def _detect_email_confirmation(msg: str) -> str | None:
+    """Detect 'ja, versende / sende / bestätige / verwerfen / cancel'. Returns
+    'send' / 'cancel' / None."""
+    m = msg.lower().strip()
+    send_triggers = [
+        "versende die email", "versende die mail", "sende die email", "sende die mail",
+        "schick die email", "schick die mail", "jetzt senden", "jetzt versenden",
+        "ja senden", "ja versenden", "ja bestätigen", "ja sende", "ja versende",
+        "ja, senden", "ja, versenden", "ja, bestätigen", "bestätige und sende",
+        "bestätigt senden", "freigegeben", "entwurf senden", "entwurf versenden",
+        "email absenden", "mail absenden", "ja absenden", "abschicken",
+    ]
+    cancel_triggers = [
+        "nein, verwerfen", "verwerf", "verwerfen", "abbrechen", "abbruch",
+        "doch nicht", "lass es", "vergiss es", "nein, nicht senden",
+        "entwurf verwerfen", "entwurf löschen", "email verwerfen",
+    ]
+    if any(t in m for t in send_triggers):
+        return "send"
+    if any(t in m for t in cancel_triggers):
+        return "cancel"
+    return None
+
+
+async def _resolve_recipient_email(name: str) -> str | None:
+    """Try to resolve a recipient name to an email via CaseDesk contact search."""
+    if not name:
+        return None
+    data, _ = await casedesk_request("POST", "/contacts/search", json={"query": name})
+    if data and isinstance(data, list) and data:
+        return (data[0] or {}).get("email") or None
+    if data and isinstance(data, dict):
+        results = data.get("results", [])
+        if results:
+            return (results[0] or {}).get("email") or None
+    return None
+
+
+async def create_email_draft(aria_user: dict, intent: dict, session_id: str) -> dict:
+    """Save an email draft to Aria's own collection. Does NOT contact CaseDesk.
+    Returns {draft_id, preview_text}."""
+    from uuid import uuid4
+    from datetime import datetime, timezone
+    # If no email address was found, try to resolve from name via CaseDesk contacts
+    recipient_email = intent.get("recipient_email") or ""
+    if not recipient_email and intent.get("recipient_name"):
+        try:
+            recipient_email = await _resolve_recipient_email(intent["recipient_name"]) or ""
+        except Exception:
+            pass
+    draft = {
+        "id": f"draft-{uuid4().hex[:10]}",
+        "aria_user_id": aria_user["id"],
+        "session_id": session_id,
+        "recipient_name": intent.get("recipient_name"),
+        "recipient_email": recipient_email,
+        "subject": intent.get("subject") or "(kein Betreff)",
+        "body": intent.get("body") or "",
+        "status": "pending_confirmation",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.aria_email_drafts.insert_one(dict(draft))
+    preview = (
+        f"An: {draft['recipient_name'] or '?'} "
+        f"<{draft['recipient_email'] or 'ADRESSE FEHLT'}>\n"
+        f"Betreff: {draft['subject']}\n"
+        f"---\n"
+        f"{draft['body'] or '(leerer Text)'}"
+    )
+    return {"draft_id": draft["id"], "preview": preview, "draft": {k: v for k, v in draft.items() if k != "_id"}}
+
+
+async def confirm_and_send_latest_draft(aria_user: dict, session_id: str) -> dict:
+    """Find the user's most recent pending draft in this session and send it."""
+    from datetime import datetime, timezone
+    draft = await db.aria_email_drafts.find_one(
+        {"aria_user_id": aria_user["id"], "session_id": session_id, "status": "pending_confirmation"},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if not draft:
+        return {"success": False, "message": "Es gibt keinen offenen E-Mail-Entwurf zum Bestätigen."}
+    if not draft.get("recipient_email"):
+        return {"success": False, "message": f"Keine E-Mail-Adresse für {draft.get('recipient_name') or 'Empfänger'} — bitte Adresse angeben."}
+
+    # Create correspondence in CaseDesk AND send it in one shot
+    action_payload = json.dumps({
+        "recipient": draft.get("recipient_name") or draft["recipient_email"],
+        "recipient_email": draft["recipient_email"],
+        "subject": draft["subject"],
+        "purpose": draft["subject"],
+        "draft_content": draft["body"],
+        "suggested_documents": [],
+        "context": "",
+    })
+    result, err = await casedesk_request(
+        "POST", "/ai/execute-action",
+        data={"action_type": "send_email", "action_data": action_payload, "confirmed": "true"},
+    )
+    if not (result and result.get("success")):
+        return {"success": False, "message": f"CaseDesk konnte den Entwurf nicht übernehmen: {err or 'unbekannt'}"}
+    corr_id = (result.get("created") or {}).get("id", "")
+    accounts, acc_err = await casedesk_request("GET", "/mail-accounts")
+    mail_account_id = ""
+    if accounts and isinstance(accounts, list) and accounts:
+        mail_account_id = (accounts[0] or {}).get("id", "")
+    if not mail_account_id:
+        return {"success": False, "message": "Kein Mail-Account in CaseDesk konfiguriert — Versand nicht möglich."}
+    send_result, send_err = await casedesk_request(
+        "POST", f"/ai/send-correspondence/{corr_id}",
+        data={"mail_account_id": mail_account_id, "recipient_email": draft["recipient_email"]},
+    )
+    if not (send_result and send_result.get("success")):
+        return {"success": False, "message": f"Versand fehlgeschlagen: {send_err or 'SMTP-Fehler'}"}
+
+    await db.aria_email_drafts.update_one(
+        {"id": draft["id"]},
+        {"$set": {"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat(), "correspondence_id": corr_id}},
+    )
+    return {
+        "success": True,
+        "message": f"E-Mail an {draft.get('recipient_name') or draft['recipient_email']} wurde jetzt versendet.",
+    }
+
+
+async def cancel_latest_draft(aria_user: dict, session_id: str) -> dict:
+    from datetime import datetime, timezone
+    r = await db.aria_email_drafts.update_one(
+        {"aria_user_id": aria_user["id"], "session_id": session_id, "status": "pending_confirmation"},
+        {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()}},
+        # latest one
+    )
+    if r.modified_count == 0:
+        return {"success": False, "message": "Kein offener Entwurf vorhanden."}
+    return {"success": True, "message": "Entwurf verworfen."}
+

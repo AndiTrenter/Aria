@@ -1572,6 +1572,60 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
             txt = cookpilot_action_result.get("summary") or cookpilot_action_result.get("error") or ""
             live_context = (live_context + f"\n\n{tag} {txt}").strip()
 
+    # Step 2c: Email Draft / Confirm / Cancel flow (CaseDesk).
+    # Aria speichert den Entwurf lokal, zeigt ihn dem User und versendet erst
+    # bei expliziter Bestätigung. Funktioniert auch für Sprach-Trigger ("ja
+    # versende die email jetzt").
+    email_action_result = None
+    if aria_user:
+        try:
+            confirmation = casedesk._detect_email_confirmation(message_text)
+        except Exception:
+            confirmation = None
+        if confirmation == "send":
+            try:
+                email_action_result = await casedesk.confirm_and_send_latest_draft(aria_user, session_id or "default")
+                email_action_result["action"] = "email_send"
+            except Exception as e:
+                email_action_result = {"success": False, "message": f"Fehler beim Versand: {e}", "action": "email_send"}
+        elif confirmation == "cancel":
+            try:
+                email_action_result = await casedesk.cancel_latest_draft(aria_user, session_id or "default")
+                email_action_result["action"] = "email_cancel"
+            except Exception as e:
+                email_action_result = {"success": False, "message": f"Fehler beim Verwerfen: {e}", "action": "email_cancel"}
+        else:
+            # Try to detect draft intent only if CaseDesk was routed (or message
+            # clearly asks for an email).
+            try:
+                intent = casedesk._detect_email_intent(message_text)
+            except Exception:
+                intent = None
+            if intent:
+                try:
+                    draft_res = await casedesk.create_email_draft(aria_user, intent, session_id or "default")
+                    email_action_result = {
+                        "success": True,
+                        "action": "email_draft",
+                        "message": draft_res["preview"],
+                        "draft_id": draft_res["draft_id"],
+                    }
+                    # Ensure casedesk is in routed_services so GPT knows where the draft lives
+                    if "casedesk" not in routed_services:
+                        routed_services.append("casedesk")
+                except Exception as e:
+                    email_action_result = {"success": False, "message": f"Entwurf konnte nicht gespeichert werden: {e}", "action": "email_draft"}
+
+    if email_action_result:
+        if email_action_result.get("action") == "email_draft" and email_action_result.get("success"):
+            live_context = (live_context + f"\n\n[EMAIL-ENTWURF ERSTELLT — wartet auf Bestätigung]\n{email_action_result['message']}").strip()
+        elif email_action_result.get("action") == "email_send":
+            tag = "[EMAIL GESENDET]" if email_action_result.get("success") else "[EMAIL-VERSAND FEHLGESCHLAGEN]"
+            live_context = (live_context + f"\n\n{tag} {email_action_result.get('message', '')}").strip()
+        elif email_action_result.get("action") == "email_cancel":
+            tag = "[EMAIL-ENTWURF VERWORFEN]" if email_action_result.get("success") else "[KEIN ENTWURF VORHANDEN]"
+            live_context = (live_context + f"\n\n{tag} {email_action_result.get('message', '')}").strip()
+
     # Flag: Service wurde geroutet aber lieferte keinen Kontext → Aria muss das transparent
     # kommunizieren statt zu halluzinieren "ich kann nicht auf Dokumente zugreifen".
     routed_but_empty = bool(routed_services) and not live_context
@@ -1601,6 +1655,31 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
                     f"Im Live-Kontext steht der Fehler als '[ACTION FEHLGESCHLAGEN] ...'. "
                     f"Sag dem User EHRLICH, dass es nicht geklappt hat und nenne kurz den Grund. "
                     f"NIEMALS so tun als wäre die Aktion gelungen.]"
+                )
+        if email_action_result:
+            act = email_action_result.get("action")
+            if act == "email_draft" and email_action_result.get("success"):
+                system_prompt += (
+                    "\n\n[WICHTIG EMAIL-FLOW: Du hast einen E-Mail-ENTWURF für den User vorbereitet. "
+                    "Der Entwurf (Empfänger, Betreff, Text) steht im Live-Kontext nach '[EMAIL-ENTWURF ERSTELLT — wartet auf Bestätigung]'. "
+                    "Du darfst die E-Mail NOCH NICHT versenden. "
+                    "Zeige dem User den Entwurf KOMPLETT (Empfänger/Betreff/Text, formatiert). "
+                    "Frage explizit: 'Soll ich die E-Mail jetzt versenden? Sag \"Aria, ja versende die email jetzt\" zum Senden oder \"verwerfen\" zum Abbrechen.' "
+                    "Niemals behaupten die Mail sei schon raus. CaseDesk hat kein Entwürfe-Postfach — der Entwurf liegt ausschliesslich in Aria.]"
+                )
+            elif act == "email_send" and email_action_result.get("success"):
+                system_prompt += (
+                    "\n\n[EMAIL-VERSAND BESTÄTIGT: Die E-Mail wurde gerade tatsächlich versendet (im Kontext: [EMAIL GESENDET] ...). "
+                    "Antworte kurz und bestätigend, z.B. 'Erledigt — E-Mail an X ist raus.' 1 Satz.]"
+                )
+            elif act == "email_send" and not email_action_result.get("success"):
+                system_prompt += (
+                    "\n\n[EMAIL-VERSAND FEHLGESCHLAGEN: Im Kontext steht [EMAIL-VERSAND FEHLGESCHLAGEN] mit Grund. "
+                    "Sag dem User EHRLICH dass es nicht geklappt hat und nenne den Grund.]"
+                )
+            elif act == "email_cancel":
+                system_prompt += (
+                    "\n\n[EMAIL-ENTWURF VERWORFEN: Bestätige dem User kurz, dass der Entwurf nicht versendet wurde.]"
                 )
         if routed_but_empty:
             system_prompt += (

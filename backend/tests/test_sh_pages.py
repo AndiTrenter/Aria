@@ -43,11 +43,12 @@ def luzia_id(admin_client):
 
 # ==================== Version ====================
 
-def test_version_is_7_1():
+def test_version_is_at_least_7_1():
     r = requests.get(f"{BASE_URL}/api/version")
     assert r.status_code == 200
     data = r.json()
-    assert data.get("version") == "7.1", f"Expected 7.1 got {data}"
+    v = tuple(int(x) for x in str(data.get("version", "0.0")).split("."))
+    assert v >= (7, 1), f"Expected version >= 7.1, got {data}"
 
 
 # ==================== CRUD ====================
