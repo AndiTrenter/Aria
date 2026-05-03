@@ -45,6 +45,8 @@ PROFILE_FIELDS = {
     "occupation", "employer",
     # Präferenzen / Smalltalk
     "interests", "favorite_color", "notes",
+    # Voice / Aria behaviour
+    "always_listening",
     # DSGVO
     "consent_share_with_services",
 }

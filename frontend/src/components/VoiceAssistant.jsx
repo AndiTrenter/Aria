@@ -11,11 +11,44 @@ const VoiceAssistant = () => {
   const [transcript, setTranscript] = useState("");
   const [response, setResponse] = useState("");
   const [error, setError] = useState("");
+  const [alwaysListening, setAlwaysListening] = useState(false); // loaded from profile
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const recognitionRef = useRef(null);
   const stateRef = useRef(state);
+  const alwaysListeningRef = useRef(false);
   const isLcars = theme === "startrek";
+  const isStarwars = theme === "starwars";
 
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { alwaysListeningRef.current = alwaysListening; }, [alwaysListening]);
+
+  // Load user preference once
+  useEffect(() => {
+    axios.get(`${API}/profile/me`).then(r => {
+      setAlwaysListening(!!r.data?.always_listening);
+      setProfileLoaded(true);
+    }).catch(() => { setProfileLoaded(true); });
+  }, []);
+
+  const toggleAlwaysListening = async () => {
+    const newVal = !alwaysListening;
+    setAlwaysListening(newVal);
+    try {
+      await axios.patch(`${API}/profile/me`, { always_listening: newVal });
+      toast.success(newVal ? 'Aria hört jetzt immer auf "Aria"' : "Dauer-Mithören deaktiviert", { duration: 4000 });
+    } catch {}
+    if (!newVal) {
+      stopAll();
+      setState("idle");
+    } else {
+      // Try to start immediately — may fail if browser needs gesture
+      const ready = checkMicReady();
+      if (!ready.ok) { toast.error(ready.hint, { duration: 10000 }); return; }
+      const perm = await requestMicPermission();
+      if (!perm.ok) { toast.error(perm.hint, { duration: 10000 }); return; }
+      startWakeWord();
+    }
+  };
 
   const stopAll = () => {
     try { recognitionRef.current?.stop(); } catch {}
@@ -45,8 +78,14 @@ const VoiceAssistant = () => {
     utter.rate = 1.0;
     utter.pitch = isLcars ? 0.9 : 1.1;
     utter.onstart = () => setState("speaking");
-    utter.onend = () => { setState("idle"); startWakeWord(); };
-    utter.onerror = () => { setState("idle"); startWakeWord(); };
+    utter.onend = () => {
+      setState("idle");
+      if (alwaysListeningRef.current) startWakeWord();
+    };
+    utter.onerror = () => {
+      setState("idle");
+      if (alwaysListeningRef.current) startWakeWord();
+    };
     synth.speak(utter);
   };
 
@@ -118,13 +157,13 @@ const VoiceAssistant = () => {
         setError(`Fehler: ${e.error}`);
       }
       setState("idle");
-      setTimeout(startWakeWord, 1000);
+      if (alwaysListeningRef.current) setTimeout(startWakeWord, 1000);
     };
 
     rec.onend = () => {
       if (stateRef.current === "listening") {
         setState("idle");
-        setTimeout(startWakeWord, 500);
+        if (alwaysListeningRef.current) setTimeout(startWakeWord, 500);
       }
     };
 
@@ -157,13 +196,13 @@ const VoiceAssistant = () => {
 
     rec.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") {
-        setTimeout(startWakeWord, 500);
+        if (alwaysListeningRef.current) setTimeout(startWakeWord, 500);
       }
     };
 
     rec.onend = () => {
       const s = stateRef.current;
-      if (s === "wakeword" || s === "idle") {
+      if ((s === "wakeword" || s === "idle") && alwaysListeningRef.current) {
         setTimeout(startWakeWord, 300);
       }
     };
@@ -212,6 +251,40 @@ const VoiceAssistant = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-start wake-word after first user gesture, if user opted-in.
+  // Browsers block getUserMedia/SpeechRecognition until a user-gesture has
+  // occurred, so we attach a one-shot listener for click/touch/keydown.
+  useEffect(() => {
+    if (!profileLoaded || !alwaysListening) return;
+    const ready = checkMicReady();
+    if (!ready.ok) return; // silently skip (banner shown elsewhere)
+
+    // If already running, nothing to do
+    if (stateRef.current !== "idle") return;
+
+    // Try immediate start — may fail without gesture
+    (async () => {
+      const perm = await requestMicPermission();
+      if (perm.ok && stateRef.current === "idle") startWakeWord();
+    })();
+
+    const onGesture = async () => {
+      if (!alwaysListeningRef.current) return;
+      if (stateRef.current !== "idle") return;
+      const perm = await requestMicPermission();
+      if (perm.ok) startWakeWord();
+    };
+    window.addEventListener("click", onGesture, { once: true, capture: true });
+    window.addEventListener("touchstart", onGesture, { once: true, capture: true });
+    window.addEventListener("keydown", onGesture, { once: true, capture: true });
+    return () => {
+      window.removeEventListener("click", onGesture, { capture: true });
+      window.removeEventListener("touchstart", onGesture, { capture: true });
+      window.removeEventListener("keydown", onGesture, { capture: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoaded, alwaysListening]);
+
   const hasSpeechAPI = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   if (!hasSpeechAPI) return null;
   const micCtx = checkMicReady(); // {ok, reason, hint}
@@ -220,6 +293,38 @@ const VoiceAssistant = () => {
 
   return (
     <>
+      {/* Persistent "Aria hört zu" pulse (only when always_listening + wakeword active) */}
+      {alwaysListening && state === "wakeword" && (
+        <div
+          className={`fixed bottom-6 right-24 z-[9998] px-3 py-2 rounded-full text-[11px] font-bold flex items-center gap-2 shadow-lg ${
+            isStarwars ? "bg-black/80 border border-[#E10600] text-[#E10600]"
+              : isLcars ? "bg-[#0a0a14] border border-[var(--lcars-blue)] text-[var(--lcars-blue)]"
+              : "bg-purple-950/90 border border-blue-400 text-blue-300"
+          }`}
+          style={{ textTransform: "none" }}
+          data-testid="wakeword-indicator"
+        >
+          <span className={`w-2 h-2 rounded-full animate-pulse ${isStarwars ? "bg-[#E10600]" : "bg-blue-400"}`} />
+          Sag „Aria"
+        </div>
+      )}
+
+      {/* Always-listening toggle (small button above main mic) */}
+      {micCtx.ok && (
+        <button
+          onClick={toggleAlwaysListening}
+          title={alwaysListening ? 'Aria-Dauer-Mithören AUS' : 'Aria-Dauer-Mithören EIN (hört immer auf "Aria")'}
+          className={`fixed bottom-24 right-6 z-[9998] w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md text-[9px] font-bold ${
+            alwaysListening
+              ? isStarwars ? "bg-[#E10600] text-white" : isLcars ? "bg-[var(--lcars-blue)] text-black" : "bg-blue-500 text-white"
+              : isStarwars ? "bg-black/70 text-gray-400 border border-white/20" : isLcars ? "bg-[var(--lcars-purple)]/30 text-[var(--lcars-purple)]" : "bg-purple-900/50 text-purple-300"
+          }`}
+          data-testid="always-listening-toggle"
+        >
+          {alwaysListening ? "ON" : "OFF"}
+        </button>
+      )}
+
       {/* Floating Mic Button */}
       <button
         onClick={toggleVoice}
