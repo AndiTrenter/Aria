@@ -101,3 +101,139 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Aria soll den eingeloggten User nach Login per Voice begrüßen:
+  "Willkommen zurück <Name>, heute wird das Wetter <aktuell> bei <Temp> Grad. Kurzes Feedback wie viele neue Dokumente verarbeitet wurden, Termine/Kalender und Tasks die heute anstehen. Kurz und knapp."
+  - Neue Dokumente = seit dem letzten Login
+  - Begrüßung nur einmal pro Tag pro User
+  - Stimme = User-eigene konfigurierte Voice (Fallback global default)
+
+backend:
+  - task: "Auth login tracks previous_login_at + last_login_at"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/auth/login now reads existing last_login_at, stores it as previous_login_at, and writes new last_login_at=now."
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ TESTED & WORKING - All tests passed:
+          - First login: last_login_at is set, previous_login_at is null (expected)
+          - Second login: previous_login_at correctly set to previous last_login_at value
+          - Second login: last_login_at updated to new timestamp
+          - MongoDB fields verified directly after each login
+          Test user: test.greeting@aria.local (credentials in /app/memory/test_credentials.md)
+
+  - task: "GET /api/voice/greeting endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          New endpoint builds a short personalized German greeting:
+          - Uses first name from user.name (or email prefix)
+          - Hour-aware salutation (Morgen/Hallo/Abend/Willkommen zurück)
+          - Weather summary from OpenWeatherMap (description + rounded temp)
+          - Counts new CaseDesk documents created since previous_login_at
+          - Counts today's events (start date == today) and open tasks (due_date <= today, not done)
+          Returns {text, should_play, voice, context}.
+          should_play=false if last_greeting_at is today (per-user once-per-day).
+          On should_play=true the user.last_greeting_at is updated to now.
+          Optional ?force=true bypasses the daily check (testing).
+          Voice falls back to global default if user has none configured.
+          All sub-fetches are parallelized via asyncio.gather; failures are tolerated (silently degraded greeting).
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ TESTED & WORKING - All tests passed:
+          - Returns 200 with all required keys: text, should_play, voice, context
+          - text is non-empty German string (verified: "Hallo, Test. Keine Termine oder offenen Aufgaben für heute.")
+          - should_play=true on first call of the day
+          - should_play=false on second call same day (daily de-dup working)
+          - should_play=true with ?force=true parameter (bypass working)
+          - context object contains all required keys: weather, new_documents, events_today, tasks_today, previous_login_at
+          - last_greeting_at updated in MongoDB after first call with should_play=true
+          - Graceful degradation working: returns 200 even when weather/CaseDesk not configured (weather=null, counts=0)
+          - Voice fallback working: returns 'nova' as default when user has no configured voice
+          Test results: 15/15 assertions passed
+
+frontend:
+  - task: "WelcomeGreeting plays voice once after login"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/WelcomeGreeting.jsx + App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          AuthProvider.login() sets sessionStorage flag `aria_pending_greeting`.
+          New <WelcomeGreeting /> mounted alongside <VoiceAssistant /> inside AppRouter when user is set.
+          On mount, if flag present: GET /api/voice/greeting -> if should_play, POST /api/voice/tts (blob) -> Audio.play().
+          Flag is consumed immediately on detection (StrictMode safe). Autoplay rejection is logged but not surfaced to UI.
+          Frontend testing pending user permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "GET /api/voice/greeting endpoint"
+    - "Auth login tracks previous_login_at + last_login_at"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Backend feature added: personalized voice greeting after login.
+      Please test:
+      1. POST /api/auth/login -> verify users collection now has last_login_at + previous_login_at fields after second login.
+      2. GET /api/voice/greeting (auth required):
+         - Returns 200 with {text, should_play, voice, context}
+         - text contains German greeting with name
+         - should_play=true on first call, then false on second call same day (de-dup)
+         - GET /api/voice/greeting?force=true -> should_play=true again
+         - Graceful when CaseDesk/Weather not configured (text still returned, fewer parts)
+      3. Verify text grammar is natural German for typical counts (0/1/multiple).
+      Use existing test credentials from /app/memory/test_credentials.md if present; otherwise create a test user via /api/admin/users.
+  - agent: "testing"
+    message: |
+      ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED
+      
+      Tested both backend tasks with comprehensive test suite (/app/test_voice_greeting.py):
+      
+      1. Auth login tracking: ✅ WORKING
+         - previous_login_at and last_login_at correctly tracked
+         - Verified in MongoDB after each login
+      
+      2. Voice greeting endpoint: ✅ WORKING
+         - All response fields present and correct
+         - German text generation working
+         - Daily de-dup working (should_play logic)
+         - Force parameter working
+         - Graceful degradation working (no weather/CaseDesk)
+         - MongoDB last_greeting_at update working
+      
+      Test credentials created and saved to /app/memory/test_credentials.md
+      All 15 test assertions passed successfully.
+      
+      No issues found. Backend implementation is complete and working as specified.

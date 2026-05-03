@@ -21,6 +21,7 @@ import OnboardingWizard from "@/pages/OnboardingWizard";
 import ProfilePage from "@/pages/ProfilePage";
 import CookPilotEmbed from "@/components/CookPilotEmbed";
 import VoiceAssistant from "@/components/VoiceAssistant";
+import WelcomeGreeting from "@/components/WelcomeGreeting";
 import LcarsLayout from "@/components/LcarsLayout";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -172,6 +173,8 @@ const AuthProvider = ({ children }) => {
     // Now set user state (this triggers Dashboard re-render)
     setUser(data);
     applyTheme(data.theme || globalDefaultTheme);
+    // Mark this session as "fresh login" so Dashboard plays the voice greeting
+    try { sessionStorage.setItem('aria_pending_greeting', '1'); } catch {}
     // Fire-and-forget: warm Plex thumbnail cache in background so Mediathek loads instantly
     setTimeout(() => {
       axios.get(`${API}/plex/warmup?limit=80`).then(({ data: w }) => {
@@ -342,6 +345,7 @@ const AppRouter = () => {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {user && <VoiceAssistant />}
+      {user && <WelcomeGreeting />}
     </div>
   );
 };

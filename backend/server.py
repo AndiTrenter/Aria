@@ -264,7 +264,17 @@ async def login(request: LoginRequest, response: Response):
     refresh_token = create_refresh_token(user_id)
     set_auth_cookies(response, access_token, refresh_token)
     
-    await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": datetime.now(timezone.utc).isoformat()})
+    # Track login timestamps for personalized greeting
+    # previous_login_at = last seen login (used to detect "new" docs since then)
+    # last_login_at = this login
+    now_iso = datetime.now(timezone.utc).isoformat()
+    previous_login_at = user.get("last_login_at")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"previous_login_at": previous_login_at, "last_login_at": now_iso}}
+    )
+    
+    await db.logs.insert_one({"type": "user_login", "user_id": user_id, "email": user["email"], "timestamp": now_iso})
     
     return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user"), "theme": user.get("theme", "startrek"), "sound_effects_enabled": user.get("sound_effects_enabled", True), "allowed_services": user.get("allowed_services", []), "permissions": user.get("permissions", {}), "assigned_rooms": user.get("assigned_rooms", []), "visible_tabs": user.get("visible_tabs", DEFAULT_TABS), "access_token": access_token}
 
@@ -654,6 +664,238 @@ async def text_to_speech(request: Request, body: dict = Body(...)):
     except Exception as e:
         logger.error(f"TTS error: {e}")
         raise HTTPException(500, f"TTS Fehler: {str(e)}")
+
+
+# -------- Greeting helpers --------
+
+async def _fetch_weather_summary():
+    """Fetch a short weather summary string (e.g. 'bedeckt bei 15 Grad') or None."""
+    try:
+        city, api_key = await get_weather_settings()
+        if not city or not api_key:
+            return None
+        parsed = parse_city_query(city)
+        async with httpx.AsyncClient(timeout=8.0) as http_client:
+            base_params = {"appid": api_key, "units": "metric", "lang": "de"}
+            if parsed["type"] == "zip":
+                base_params["zip"] = f"{parsed['zip']},{parsed['country']}"
+            else:
+                base_params["q"] = parsed["q"]
+            resp = await http_client.get("https://api.openweathermap.org/data/2.5/weather", params=base_params)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            desc = (data.get("weather") or [{}])[0].get("description", "")
+            temp = data.get("main", {}).get("temp")
+            if temp is None:
+                return None
+            return {"description": desc, "temp": round(float(temp))}
+    except Exception as e:
+        logger.warning(f"Greeting weather fetch failed: {e}")
+        return None
+
+
+def _parse_iso(ts):
+    if not ts:
+        return None
+    try:
+        s = ts.replace("Z", "+00:00") if isinstance(ts, str) else ts
+        return datetime.fromisoformat(s) if isinstance(s, str) else None
+    except Exception:
+        return None
+
+
+def _is_today_utc_for_user(ts):
+    """Check if ISO timestamp falls on today's date (UTC). Good enough for greeting de-dup."""
+    dt = _parse_iso(ts)
+    if not dt:
+        return False
+    now = datetime.now(timezone.utc)
+    return dt.date() == now.date()
+
+
+async def _count_new_documents_since(since_iso):
+    """Count CaseDesk documents created since the given ISO timestamp."""
+    if not since_iso:
+        return 0
+    try:
+        from casedesk import casedesk_request as _cd_request
+    except Exception:
+        return 0
+    try:
+        data, err = await _cd_request("GET", "/documents")
+        if err or not data:
+            return 0
+        docs = data if isinstance(data, list) else data.get("results", data.get("documents", []))
+        if not isinstance(docs, list):
+            return 0
+        since_dt = _parse_iso(since_iso)
+        if not since_dt:
+            return 0
+        cnt = 0
+        for d in docs:
+            created = d.get("created_at") or d.get("createdAt") or d.get("uploaded_at") or d.get("date") or d.get("timestamp")
+            cdt = _parse_iso(created)
+            if cdt and cdt > since_dt:
+                cnt += 1
+        return cnt
+    except Exception as e:
+        logger.warning(f"Greeting docs count failed: {e}")
+        return 0
+
+
+async def _count_today_events_and_tasks():
+    """Return (events_today, open_tasks_today) from CaseDesk."""
+    events_today = 0
+    tasks_today = 0
+    try:
+        from casedesk import casedesk_request as _cd_request
+    except Exception:
+        return 0, 0
+    today = datetime.now(timezone.utc).date()
+    # Events
+    try:
+        data, err = await _cd_request("GET", "/events")
+        if not err and data:
+            events = data if isinstance(data, list) else []
+            for ev in events:
+                start = ev.get("start") or ev.get("start_time") or ev.get("date") or ev.get("starts_at")
+                sdt = _parse_iso(start)
+                if sdt and sdt.date() == today:
+                    events_today += 1
+    except Exception as e:
+        logger.warning(f"Greeting events fetch failed: {e}")
+    # Tasks
+    try:
+        data, err = await _cd_request("GET", "/tasks")
+        if not err and data:
+            tasks = data if isinstance(data, list) else []
+            for t in tasks:
+                if t.get("status") in ("done", "completed", "closed"):
+                    continue
+                due = t.get("due_date") or t.get("due") or t.get("deadline")
+                ddt = _parse_iso(due)
+                if ddt and ddt.date() <= today:
+                    tasks_today += 1
+                elif not due:
+                    # Tasks ohne Due-Date: nicht mitzählen
+                    continue
+    except Exception as e:
+        logger.warning(f"Greeting tasks fetch failed: {e}")
+    return events_today, tasks_today
+
+
+def _format_count(n, singular, plural, zero_word="keine"):
+    if n == 0:
+        return f"{zero_word} {plural}"
+    if n == 1:
+        return f"ein {singular}"
+    # Numbers 2-12 in German words for natural speech
+    words = {2: "zwei", 3: "drei", 4: "vier", 5: "fünf", 6: "sechs",
+             7: "sieben", 8: "acht", 9: "neun", 10: "zehn", 11: "elf", 12: "zwölf"}
+    word = words.get(n, str(n))
+    return f"{word} {plural}"
+
+
+@api_router.get("/voice/greeting")
+async def get_voice_greeting(request: Request, force: bool = False):
+    """Build a personalized welcome message for the logged-in user.
+    Returns short German text + flag whether it should be spoken (once per day per user).
+    """
+    user = await get_current_user(request)
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not user_doc:
+        raise HTTPException(404, "User not found")
+
+    # Once-per-day check
+    last_greeting_at = user_doc.get("last_greeting_at")
+    already_greeted_today = _is_today_utc_for_user(last_greeting_at)
+    should_play = force or (not already_greeted_today)
+
+    # Determine "since" for new documents = previous login (set by /auth/login)
+    previous_login = user_doc.get("previous_login_at") or user_doc.get("last_login_at")
+
+    # Salutation: use first name if it has multiple parts
+    raw_name = user_doc.get("name", "") or user_doc.get("email", "").split("@")[0]
+    first_name = raw_name.strip().split()[0] if raw_name.strip() else ""
+
+    # Hour-aware greeting
+    hour = datetime.now(timezone.utc).hour  # naive UTC; close enough for tone
+    if 4 <= hour < 11:
+        salutation = "Guten Morgen"
+    elif 11 <= hour < 17:
+        salutation = "Hallo"
+    elif 17 <= hour < 22:
+        salutation = "Guten Abend"
+    else:
+        salutation = "Willkommen zurück"
+
+    # Fetch context in parallel
+    weather_task = asyncio.create_task(_fetch_weather_summary())
+    docs_task = asyncio.create_task(_count_new_documents_since(previous_login))
+    et_task = asyncio.create_task(_count_today_events_and_tasks())
+    weather, new_docs, (events_today, tasks_today) = await asyncio.gather(weather_task, docs_task, et_task)
+
+    # Build text — short & crisp
+    parts = []
+    if first_name:
+        parts.append(f"{salutation}, {first_name}.")
+    else:
+        parts.append(f"{salutation}.")
+
+    if weather:
+        parts.append(f"Heute {weather['description']} bei {weather['temp']} Grad.")
+
+    # Documents
+    if new_docs > 0:
+        if new_docs == 1:
+            parts.append("Ein neues Dokument wurde verarbeitet.")
+        else:
+            parts.append(f"{_format_count(new_docs, 'Dokument', 'neue Dokumente').capitalize()} verarbeitet.")
+
+    # Events + Tasks combined sentence
+    if events_today > 0 and tasks_today > 0:
+        ev_txt = "ein Termin" if events_today == 1 else _format_count(events_today, "Termin", "Termine")
+        tk_txt = "eine offene Aufgabe" if tasks_today == 1 else _format_count(tasks_today, "Aufgabe", "offene Aufgaben")
+        parts.append(f"Heute stehen {ev_txt} und {tk_txt} an.")
+    elif events_today > 0:
+        ev_txt = "ein Termin" if events_today == 1 else _format_count(events_today, "Termin", "Termine")
+        parts.append(f"Heute steht {ev_txt} an." if events_today == 1 else f"Heute stehen {ev_txt} an.")
+    elif tasks_today > 0:
+        tk_txt = "eine offene Aufgabe" if tasks_today == 1 else _format_count(tasks_today, "Aufgabe", "offene Aufgaben")
+        parts.append(f"{tk_txt.capitalize()} für heute." if tasks_today > 1 else "Eine offene Aufgabe für heute.")
+    else:
+        # Only mention "free day" if we actually have CaseDesk data context (weather is configured separately)
+        if previous_login:
+            parts.append("Keine Termine oder offenen Aufgaben für heute.")
+
+    text = " ".join(parts).strip()
+
+    # Mark as greeted (only if we actually intend to play it now)
+    if should_play:
+        await db.users.update_one(
+            {"_id": user_doc["_id"]},
+            {"$set": {"last_greeting_at": datetime.now(timezone.utc).isoformat()}}
+        )
+
+    voice = user_doc.get("voice", "")
+    if not voice:
+        default_doc = await db.settings.find_one({"key": "default_voice"})
+        voice = default_doc["value"] if default_doc and default_doc.get("value") else "nova"
+
+    return {
+        "text": text,
+        "should_play": should_play,
+        "voice": voice,
+        "context": {
+            "weather": weather,
+            "new_documents": new_docs,
+            "events_today": events_today,
+            "tasks_today": tasks_today,
+            "previous_login_at": previous_login,
+        }
+    }
+
 
 # ==================== HEALTH ====================
 
