@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import os
 import logging
+import re
 import bcrypt
 import jwt
 import httpx
@@ -571,13 +572,79 @@ async def reverse_proxy(service_id: str, path: str, request: Request):
 # ==================== VOICE / TTS ====================
 
 VOICE_OPTIONS = [
-    {"id": "alloy", "name": "Alloy", "desc": "Neutral, freundlich"},
+    # Premium (gpt-4o-mini-tts only) — clearest, most natural German pronunciation
+    {"id": "marin", "name": "Marin", "desc": "Premium · Sehr natürlich, weiblich", "premium": True, "is_new": True},
+    {"id": "cedar", "name": "Cedar", "desc": "Premium · Sehr natürlich, männlich", "premium": True, "is_new": True},
+    # Standard voices (work with all models)
+    {"id": "nova", "name": "Nova", "desc": "Klar, weiblich"},
+    {"id": "shimmer", "name": "Shimmer", "desc": "Sanft, beruhigend"},
+    {"id": "coral", "name": "Coral", "desc": "Warm, freundlich", "is_new": True},
+    {"id": "sage", "name": "Sage", "desc": "Ruhig, sachlich", "is_new": True},
+    {"id": "alloy", "name": "Alloy", "desc": "Neutral"},
+    {"id": "ash", "name": "Ash", "desc": "Klar, artikuliert", "is_new": True},
     {"id": "echo", "name": "Echo", "desc": "Warm, männlich"},
     {"id": "fable", "name": "Fable", "desc": "Erzählerisch, märchenhaft"},
-    {"id": "nova", "name": "Nova", "desc": "Klar, weiblich"},
     {"id": "onyx", "name": "Onyx", "desc": "Tief, autoritär"},
-    {"id": "shimmer", "name": "Shimmer", "desc": "Sanft, beruhigend"},
 ]
+
+# OpenAI gpt-4o-mini-tts: newer model, more natural voices, supports `instructions` param.
+# Falls back to tts-1 if a 4xx error occurs (e.g. model not yet on the account's plan).
+TTS_MODEL = "gpt-4o-mini-tts"
+TTS_FALLBACK_MODEL = "tts-1"
+
+# Voices that ONLY exist on gpt-4o-mini-tts (so the fallback must rewrite them)
+PREMIUM_ONLY_VOICES = {"marin", "cedar"}
+
+# Default instructions to make voice sound natural, German, conversational
+TTS_DEFAULT_INSTRUCTIONS = (
+    "Speak in clear, natural German with a warm, friendly tone. "
+    "Pace yourself naturally — not too fast. Pronounce numbers and abbreviations clearly. "
+    "Sound like a helpful personal assistant, not a robot."
+)
+
+
+def strip_markdown_for_tts(text: str) -> str:
+    """Remove Markdown so TTS doesn't read 'asterisk', 'underscore' etc. literally."""
+    if not text:
+        return ""
+    s = text
+    # Code blocks ```...```
+    s = re.sub(r"```[\s\S]*?```", " ", s)
+    # Inline code `...`
+    s = re.sub(r"`([^`]+)`", r"\1", s)
+    # Images ![alt](url) -> alt
+    s = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", s)
+    # Links [text](url) -> text
+    s = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", s)
+    # Bold **text** / __text__
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+    s = re.sub(r"__([^_]+)__", r"\1", s)
+    # Italic *text* / _text_  (be careful not to eat lone asterisks attached to words)
+    s = re.sub(r"(?<![*\w])\*([^*\n]+)\*(?!\w)", r"\1", s)
+    s = re.sub(r"(?<![_\w])_([^_\n]+)_(?!\w)", r"\1", s)
+    # Strikethrough ~~text~~
+    s = re.sub(r"~~([^~]+)~~", r"\1", s)
+    # Headings  #, ##, ### at line start
+    s = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", s)
+    # Blockquotes
+    s = re.sub(r"(?m)^\s*>\s?", "", s)
+    # List bullets / dashes / numbered lists at line start
+    s = re.sub(r"(?m)^\s*[-*+]\s+", "", s)
+    s = re.sub(r"(?m)^\s*\d+\.\s+", "", s)
+    # Horizontal rules
+    s = re.sub(r"(?m)^\s*[-*_]{3,}\s*$", "", s)
+    # Tables: keep cell content, drop pipes & separator rows
+    s = re.sub(r"(?m)^\s*\|?[\s:|-]+\|\s*$", "", s)  # separator row "|---|---|"
+    s = s.replace("|", " ")
+    # Stray markdown punctuation that survived
+    s = re.sub(r"\*+", "", s)
+    s = re.sub(r"_+(?=\s|$)", "", s)
+    # HTML tags
+    s = re.sub(r"<[^>]+>", "", s)
+    # Collapse whitespace
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
 
 @api_router.get("/voice/options")
 async def get_voice_options(request: Request):
@@ -619,14 +686,33 @@ async def verify_voice_pin(request: Request, body: dict = Body(...)):
 
 @api_router.post("/voice/tts")
 async def text_to_speech(request: Request, body: dict = Body(...)):
-    """Generate speech from text using OpenAI TTS."""
+    """Generate speech from text using OpenAI gpt-4o-mini-tts (with tts-1 fallback).
+
+    Streams the MP3 chunks back so playback can begin earlier.
+    Strips Markdown so symbols like '**' aren't read aloud.
+    Optional body params:
+      - text (required)
+      - voice (optional)
+      - instructions (optional, for gpt-4o-mini-tts tone steering)
+      - raw (optional bool) — if true, skip Markdown strip
+    """
+    from fastapi.responses import StreamingResponse
+
     user = await get_current_user(request)
     text = body.get("text", "")
     voice = body.get("voice", "")
-    
+    instructions = body.get("instructions") or TTS_DEFAULT_INSTRUCTIONS
+    raw = bool(body.get("raw", False))
+
     if not text:
         raise HTTPException(400, "Kein Text angegeben")
-    
+
+    # Sanitize Markdown so '**' / '*' / '#' etc. are not read aloud
+    if not raw:
+        text = strip_markdown_for_tts(text)
+        if not text:
+            raise HTTPException(400, "Text leer nach Bereinigung")
+
     # Determine voice: request param > user setting > global default
     if not voice:
         user_doc = await db.users.find_one({"_id": ObjectId(user["id"])})
@@ -634,36 +720,101 @@ async def text_to_speech(request: Request, body: dict = Body(...)):
     if not voice:
         default_doc = await db.settings.find_one({"key": "default_voice"})
         voice = default_doc["value"] if default_doc and default_doc.get("value") else "nova"
-    
-    # Get OpenAI API key
+
     api_key = await get_llm_api_key()
     if not api_key:
         raise HTTPException(400, "OpenAI API Key nicht konfiguriert")
-    
-    # Truncate very long texts
-    if len(text) > 4000:
-        text = text[:4000] + "..."
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
+
+    # gpt-4o-mini-tts limit is ~2000 tokens; stay safe under it
+    if len(text) > 3500:
+        text = text[:3500] + "..."
+
+    primary_payload = {
+        "model": TTS_MODEL,
+        "input": text,
+        "voice": voice,
+        "response_format": "mp3",
+        "instructions": instructions,
+    }
+    fallback_voice = voice if voice not in PREMIUM_ONLY_VOICES else "nova"
+    fallback_payload = {
+        "model": TTS_FALLBACK_MODEL,
+        "input": text,
+        "voice": fallback_voice,
+        "response_format": "mp3",
+    }
+
+    async def _open_upstream():
+        """Open a streaming connection to OpenAI; try primary then fallback."""
+        client = httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0))
+        # Attempt primary (gpt-4o-mini-tts)
+        try:
+            req = client.build_request(
+                "POST",
                 "https://api.openai.com/v1/audio/speech",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": "tts-1", "input": text, "voice": voice, "response_format": "mp3"}
+                json=primary_payload,
             )
+            resp = await client.send(req, stream=True)
             if resp.status_code == 200:
-                return Response(content=resp.content, media_type="audio/mpeg",
-                    headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})
-            else:
-                logger.error(f"TTS error: {resp.status_code} {resp.text[:200]}")
-                raise HTTPException(resp.status_code, f"TTS Fehler: {resp.text[:200]}")
-    except httpx.TimeoutException:
-        raise HTTPException(504, "TTS Zeitüberschreitung")
+                return client, resp, TTS_MODEL
+            err_body = (await resp.aread()).decode(errors="ignore")[:300]
+            logger.warning(f"TTS primary ({TTS_MODEL}) {resp.status_code}: {err_body} — falling back to {TTS_FALLBACK_MODEL}")
+            await resp.aclose()
+        except Exception as e:
+            logger.warning(f"TTS primary call failed: {e} — falling back to {TTS_FALLBACK_MODEL}")
+
+        # Fallback (tts-1)
+        req = client.build_request(
+            "POST",
+            "https://api.openai.com/v1/audio/speech",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=fallback_payload,
+        )
+        resp = await client.send(req, stream=True)
+        if resp.status_code == 200:
+            return client, resp, TTS_FALLBACK_MODEL
+        err_body = (await resp.aread()).decode(errors="ignore")[:300]
+        await resp.aclose()
+        await client.aclose()
+        logger.error(f"TTS fallback failed: {resp.status_code} {err_body}")
+        raise HTTPException(resp.status_code if resp.status_code >= 400 else 502,
+                            f"TTS Fehler: {err_body}")
+
+    try:
+        client, upstream, used_model = await _open_upstream()
     except HTTPException:
         raise
+    except httpx.TimeoutException:
+        raise HTTPException(504, "TTS Zeitüberschreitung")
     except Exception as e:
-        logger.error(f"TTS error: {e}")
+        logger.error(f"TTS open failed: {e}")
         raise HTTPException(500, f"TTS Fehler: {str(e)}")
+
+    async def stream_audio():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                if chunk:
+                    yield chunk
+        finally:
+            try:
+                await upstream.aclose()
+            except Exception:
+                pass
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        stream_audio(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-TTS-Model": used_model,
+            "X-Accel-Buffering": "no",  # disable nginx buffering for true streaming
+        },
+    )
 
 
 # -------- Greeting helpers --------
@@ -2179,8 +2330,6 @@ async def get_weather_settings():
     city = city_doc["value"] if city_doc and city_doc.get("value") else ""
     api_key = key_doc["value"] if key_doc and key_doc.get("value") else ""
     return city, api_key
-
-import re
 
 def parse_city_query(city_input: str):
     """Parse city input - supports 'Berlin,DE', '4718 Holderbank, CH', '4718,CH' etc."""

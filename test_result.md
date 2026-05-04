@@ -186,17 +186,104 @@ frontend:
           On mount, if flag present: GET /api/voice/greeting -> if should_play, POST /api/voice/tts (blob) -> Audio.play().
           Flag is consumed immediately on detection (StrictMode safe). Autoplay rejection is logged but not surfaced to UI.
           Frontend testing pending user permission.
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Updated to use the new speakStreaming() helper from utils/ttsPlayer.js so the greeting also benefits from sentence-chunked low-latency playback. User will test in browser.
+
+  - task: "ttsPlayer + Chat playback uses sentence-chunked streaming"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/utils/ttsPlayer.js + frontend/src/pages/Chat.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          New util ttsPlayer.js exports:
+          - stripMarkdownForTTS(text): client-side Markdown stripper as safety net.
+          - splitSentences(text): German-aware sentence splitter with abbreviation guards (z.B., u.a., etc.).
+          - speakStreaming(text, opts): builds chunks (small first chunk for fast start, larger subsequent chunks), kicks off all chunk fetches in parallel, plays them in order. Returns control object {stop(), isPlaying()}.
+          Chat.jsx playTTS now uses speakStreaming and stops the previous playback before starting a new one.
+
+  - task: "Account voice picker shows new voices with HD/NEW badges"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Account.jsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Voice picker now renders HD badge for premium voices (marin/cedar) and NEU badge for newly-added gpt-4o-mini-tts voices (ash/coral/sage)."
+
+  - task: "TTS upgrade backend (gpt-4o-mini-tts + streaming + Markdown strip)"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          /api/voice/tts now defaults to gpt-4o-mini-tts (with tts-1 fallback if unavailable),
+          strips Markdown server-side before sending to OpenAI (no more "Sternchen"),
+          accepts new `instructions` and `raw` body params, and returns a true StreamingResponse
+          using httpx async streaming (build_request + send(stream=True) + aiter_bytes).
+          /api/voice/options expanded from 6 to 11 voices including premium marin/cedar.
+      - working: false
+        agent: "testing"
+        comment: |
+          ❌ CRITICAL CONFIGURATION ISSUE - OpenAI API key not configured
+          
+          Test Results (9 tests total):
+          ✅ PASSED (3/9):
+          - Voice Options endpoint: 11 voices verified, premium flags (marin/cedar) correct, is_new flags (ash/coral/sage) correct, default_voice returned
+          - Empty text validation: correctly returns 400 for empty text
+          - Markdown-only text validation: correctly returns 400 for text that becomes empty after Markdown stripping
+          
+          ❌ FAILED (6/9) - All due to missing OpenAI API key:
+          - Basic TTS: 400 "OpenAI API Key nicht konfiguriert"
+          - Markdown stripping: 400 "OpenAI API Key nicht konfiguriert"
+          - Long text truncation: 400 "OpenAI API Key nicht konfiguriert"
+          - Premium voice 'marin': 400 "OpenAI API Key nicht konfiguriert"
+          - Raw mode: 400 "OpenAI API Key nicht konfiguriert"
+          - Instructions parameter: 400 "OpenAI API Key nicht konfiguriert"
+          
+          ROOT CAUSE:
+          - Database query shows: db.settings.findOne({key: "openai_api_key"}) returns null
+          - The get_llm_api_key() function in server.py only checks database, no environment variable fallback
+          - TTS endpoint correctly validates and returns 400 when API key is missing
+          
+          CODE REVIEW (Implementation is correct):
+          - ✅ Markdown stripping function strip_markdown_for_tts() properly implemented with comprehensive regex patterns
+          - ✅ Text truncation to 3500 chars implemented
+          - ✅ Primary/fallback model logic (gpt-4o-mini-tts -> tts-1) correctly implemented
+          - ✅ Premium voice fallback (marin/cedar -> nova) correctly implemented
+          - ✅ StreamingResponse with X-TTS-Model header correctly implemented
+          - ✅ Raw mode and instructions parameters correctly handled
+          - ✅ Empty text validation correctly implemented
+          - ✅ VOICE_OPTIONS array has all 11 voices with correct flags
+          
+          RESOLUTION REQUIRED:
+          The OpenAI API key must be configured via PUT /api/admin/settings with {"openai_api_key": "sk-..."}.
+          Without a valid API key, TTS audio generation cannot be tested or used.
+          The implementation is correct but cannot function without this configuration.
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "GET /api/voice/greeting endpoint"
-    - "Auth login tracks previous_login_at + last_login_at"
+    - "TTS upgrade backend (gpt-4o-mini-tts + streaming + Markdown strip)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -205,35 +292,39 @@ agent_communication:
   - agent: "main"
     message: |
       Backend feature added: personalized voice greeting after login.
-      Please test:
-      1. POST /api/auth/login -> verify users collection now has last_login_at + previous_login_at fields after second login.
-      2. GET /api/voice/greeting (auth required):
-         - Returns 200 with {text, should_play, voice, context}
-         - text contains German greeting with name
-         - should_play=true on first call, then false on second call same day (de-dup)
-         - GET /api/voice/greeting?force=true -> should_play=true again
-         - Graceful when CaseDesk/Weather not configured (text still returned, fewer parts)
-      3. Verify text grammar is natural German for typical counts (0/1/multiple).
-      Use existing test credentials from /app/memory/test_credentials.md if present; otherwise create a test user via /api/admin/users.
+      (PASSED in round 1 — keep status, not under test now.)
   - agent: "testing"
     message: |
-      ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED
+      ✅ Round 1 complete (15/15 assertions). See per-task status_history above.
+  - agent: "main"
+    message: |
+      Round 2: please test the upgraded /api/voice/tts only.
+      1. POST /api/voice/tts {"text":"Hallo Welt"} -> 200, audio/mpeg, body length > 1000 bytes. Header X-TTS-Model should be either "gpt-4o-mini-tts" or "tts-1".
+      2. POST with text containing Markdown like "**Hallo** *Welt* `code` # H [link](http://x)" -> 200, length > 500. (We can't easily ASR — verify via no error and reasonable size.)
+      3. POST with text >3500 chars -> still 200 (server truncates).
+      4. POST with voice="marin" -> 200; if account lacks gpt-4o-mini-tts access, fallback rewrites to "nova" without erroring.
+      5. POST {"text":"hi","raw":true} -> 200.
+      6. POST {"text":"hi","instructions":"speak slowly"} -> 200.
+      7. GET /api/voice/options -> voices array contains marin/cedar with premium=true; ash/coral/sage with is_new=true.
+
+      Streaming verification: with curl --no-buffer, first bytes should arrive quickly. Use existing test creds from /app/memory/test_credentials.md.
+  - agent: "testing"
+    message: |
+      ⚠️ Round 2 testing blocked by CRITICAL CONFIGURATION ISSUE
       
-      Tested both backend tasks with comprehensive test suite (/app/test_voice_greeting.py):
+      SUMMARY:
+      - ✅ Voice options endpoint fully working (3/3 validation tests passed)
+      - ✅ Input validation working (empty text, Markdown-only text)
+      - ❌ TTS audio generation BLOCKED: OpenAI API key not configured in database
       
-      1. Auth login tracking: ✅ WORKING
-         - previous_login_at and last_login_at correctly tracked
-         - Verified in MongoDB after each login
+      The TTS implementation code is correct (verified via code review):
+      - Markdown stripping, text truncation, model fallback, premium voice fallback, streaming, all parameters correctly implemented
       
-      2. Voice greeting endpoint: ✅ WORKING
-         - All response fields present and correct
-         - German text generation working
-         - Daily de-dup working (should_play logic)
-         - Force parameter working
-         - Graceful degradation working (no weather/CaseDesk)
-         - MongoDB last_greeting_at update working
+      However, all 6 TTS audio generation tests return 400 "OpenAI API Key nicht konfiguriert" because:
+      - db.settings.findOne({key: "openai_api_key"}) returns null
+      - No environment variable fallback exists in get_llm_api_key()
       
-      Test credentials created and saved to /app/memory/test_credentials.md
-      All 15 test assertions passed successfully.
+      REQUIRED ACTION:
+      Configure OpenAI API key via PUT /api/admin/settings with {"openai_api_key": "sk-..."} before TTS can be tested or used.
       
-      No issues found. Backend implementation is complete and working as specified.
+      Test file created: /app/backend_tts_test.py (can be re-run after API key is configured)

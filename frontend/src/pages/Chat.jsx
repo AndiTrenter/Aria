@@ -4,6 +4,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { PaperPlaneRight, Trash, Plus, Circle, Microphone, SpeakerHigh, Stop } from "@phosphor-icons/react";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
+import { speakStreaming } from "@/utils/ttsPlayer";
 
 const Chat = () => {
   const { user } = useAuth();
@@ -52,24 +53,26 @@ const Chat = () => {
 
   // ==================== TTS ====================
   const playTTS = useCallback(async (text) => {
-    try {
-      setIsPlaying(true);
-      const resp = await axios.post(`${API}/voice/tts`, { text }, { responseType: "blob" });
-      const audioUrl = URL.createObjectURL(resp.data);
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-      audio.onended = () => { setIsPlaying(false); URL.revokeObjectURL(audioUrl); };
-      audio.onerror = () => { setIsPlaying(false); URL.revokeObjectURL(audioUrl); };
-      await audio.play();
-    } catch (e) {
-      console.error("TTS error:", e);
-      setIsPlaying(false);
+    // Stop any previous playback
+    if (audioRef.current) {
+      try { audioRef.current.stop(); } catch {}
+      audioRef.current = null;
     }
+    setIsPlaying(true);
+    const ctrl = speakStreaming(text, {
+      onStart: () => setIsPlaying(true),
+      onEnd: () => setIsPlaying(false),
+      onError: (e) => {
+        console.error("TTS error:", e);
+        setIsPlaying(false);
+      },
+    });
+    audioRef.current = ctrl;
   }, []);
 
   const stopTTS = () => {
     if (audioRef.current) {
-      audioRef.current.pause();
+      try { audioRef.current.stop(); } catch {}
       audioRef.current = null;
     }
     setIsPlaying(false);

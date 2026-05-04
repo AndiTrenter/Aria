@@ -264,6 +264,16 @@ const Account = () => {
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-sm font-bold ${selectedVoice === v.id ? (isLcars ? "text-[var(--lcars-orange)]" : "text-purple-200") : "text-gray-400"}`}>
                   {v.name}
+                  {v.premium && (
+                    <span className={`ml-1 align-middle text-[8px] px-1 py-[1px] rounded ${isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-500 text-white"}`}>
+                      HD
+                    </span>
+                  )}
+                  {v.is_new && !v.premium && (
+                    <span className={`ml-1 align-middle text-[8px] px-1 py-[1px] rounded ${isLcars ? "bg-[var(--lcars-blue)] text-black" : "bg-cyan-500 text-white"}`}>
+                      NEU
+                    </span>
+                  )}
                 </span>
                 <button onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
                   className={`p-1 rounded ${isLcars ? "text-[var(--lcars-blue)] hover:bg-[var(--lcars-blue)]/10" : "text-purple-400 hover:bg-purple-800/30"}`}

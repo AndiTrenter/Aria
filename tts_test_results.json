@@ -1,0 +1,62 @@
+{
+  "total_tests": 9,
+  "passed_tests": 3,
+  "failed_tests": 6,
+  "success_rate": 33.33333333333333,
+  "test_results": [
+    {
+      "name": "Basic TTS",
+      "success": false,
+      "details": "Expected 200, got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Markdown Stripping",
+      "success": false,
+      "details": "Expected 200, got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Long Text Truncation",
+      "success": false,
+      "details": "Expected 200 (server should truncate), got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Premium Voice 'marin'",
+      "success": false,
+      "details": "Expected 200 (with fallback if needed), got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Raw Mode",
+      "success": false,
+      "details": "Expected 200, got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Instructions Parameter",
+      "success": false,
+      "details": "Expected 200, got 400: {\"detail\":\"OpenAI API Key nicht konfiguriert\"}",
+      "response_data": null
+    },
+    {
+      "name": "Voice Options",
+      "success": true,
+      "details": "11 voices found, premium voices (marin, cedar) verified, new voices (ash, coral, sage) verified, default_voice: nova",
+      "response_data": null
+    },
+    {
+      "name": "Empty Text Validation",
+      "success": true,
+      "details": "Status: 400 (correctly rejected empty text)",
+      "response_data": null
+    },
+    {
+      "name": "Markdown-Only Text",
+      "success": true,
+      "details": "Status: 400 (correctly rejected Markdown-only text that becomes empty)",
+      "response_data": null
+    }
+  ]
+}
