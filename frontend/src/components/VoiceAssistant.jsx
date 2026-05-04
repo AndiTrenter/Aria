@@ -4,6 +4,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Microphone, SpeakerHigh, X, Waveform } from "@phosphor-icons/react";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
+import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 
 const VoiceAssistant = () => {
   const { theme } = useTheme();
@@ -16,6 +17,7 @@ const VoiceAssistant = () => {
   const recognitionRef = useRef(null);
   const stateRef = useRef(state);
   const alwaysListeningRef = useRef(false);
+  const ttsCtrlRef = useRef(null);
   const isLcars = theme === "startrek";
   const isStarwars = theme === "starwars";
 
@@ -52,7 +54,9 @@ const VoiceAssistant = () => {
 
   const stopAll = () => {
     try { recognitionRef.current?.stop(); } catch {}
-    window.speechSynthesis?.cancel();
+    try { window.speechSynthesis?.cancel(); } catch {}
+    try { ttsCtrlRef.current?.stop(); } catch {}
+    ttsCtrlRef.current = null;
   };
 
   const playTone = (freq1, freq2) => {
@@ -70,23 +74,51 @@ const VoiceAssistant = () => {
   };
 
   const speak = (text) => {
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    synth.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "de-DE";
-    utter.rate = 1.0;
-    utter.pitch = isLcars ? 0.9 : 1.1;
-    utter.onstart = () => setState("speaking");
-    utter.onend = () => {
+    // Cancel any previous playback (browser TTS or our streaming player)
+    try { window.speechSynthesis?.cancel(); } catch {}
+    try { ttsCtrlRef.current?.stop(); } catch {}
+    ttsCtrlRef.current = null;
+
+    if (!text || !text.trim()) {
+      setState("idle");
+      if (alwaysListeningRef.current) startWakeWord();
+      return;
+    }
+
+    setState("speaking");
+
+    const finishCycle = () => {
       setState("idle");
       if (alwaysListeningRef.current) startWakeWord();
     };
-    utter.onerror = () => {
-      setState("idle");
-      if (alwaysListeningRef.current) startWakeWord();
+
+    // Browser-TTS fallback (only if OpenAI TTS fails) — we strip Markdown first
+    const browserFallback = () => {
+      try {
+        const synth = window.speechSynthesis;
+        if (!synth) { finishCycle(); return; }
+        synth.cancel();
+        const cleanedFallback = stripMarkdownForTTS(text);
+        const utter = new SpeechSynthesisUtterance(cleanedFallback);
+        utter.lang = "de-DE";
+        utter.rate = 1.0;
+        utter.pitch = isLcars ? 0.9 : 1.1;
+        utter.onend = finishCycle;
+        utter.onerror = finishCycle;
+        synth.speak(utter);
+      } catch {
+        finishCycle();
+      }
     };
-    synth.speak(utter);
+
+    // Primary: OpenAI gpt-4o-mini-tts via our streaming sentence-chunked player
+    ttsCtrlRef.current = speakStreaming(text, {
+      onEnd: finishCycle,
+      onError: (e) => {
+        console.warn("[Aria voice] OpenAI TTS failed, falling back to browser TTS:", e?.message || e);
+        browserFallback();
+      },
+    });
   };
 
   const sendToChat = async (text) => {
@@ -395,7 +427,7 @@ const VoiceAssistant = () => {
           {response && (
             <div className={`text-sm p-2 rounded ${isLcars ? "bg-black/50 text-gray-300 border-l-2 border-[var(--lcars-blue)]" : "bg-purple-900/30 text-purple-100 border-l-2 border-purple-400"}`}
               style={{ textTransform: "none", letterSpacing: "normal", maxHeight: "150px", overflowY: "auto" }}>
-              {response}
+              {stripMarkdownForTTS(response)}
             </div>
           )}
 
