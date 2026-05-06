@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth, useTheme, API } from "@/App";
 import axios from "axios";
-import { ArrowSquareOut, Circle, Globe, House } from "@phosphor-icons/react";
+import { ArrowSquareOut, Circle, Globe, House, Brain, Monitor } from "@phosphor-icons/react";
 
 const Dashboard = () => {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const navigate = useNavigate();
   const [services, setServices] = useState([]);
   const [stats, setStats] = useState({});
   const [healthData, setHealthData] = useState([]);
@@ -42,6 +44,38 @@ const Dashboard = () => {
 
   return (
     <div className="p-6" data-testid="dashboard-content">
+      {/* Mode Selector: Standard vs A.R.I.A. */}
+      <div className="mb-5 flex items-center justify-end gap-2" data-testid="dashboard-mode-selector">
+        <span className={`text-[11px] tracking-widest mr-1 ${isLcars ? "text-[var(--lcars-blue)]" : "text-purple-400"}`}>
+          MODUS:
+        </span>
+        <div className={`inline-flex rounded-full p-1 ${isLcars ? "bg-black/60 border border-[var(--lcars-orange)]/40" : "bg-purple-950/60 border border-purple-500/30"}`}>
+          <button
+            disabled
+            className={`px-4 py-1.5 text-xs font-bold tracking-widest rounded-full flex items-center gap-1.5 ${
+              isLcars ? "bg-[var(--lcars-orange)] text-black" : "bg-purple-500 text-white"
+            }`}
+            data-testid="dashboard-mode-standard"
+          >
+            <Monitor size={14} weight="bold" /> STANDARD
+          </button>
+          <button
+            onClick={() => {
+              try { sessionStorage.setItem("aria_dashboard_mode", "aria"); } catch {}
+              navigate("/aria");
+            }}
+            className={`px-4 py-1.5 text-xs font-bold tracking-widest rounded-full flex items-center gap-1.5 transition ${
+              isLcars ? "text-[var(--lcars-blue)] hover:bg-[var(--lcars-blue)]/20"
+                      : "text-cyan-300 hover:bg-cyan-500/20"
+            }`}
+            data-testid="dashboard-mode-aria"
+            title="Wechsel in den A.R.I.A.-Mode (JARVIS-Oberfläche)"
+          >
+            <Brain size={14} weight="bold" /> A.R.I.A. MODE
+          </button>
+        </div>
+      </div>
+
       {/* Welcome */}
       <div className="mb-6">
         <h1 className={`text-2xl font-bold tracking-wider ${isLcars ? "text-[var(--lcars-orange)]" : "disney-title disney-glow text-3xl"}`}>

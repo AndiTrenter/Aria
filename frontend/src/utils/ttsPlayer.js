@@ -164,28 +164,49 @@ export function speakStreaming(text, opts = {}) {
 
   const fetchChunk = async (idx) => {
     try {
-      const resp = await axios.post(
-        `${API}/voice/tts`,
-        {
+      // Use native fetch — axios's XHR adapter has known issues reading
+      // responseText on non-text responseType when the server returns an
+      // error payload, which surfaces as an "Uncaught runtime error" in
+      // React's dev overlay.
+      const token = (typeof localStorage !== "undefined" && localStorage.getItem("aria_token")) || null;
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const resp = await fetch(`${API}/voice/tts`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
           text: chunks[idx],
           voice: opts.voice || undefined,
           instructions: opts.instructions || undefined,
-          raw: true, // we already stripped markdown
-        },
-        { responseType: "blob" }
-      );
+          raw: true,
+        }),
+      });
       if (stopped) return;
-      const url = URL.createObjectURL(new Blob([resp.data], { type: "audio/mpeg" }));
+      if (!resp.ok) {
+        // Drain body so the connection is released; do NOT raise.
+        try { await resp.text(); } catch {}
+        throw new Error(`TTS status ${resp.status}`);
+      }
+      const buf = await resp.arrayBuffer();
+      if (stopped) return;
+      const url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
       fetched[idx] = { url };
     } catch (e) {
       fetched[idx] = { error: e };
-      if (idx === 0 && opts.onError) opts.onError(e);
+      if (idx === 0 && opts.onError) {
+        try { opts.onError(e); } catch {}
+      }
     }
   };
 
-  // Kick off all fetches in parallel — first sentence first, but no waiting
+  // Kick off all fetches in parallel — first sentence first, but no waiting.
+  // We attach a no-op catch so any downstream await-less usage cannot surface
+  // as "Unhandled promise rejection" in the browser console / dev overlay.
   for (let i = 0; i < chunks.length; i++) {
-    pending[i] = fetchChunk(i);
+    const p = fetchChunk(i);
+    p.catch(() => {});
+    pending[i] = p;
   }
 
   const playFromIndex = async (idx) => {

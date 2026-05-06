@@ -23,6 +23,7 @@ import CookPilotEmbed from "@/components/CookPilotEmbed";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import WelcomeGreeting from "@/components/WelcomeGreeting";
 import LcarsLayout from "@/components/LcarsLayout";
+import AriaMode from "@/pages/AriaMode";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export const API = `${BACKEND_URL}/api`;
@@ -269,6 +270,8 @@ const ProtectedRoute = ({ children }) => {
 const AppRouter = () => {
   const { user, loading, setupRequired } = useAuth();
   const { theme } = useTheme();
+  const location = useLocation();
+  const isAriaMode = location.pathname === "/aria";
 
   // Disney fairy dust click effect + floating stars
   useEffect(() => {
@@ -341,11 +344,12 @@ const AppRouter = () => {
         <Route path="/cookpilot/chat" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="chat" title="Koch-Chat" /></LcarsLayout></ProtectedRoute>} />
         <Route path="/cookpilot/tablet" element={<ProtectedRoute><LcarsLayout><CookPilotEmbed section="tablet" title="Küchen-Tablet" /></LcarsLayout></ProtectedRoute>} />
         <Route path="/kiosk" element={<ProtectedRoute><KioskMode /></ProtectedRoute>} />
+        <Route path="/aria" element={<ProtectedRoute><AriaMode /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><LcarsLayout><Admin /></LcarsLayout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {user && <VoiceAssistant />}
-      {user && <WelcomeGreeting />}
+      {user && !isAriaMode && <VoiceAssistant />}
+      {user && !isAriaMode && <WelcomeGreeting />}
     </div>
   );
 };
