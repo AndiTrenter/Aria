@@ -7,7 +7,7 @@ import requests
 import os
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://aria-daily-brief.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://jarvis-style-panel.preview.emergentagent.com')
 
 # Test credentials
 TEST_EMAIL = "andi.trenter@gmail.com"

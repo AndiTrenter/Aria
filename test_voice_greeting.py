@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 
 # Configuration
-BACKEND_URL = "https://aria-daily-brief.preview.emergentagent.com/api"
+BACKEND_URL = "https://jarvis-style-panel.preview.emergentagent.com/api"
 MONGO_URL = "mongodb://localhost:27017"
 DB_NAME = "aria_dashboard"
 
