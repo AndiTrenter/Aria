@@ -445,13 +445,15 @@ export default function CortexCloud({
         height: size,
         display: "block",
         position: "relative",
-        // Primary fade: CSS mask makes canvas pixels transparent toward
-        // the edges. Wraps both the canvas and the vignette so they fade
-        // together — no visible square in any browser that supports masks.
+        // Aggressive radial mask — the orb itself only fills the inner
+        // ~50% of the canvas, so we fade everything beyond that to fully
+        // transparent. This guarantees the rectangular canvas boundary is
+        // invisible (no solid-paint vignette can match the page's own
+        // radial gradient bg perfectly, so we use a real mask instead).
         WebkitMaskImage:
-          "radial-gradient(circle at 50% 50%, black 28%, rgba(0,0,0,0.95) 46%, rgba(0,0,0,0.6) 62%, rgba(0,0,0,0.15) 78%, rgba(0,0,0,0) 92%)",
+          "radial-gradient(circle at 50% 50%, black 0%, black 32%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0) 70%)",
         maskImage:
-          "radial-gradient(circle at 50% 50%, black 28%, rgba(0,0,0,0.95) 46%, rgba(0,0,0,0.6) 62%, rgba(0,0,0,0.15) 78%, rgba(0,0,0,0) 92%)",
+          "radial-gradient(circle at 50% 50%, black 0%, black 32%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0) 70%)",
       }}
     >
       <div
@@ -462,20 +464,6 @@ export default function CortexCloud({
           height: size,
           display: "block",
           position: "relative",
-        }}
-      />
-      {/* Solid-paint vignette as a robust fallback — paints in the page's
-          dark-navy background colour (`#001424`) so the canvas square edge
-          blends seamlessly with the surrounding screen, even on browsers
-          where CSS mask-image isn't applied perfectly to a child canvas. */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          background:
-            "radial-gradient(circle at 50% 50%, rgba(0,20,36,0) 0%, rgba(0,20,36,0) 40%, rgba(0,20,36,0.45) 60%, rgba(0,20,36,0.92) 80%, #001424 100%)",
         }}
       />
     </div>
