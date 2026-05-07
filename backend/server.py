@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Body
+from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -1736,11 +1737,43 @@ async def admin_router_history_clear(request: Request):
 
 # ==================== CHAT CONTEXT ENRICHMENT ====================
 
-async def gather_context_for_services(service_ids: list, msg_lower: str, original_message: str = "") -> str:
-    """Gather context ONLY from the routed services."""
+async def gather_context_for_services(service_ids: list, msg_lower: str, original_message: str = "", progress_cb=None) -> str:
+    """Gather context ONLY from the routed services.
+
+    progress_cb (optional): async callable used by the A.R.I.A. streaming UI
+    to show per-service search panels.  For each routed service we emit:
+        panel_open   {id, service, title, query, status: "active"}
+        panel_update {id, status: "done"|"empty"|"error", snippet?, count?}
+    """
     context_parts = []
-    
+
+    async def _panel_open(service: str, title: str, query: str):
+        if progress_cb:
+            try:
+                await progress_cb("panel_open", {
+                    "id": f"panel_{service}",
+                    "service": service,
+                    "title": title,
+                    "query": query[:120],
+                    "status": "active",
+                })
+            except Exception:
+                pass
+
+    async def _panel_update(service: str, status: str, snippet: str = "", count=None):
+        if progress_cb:
+            try:
+                await progress_cb("panel_update", {
+                    "id": f"panel_{service}",
+                    "status": status,
+                    "snippet": (snippet or "")[:160],
+                    "count": count,
+                })
+            except Exception:
+                pass
+
     if "weather" in service_ids:
+        await _panel_open("weather", "Wetter", original_message or "aktuelles Wetter")
         try:
             city, api_key = await get_weather_settings()
             if city and api_key:
@@ -1769,16 +1802,25 @@ async def gather_context_for_services(service_ids: list, msg_lower: str, origina
 - Temperatur: {w['main']['temp']}°C (gefühlt {w['main']['feels_like']}°C)
 - {w['weather'][0]['description']}, Luftfeuchtigkeit: {w['main']['humidity']}%
 - Wind: {w['wind']['speed']} m/s, Wolken: {w['clouds']['all']}%{forecast_text}""")
+                        await _panel_update("weather", "done", f"{w.get('name', city)} · {w['main']['temp']}°C · {w['weather'][0]['description']}")
+                    else:
+                        await _panel_update("weather", "error", f"HTTP {current_resp.status_code}")
+            else:
+                await _panel_update("weather", "empty", "kein API-Key")
         except Exception as e:
             logger.warning(f"Weather context failed: {e}")
+            await _panel_update("weather", "error", str(e)[:120])
 
     if "system" in service_ids:
+        await _panel_open("system", "System-Diagnostik", "CPU / RAM / Docker")
+        sys_snippet = ""
         try:
             import psutil
             cpu = psutil.cpu_percent(interval=0.5)
             mem = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             context_parts.append(f"SYSTEMDATEN: CPU {cpu}%, RAM {mem.used/(1024**3):.1f}/{mem.total/(1024**3):.1f}GB ({mem.percent}%), Disk {disk.percent}%")
+            sys_snippet = f"CPU {cpu}% · RAM {mem.percent}% · Disk {disk.percent}%"
         except Exception:
             pass
         try:
@@ -1787,10 +1829,14 @@ async def gather_context_for_services(service_ids: list, msg_lower: str, origina
             containers = dock.containers.list(all=True)
             container_list = "\n".join([f"  - {c.name}: {c.status}" for c in containers[:15]])
             context_parts.append(f"DOCKER CONTAINER:\n{container_list}")
+            sys_snippet += f" · {len(containers)} Container"
         except Exception:
             pass
+        await _panel_update("system", "done" if sys_snippet else "empty", sys_snippet)
 
     if "homeassistant" in service_ids:
+        await _panel_open("homeassistant", "Home Assistant", "Geräte abfragen")
+        ha_ok = False
         try:
             ha_url, ha_token = await get_ha_settings()
             if ha_url and ha_token:
@@ -1808,47 +1854,90 @@ async def gather_context_for_services(service_ids: list, msg_lower: str, origina
                                 unit = e.get("attributes", {}).get("unit_of_measurement", "")
                                 ha_info.append(f"  - {name} ({eid}): {state} {unit}".strip())
                         if ha_info:
-                            context_parts.append(f"HOME ASSISTANT GERÄTE:\n" + "\n".join(ha_info))
-        except Exception:
-            pass
+                            context_parts.append("HOME ASSISTANT GERÄTE:\n" + "\n".join(ha_info))
+                            await _panel_update("homeassistant", "done", f"{len(ha_info)} Geräte gelesen", count=len(ha_info))
+                            ha_ok = True
+        except Exception as e:
+            await _panel_update("homeassistant", "error", str(e)[:120])
+            ha_ok = True
+        if not ha_ok:
+            await _panel_update("homeassistant", "empty", "keine Daten")
 
     if "casedesk" in service_ids:
+        await _panel_open("casedesk", "CaseDesk", original_message or msg_lower)
         try:
             cd_url, cd_email, cd_pw = await casedesk.get_casedesk_settings()
             if cd_url and cd_email and cd_pw:
                 cd_context = await casedesk.get_casedesk_context(msg_lower)
                 if cd_context:
                     context_parts.append(cd_context)
+                    # Extract simple snippet: first non-empty line after header
+                    snippet = next((ln for ln in cd_context.split("\n") if ln.strip() and not ln.strip().startswith("===")), "Treffer gefunden")
+                    await _panel_update("casedesk", "done", snippet)
+                else:
+                    await _panel_update("casedesk", "empty", "keine Treffer")
+            else:
+                await _panel_update("casedesk", "empty", "nicht konfiguriert")
         except Exception as e:
             logger.warning(f"CaseDesk context failed: {e}")
+            await _panel_update("casedesk", "error", str(e)[:120])
 
     if "plex" in service_ids:
+        await _panel_open("plex", "Plex Media", original_message or msg_lower)
         try:
             plex_url, plex_token = await plex.get_plex_settings()
             if plex_url and plex_token:
                 plex_ctx = await plex.build_chat_context(original_message or msg_lower)
                 if plex_ctx:
                     context_parts.append(plex_ctx)
+                    snippet = next((ln for ln in plex_ctx.split("\n") if ln.strip()), "Treffer gefunden")
+                    await _panel_update("plex", "done", snippet)
+                else:
+                    await _panel_update("plex", "empty", "keine Treffer")
+            else:
+                await _panel_update("plex", "empty", "nicht konfiguriert")
         except Exception as e:
             logger.warning(f"Plex context failed: {e}")
+            await _panel_update("plex", "error", str(e)[:120])
 
     if "cookpilot" in service_ids:
+        await _panel_open("cookpilot", "CookPilot", original_message or msg_lower)
         try:
             import cookpilot as cookpilot_mod
-            # gather_context_for_services is called from chat handler which has user; we pass user via task-local
             aria_user = _current_user_ctx.get()
             if aria_user:
                 cp_context = await cookpilot_mod.get_cookpilot_context(original_message or msg_lower, aria_user)
                 if cp_context:
                     context_parts.append(cp_context)
+                    snippet = next((ln for ln in cp_context.split("\n") if ln.strip()), "Daten geladen")
+                    await _panel_update("cookpilot", "done", snippet)
+                else:
+                    await _panel_update("cookpilot", "empty", "keine Daten")
+            else:
+                await _panel_update("cookpilot", "empty", "kein User-Kontext")
         except Exception as e:
             logger.warning(f"CookPilot context failed: {e}")
+            await _panel_update("cookpilot", "error", str(e)[:120])
 
     return "\n\n".join(context_parts) if context_parts else ""
 
-async def process_chat_message(message_text: str, user_id: str, session_id: str = None) -> str:
-    """Core chat processing with intelligent service routing."""
+async def process_chat_message(message_text: str, user_id: str, session_id: str = None, progress_cb=None) -> str:
+    """Core chat processing with intelligent service routing.
+
+    progress_cb (optional): async callable(event_name: str, data: dict) used
+    by the A.R.I.A. streaming endpoint to push live thought events to the
+    client. Safe to leave None for the regular /api/chat path.
+    """
     msg_lower = message_text.lower()
+
+    async def _emit(event: str, data: dict):
+        if progress_cb is None:
+            return
+        try:
+            await progress_cb(event, data)
+        except Exception:
+            # Never let UI streaming break the chat itself
+            pass
 
     # Resolve full user dict (used for per-service context like CookPilot SSO)
     aria_user = None
@@ -1865,17 +1954,29 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     
     api_key = await get_llm_api_key()
     if not api_key:
+        await _emit("thought", {"id": "parse", "label": "Verstehe Anfrage", "status": "done"})
+        await _emit("thought", {"id": "error", "label": "Kein API-Key konfiguriert", "status": "error"})
         return "Kein API-Key konfiguriert. Bitte im Admin-Bereich einen OpenAI API-Key hinterlegen."
     
     if not OPENAI_AVAILABLE:
         return "OpenAI-Modul nicht verfügbar."
     
     session_id = session_id or f"{user_id}_{uuid.uuid4().hex[:8]}"
+
+    await _emit("thought", {"id": "parse", "label": "Verstehe Anfrage", "status": "active"})
     
     # Step 1: Route — GPT-mini decides which services to query
+    await _emit("thought", {"id": "route", "label": "Wähle passende Dienste", "status": "active"})
     route_result = await service_router.route_message(message_text)
     routed_services = route_result.get("services", [])
     is_simple = route_result.get("is_simple", False)
+    await _emit("thought", {"id": "parse", "label": "Verstehe Anfrage", "status": "done"})
+    await _emit("thought", {
+        "id": "route",
+        "label": "Wähle passende Dienste",
+        "status": "done",
+        "detail": ", ".join(routed_services) if routed_services else "Direkte Antwort",
+    })
     
     logger.info(f"Router: '{message_text[:60]}' → services={routed_services}, simple={is_simple}")
 
@@ -1947,7 +2048,9 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
     # Step 2: Gather context ONLY from routed services
     live_context = ""
     if routed_services:
-        live_context = await gather_context_for_services(routed_services, msg_lower, message_text)
+        await _emit("thought", {"id": "fetch", "label": "Hole Live-Daten", "status": "active", "detail": ", ".join(routed_services)})
+        live_context = await gather_context_for_services(routed_services, msg_lower, message_text, progress_cb=progress_cb)
+        await _emit("thought", {"id": "fetch", "label": "Hole Live-Daten", "status": "done"})
 
     # Step 2b: CookPilot WRITE actions — if the user said "Brot zur Einkaufsliste",
     # actually call CookPilot (deterministic) BEFORE GPT replies. Inject the
@@ -1995,6 +2098,15 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
             except Exception:
                 intent = None
             if intent:
+                await _emit("thought", {
+                    "id": "email_intent",
+                    "label": "Erkenne E-Mail-Absicht",
+                    "status": "done",
+                    "detail": f"An: {intent.get('recipient_name') or intent.get('recipient_email') or '?'}",
+                })
+                await _emit("thought", {"id": "recipient", "label": "Identifiziere Empfänger", "status": "active"})
+                await _emit("thought", {"id": "subject", "label": "Formuliere Betreff", "status": "active"})
+                await _emit("thought", {"id": "body", "label": "Schreibe E-Mail-Text", "status": "active"})
                 try:
                     draft_res = await casedesk.create_email_draft(aria_user, intent, session_id or "default")
                     email_action_result = {
@@ -2003,11 +2115,31 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
                         "message": draft_res["preview"],
                         "draft_id": draft_res["draft_id"],
                     }
+                    draft_obj = draft_res.get("draft") or {}
+                    await _emit("thought", {
+                        "id": "recipient",
+                        "label": "Identifiziere Empfänger",
+                        "status": "done",
+                        "detail": draft_obj.get("recipient_email") or draft_obj.get("recipient_name") or "?",
+                    })
+                    await _emit("thought", {
+                        "id": "subject",
+                        "label": "Formuliere Betreff",
+                        "status": "done",
+                        "detail": draft_obj.get("subject") or "(kein Betreff)",
+                    })
+                    await _emit("thought", {
+                        "id": "body",
+                        "label": "Schreibe E-Mail-Text",
+                        "status": "done",
+                        "detail": (draft_obj.get("body") or "")[:80],
+                    })
                     # Ensure casedesk is in routed_services so GPT knows where the draft lives
                     if "casedesk" not in routed_services:
                         routed_services.append("casedesk")
                 except Exception as e:
                     email_action_result = {"success": False, "message": f"Entwurf konnte nicht gespeichert werden: {e}", "action": "email_draft"}
+                    await _emit("thought", {"id": "body", "label": "Schreibe E-Mail-Text", "status": "error", "detail": str(e)[:80]})
 
     if email_action_result:
         if email_action_result.get("action") == "email_draft" and email_action_result.get("success"):
@@ -2102,6 +2234,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
             model_preference = ["gpt-5.4-mini", "gpt-4o"]
         
         response = None
+        await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "active"})
         for model in model_preference:
             try:
                 kwargs = {"model": model, "messages": gpt_messages, "temperature": 0.7}
@@ -2117,9 +2250,12 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
                 raise
         
         if not response:
+            await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "error"})
             return "KI-Modell nicht verfügbar."
         
         response_text = response.choices[0].message.content
+        await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "done"})
+        await _emit("thought", {"id": "respond", "label": "Antwort fertig", "status": "done"})
         
         # Step 5: Process action tags
         response_text = await _process_action_tags(response_text, user_id)
@@ -2284,6 +2420,72 @@ async def chat_route(message: ChatMessage, request: Request):
     response_text = await process_chat_message(message.message, user["id"], session_id)
     routed = target or "aria-ai"
     return {"response": response_text, "routed_to": routed, "session_id": session_id}
+
+
+# ==================== ARIA STREAMING (SSE) ====================
+# Live "thinking" stream for the A.R.I.A. mode JARVIS UI. Pushes real
+# milestone events while process_chat_message runs, then the final result.
+
+@api_router.post("/aria/stream")
+async def aria_stream_chat(message: ChatMessage, request: Request):
+    user = await get_current_user(request)
+    if not user.get("permissions", {}).get("chat", False) and user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Chat not permitted")
+
+    session_id = message.session_id or f"{user['id']}_{uuid.uuid4().hex[:8]}"
+
+    async def event_stream():
+        import asyncio as _asyncio, json as _json
+        q: _asyncio.Queue = _asyncio.Queue()
+
+        async def progress_cb(event_name: str, data: dict):
+            await q.put((event_name, data))
+
+        def sse(event: str, data: dict) -> str:
+            return f"event: {event}\ndata: {_json.dumps(data, ensure_ascii=False)}\n\n"
+
+        async def runner():
+            try:
+                resp = await process_chat_message(message.message, user["id"], session_id, progress_cb=progress_cb)
+                await q.put(("result", {"text": resp, "session_id": session_id}))
+            except Exception as e:
+                logger.error(f"aria_stream runner error: {e}")
+                await q.put(("error", {"message": str(e)}))
+            finally:
+                await q.put(("done", {}))
+
+        task = _asyncio.create_task(runner())
+
+        # Keep-alive comment so proxies don't cut idle stream
+        yield ": aria-stream-open\n\n"
+
+        try:
+            while True:
+                try:
+                    event_name, data = await _asyncio.wait_for(q.get(), timeout=15.0)
+                except _asyncio.TimeoutError:
+                    # heartbeat
+                    yield ": ping\n\n"
+                    continue
+                yield sse(event_name, data)
+                if event_name in ("done", "error"):
+                    break
+        finally:
+            if not task.done():
+                try:
+                    await _asyncio.wait_for(task, timeout=2.0)
+                except Exception:
+                    task.cancel()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # disable nginx buffering for SSE
+            "Connection": "keep-alive",
+        },
+    )
 
 @api_router.get("/chat/sessions")
 async def get_chat_sessions(request: Request):

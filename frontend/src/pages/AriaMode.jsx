@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth, API } from "@/App";
-import axios from "axios";
+import { useAuth } from "@/App";
 import { toast } from "sonner";
 import {
   Microphone, X, MapTrifold, EnvelopeSimple,
   Brain, PaperPlaneTilt, CheckCircle, CircleNotch,
-  SignOut, SpeakerHigh
+  SignOut, SpeakerHigh, MagnifyingGlass, Warning
 } from "@phosphor-icons/react";
 import CortexCloud from "@/components/CortexCloud";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
+import { streamAriaChat } from "@/utils/ariaStream";
 
 /*  ────────────────────────────────────────────────────────────────────
     INTENT PARSERS – deterministic client-side detection for the two
@@ -22,21 +22,36 @@ import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 function parseRouteIntent(text) {
   const t = text.trim();
   const low = t.toLowerCase();
-  if (!/\b(route|wegbeschreibung|navigation|navigiere|fahr|weg nach|wie komme ich)\b/.test(low)) {
+  // Broader trigger set – covers landmarks ("zum Kölner Dom"), pronouns etc.
+  if (!/\b(route|wegbeschreibung|navigation|navigiere|fahr|weg nach|wie komme ich|bring mich|zeig(?: mir)? (?:die )?route|ich will (?:nach|zum))\b/.test(low)) {
     return null;
   }
+  const trim = (s) => s.replace(/^(bitte\s+)?/i, "").replace(/\s+(bitte)$/i, "").trim().replace(/\s*[.?!]+$/, "");
+
   // "route von X nach Y"
   let m = t.match(/route\s+von\s+(.+?)\s+nach\s+(.+?)[.?!]?$/i);
-  if (m) return { origin: m[1].trim(), destination: m[2].trim() };
-  // "wie komme ich von X nach Y"
-  m = t.match(/wie\s+komme?\s+ich\s+von\s+(.+?)\s+(?:nach|zum?)\s+(.+?)[.?!]?$/i);
-  if (m) return { origin: m[1].trim(), destination: m[2].trim() };
-  // "navigiere mich nach X" / "route zu X" / "route nach X"
-  m = t.match(/(?:navigiere\s+mich\s+nach|route\s+(?:zum?|nach)|wegbeschreibung\s+(?:zum?|nach)|fahr\s+mich\s+(?:zum?|nach))\s+(.+?)[.?!]?$/i);
-  if (m) return { origin: null, destination: m[1].trim() };
-  // "wie komme ich (am besten) nach X"
-  m = t.match(/wie\s+komme?\s+ich\s+(?:am\s+besten\s+)?(?:zum?|nach)\s+(.+?)[.?!]?$/i);
-  if (m) return { origin: null, destination: m[1].trim() };
+  if (m) return { origin: trim(m[1]), destination: trim(m[2]) };
+  // "wie komme ich von X nach/zum Y"
+  m = t.match(/wie\s+komme?\s+ich\s+von\s+(.+?)\s+(?:nach|zum?|zur)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: trim(m[1]), destination: trim(m[2]) };
+  // "navigiere (mich) (nach|zum|zur) X" / "fahr mich (zu(m|r)|nach) X"
+  m = t.match(/(?:navigiere(?:\s+mich)?|fahr\s+mich)\s+(?:nach|zum|zur|zu)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
+  // "route (zum|zur|nach|zu) X" / "wegbeschreibung zum X"
+  m = t.match(/(?:route|wegbeschreibung)\s+(?:zum|zur|nach|zu)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
+  // "bring mich (zum|zur|nach) X"
+  m = t.match(/bring\s+mich\s+(?:zum|zur|nach|zu)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
+  // "zeig (mir) (die) route (zum|zur|nach) X"
+  m = t.match(/zeig(?:\s+mir)?\s+(?:die\s+)?route\s+(?:zum|zur|nach|zu)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
+  // "ich will (nach|zum|zur) X"
+  m = t.match(/ich\s+will\s+(?:nach|zum|zur)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
+  // "wie komme ich (am besten|am schnellsten) (zum|zur|nach) X"
+  m = t.match(/wie\s+komme?\s+ich\s+(?:am\s+(?:besten|schnellsten|einfachsten)\s+)?(?:zum|zur|nach)\s+(.+?)[.?!]?$/i);
+  if (m) return { origin: null, destination: trim(m[1]) };
   return null;
 }
 
@@ -54,24 +69,7 @@ function parseEmailIntent(text) {
 
 /*  ────────────────────────────────────────────────────────────────── */
 
-const THINKING_STEPS_EMAIL = [
-  { id: "parse",     label: "Analysiere Anfrage",         delay: 0    },
-  { id: "recipient", label: "Identifiziere Empfänger",    delay: 900  },
-  { id: "subject",   label: "Formuliere Betreff",         delay: 1900 },
-  { id: "body",      label: "Schreibe E-Mail-Text",       delay: 2900 },
-  { id: "tone",      label: "Prüfe Ton & Grammatik",      delay: 4100 },
-  { id: "finalize",  label: "Entwurf fertigstellen",      delay: 5300 },
-];
-
-const THINKING_STEPS_CHAT = [
-  { id: "parse",    label: "Verstehe Anfrage",          delay: 0    },
-  { id: "route",    label: "Wähle passende Dienste",    delay: 700  },
-  { id: "fetch",    label: "Hole Live-Daten",           delay: 1600 },
-  { id: "reason",   label: "Denke nach",                delay: 2600 },
-  { id: "respond",  label: "Formuliere Antwort",        delay: 3600 },
-];
-
-/* ──────────────────────────────────────────────────────────────────── */
+/*  ────────────────────────────────────────────────────────────────── */
 
 const AriaMode = () => {
   const { user } = useAuth();
@@ -86,11 +84,18 @@ const AriaMode = () => {
 
   // thinking overlay
   const [thinking, setThinking] = useState(null);
-  // thinking = null | { kind: "email"|"chat", steps: [{id,label,status}], result?: {body,meta} }
+  // thinking = null | { kind: "email"|"chat", steps: [{id,label,status,detail?}], result?: {body,meta} }
 
   // maps overlay
   const [mapsOverlay, setMapsOverlay] = useState(null);
   // { origin, destination, embedUrl, externalUrl }
+
+  // floating "holo" search panels around the cortex (JARVIS style)
+  const [panels, setPanels] = useState([]);
+  // panels: [{id, service, title, query, status: "active"|"done"|"empty"|"error", snippet, count, ts}]
+
+  // pending email confirmation flow ("Sage 'ja versende' …")
+  const [pendingEmail, setPendingEmail] = useState(false);
 
   // cortex intensity (drives animation)
   const [intensity, setIntensity] = useState(0.25);
@@ -99,6 +104,8 @@ const AriaMode = () => {
   const stateRef = useRef(mode);
   const ttsCtrlRef = useRef(null);
   const thinkingTimersRef = useRef([]);
+  const streamCtrlRef = useRef(null);
+  const panelTimeoutsRef = useRef({});
   const bootRef = useRef(false);
 
   useEffect(() => { stateRef.current = mode; }, [mode]);
@@ -153,9 +160,13 @@ const AriaMode = () => {
     try { recognitionRef.current?.stop(); } catch {}
     try { window.speechSynthesis?.cancel(); } catch {}
     try { ttsCtrlRef.current?.stop(); } catch {}
+    try { streamCtrlRef.current?.abort(); } catch {}
     ttsCtrlRef.current = null;
+    streamCtrlRef.current = null;
     thinkingTimersRef.current.forEach((t) => clearTimeout(t));
     thinkingTimersRef.current = [];
+    Object.values(panelTimeoutsRef.current).forEach((t) => clearTimeout(t));
+    panelTimeoutsRef.current = {};
   }, []);
 
   useEffect(() => () => stopAll(), [stopAll]);
@@ -258,18 +269,236 @@ const AriaMode = () => {
     handleUserUtterance(t);
   };
 
+  /* ─── Floating holo-panels around the cortex (JARVIS visual) ───────── */
+  const upsertPanel = (id, patch) => {
+    setPanels((prev) => {
+      const idx = prev.findIndex((p) => p.id === id);
+      if (idx === -1) return [...prev, { id, ts: Date.now(), ...patch }];
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], ...patch, ts: Date.now() };
+      return copy;
+    });
+    // Auto-fade panels that finished after a short hold time
+    if (patch.status && patch.status !== "active") {
+      if (panelTimeoutsRef.current[id]) clearTimeout(panelTimeoutsRef.current[id]);
+      panelTimeoutsRef.current[id] = setTimeout(() => {
+        setPanels((prev) => prev.filter((p) => p.id !== id));
+        delete panelTimeoutsRef.current[id];
+      }, 6000);
+    }
+  };
+
+  const clearPanels = () => {
+    Object.values(panelTimeoutsRef.current).forEach((t) => clearTimeout(t));
+    panelTimeoutsRef.current = {};
+    setPanels([]);
+  };
+
+  /* ─── Unified streaming command dispatcher ────────────────────────── */
+  const runStreamingCommand = (text, kind /* "email" | "chat" */) => {
+    setTranscript(text);
+    setResponse("");
+    setMode("thinking");
+    clearPanels();
+
+    // Initial step skeleton — gets filled in by real backend events
+    const initialSteps = (kind === "email" ? [
+      { id: "parse",        label: "Verstehe Anfrage",        status: "active" },
+      { id: "route",        label: "Wähle passende Dienste",  status: "pending" },
+      { id: "email_intent", label: "Erkenne E-Mail-Absicht",  status: "pending" },
+      { id: "recipient",    label: "Identifiziere Empfänger", status: "pending" },
+      { id: "subject",      label: "Formuliere Betreff",      status: "pending" },
+      { id: "body",         label: "Schreibe E-Mail-Text",    status: "pending" },
+      { id: "reason",       label: "Generiere Antwort",       status: "pending" },
+    ] : [
+      { id: "parse",  label: "Verstehe Anfrage",        status: "active" },
+      { id: "route",  label: "Wähle passende Dienste",  status: "pending" },
+      { id: "fetch",  label: "Hole Live-Daten",         status: "pending" },
+      { id: "reason", label: "Denke nach",              status: "pending" },
+    ]).map((s) => ({ ...s }));
+
+    setThinking({ kind, steps: initialSteps, result: null });
+
+    let finalText = "";
+    let isPendingEmailConfirm = false;
+
+    streamCtrlRef.current = streamAriaChat(text, {
+      sessionId: "aria_mode_session",
+      onThought: (data) => {
+        const { id, label, status, detail } = data || {};
+        if (!id) return;
+        // Update or append step
+        setThinking((prev) => {
+          if (!prev) return prev;
+          const idx = prev.steps.findIndex((s) => s.id === id);
+          if (idx === -1) {
+            return { ...prev, steps: [...prev.steps, { id, label: label || id, status, detail }] };
+          }
+          const next = [...prev.steps];
+          next[idx] = { ...next[idx], label: label || next[idx].label, status, detail: detail ?? next[idx].detail };
+          return next;
+        });
+        // Email draft creation success → user can confirm verbally
+        if (id === "body" && status === "done" && kind === "email") {
+          isPendingEmailConfirm = true;
+        }
+      },
+      onPanel: ({ kind: pKind, payload }) => {
+        if (pKind === "open") {
+          upsertPanel(payload.id, {
+            service: payload.service,
+            title: payload.title,
+            query: payload.query,
+            status: "active",
+          });
+        } else if (pKind === "update") {
+          upsertPanel(payload.id, {
+            status: payload.status,
+            snippet: payload.snippet,
+            count: payload.count,
+          });
+        }
+      },
+      onResult: (data) => {
+        finalText = data?.text || "";
+      },
+      onError: (err) => {
+        finalText = `Fehler: ${err?.message || "Stream konnte nicht verarbeitet werden."}`;
+      },
+      onDone: () => {
+        // mark all pending steps as done
+        setThinking((prev) => {
+          if (!prev) return null;
+          const done = prev.steps.map((s) => ({
+            ...s,
+            status: s.status === "pending" || s.status === "active" ? "done" : s.status,
+          }));
+          return { ...prev, steps: done, result: { body: finalText } };
+        });
+        setResponse(finalText);
+
+        if (isPendingEmailConfirm) {
+          setPendingEmail(true);
+        } else if (kind === "chat") {
+          // Auto-close chat thinking pane after a short beat
+          setTimeout(() => closeThinking(), 1500);
+        }
+
+        if (finalText) {
+          setMode("speaking");
+          ttsCtrlRef.current = speakStreaming(stripMarkdownForTTS(finalText), {
+            onEnd: () => {
+              setMode("idle");
+              if (isPendingEmailConfirm) {
+                // Listen for "ja versende" / "verwerfen"
+                startListening();
+              } else {
+                startWakeWord();
+              }
+            },
+            onError: () => {
+              setMode("idle");
+              if (isPendingEmailConfirm) startListening(); else startWakeWord();
+            },
+          });
+        } else {
+          setMode("idle");
+          startWakeWord();
+        }
+      },
+    });
+  };
+
   /* ─── Intent dispatcher ──────────────────────────────────────────── */
   const handleUserUtterance = async (text) => {
+    // Built-in visual demo (lets you preview the JARVIS holo-panels without
+    // any backend services configured). Triggered with: "/demo"
+    if (text.trim().toLowerCase() === "/demo" || text.trim().toLowerCase() === "demo") {
+      runDemoSequence();
+      return;
+    }
+
+    // Voice-confirmation for pending email draft
+    if (pendingEmail) {
+      const t = text.toLowerCase();
+      const isConfirm = /\b(ja|jawohl|jo|send(?:e|en)?|abschick|absend|versend|verschick|los|bestätig)\b/.test(t);
+      const isCancel  = /\b(nein|verwerf|abbrech|cancel|abbruch|löschen|nicht|stop)\b/.test(t);
+      if (isConfirm || isCancel) {
+        setPendingEmail(false);
+        // Forward decision through normal chat (CaseDesk handles ja/nein)
+        runStreamingCommand(text, "chat");
+        return;
+      }
+      // Otherwise treat as a brand new request and drop the pending state
+      setPendingEmail(false);
+    }
+
     const routeIntent = parseRouteIntent(text);
     if (routeIntent) {
       await handleRouteIntent(routeIntent);
       return;
     }
     if (parseEmailIntent(text)) {
-      await handleEmailIntent(text);
+      runStreamingCommand(text, "email");
       return;
     }
-    await handleChatIntent(text);
+    runStreamingCommand(text, "chat");
+  };
+
+  /* ─── Visual demo (no backend) ───────────────────────────────────── */
+  const runDemoSequence = () => {
+    setTranscript("/demo");
+    setMode("thinking");
+    clearPanels();
+    const demoSteps = [
+      { id: "parse", label: "Verstehe Anfrage",       status: "active"  },
+      { id: "route", label: "Wähle passende Dienste", status: "pending" },
+      { id: "fetch", label: "Hole Live-Daten",        status: "pending" },
+      { id: "reason", label: "Denke nach",            status: "pending" },
+    ];
+    setThinking({ kind: "chat", steps: demoSteps, result: null });
+
+    const demoPanels = [
+      { id: "panel_weather",       service: "weather",       title: "Wetter",       query: "Wetter Köln · 24h",      result: "Köln · 18°C · leichter Regen" },
+      { id: "panel_casedesk",      service: "casedesk",      title: "CaseDesk",     query: "Letzte E-Mails · Aufträge", result: "12 ungelesen · 3 offene Cases" },
+      { id: "panel_plex",          service: "plex",          title: "Plex Media",   query: "Neue Filme · Watch-Later", result: "8 Filme · 4 Serien neu" },
+      { id: "panel_homeassistant", service: "homeassistant", title: "Home Assistant", query: "Lichter · Heizung · Sensoren", result: "12 Lichter aus · 21°C Wohnzimmer" },
+      { id: "panel_cookpilot",     service: "cookpilot",     title: "CookPilot",    query: "Vorräte · Rezeptideen",  result: "Pasta · Tomaten · Knoblauch ausreichend" },
+      { id: "panel_system",        service: "system",        title: "System-Diagnose", query: "CPU · RAM · Container", result: "CPU 14% · RAM 38% · 9 Container" },
+    ];
+
+    // Open all panels
+    demoPanels.forEach((d, i) => {
+      setTimeout(() => {
+        upsertPanel(d.id, { service: d.service, title: d.title, query: d.query, status: "active" });
+      }, 250 + i * 220);
+    });
+
+    // Step transitions
+    setTimeout(() => setThinking((p) => p && ({ ...p, steps: p.steps.map((s) => s.id === "parse" ? { ...s, status: "done" } : s.id === "route" ? { ...s, status: "active", detail: "weather, casedesk, plex, homeassistant, cookpilot, system" } : s) })), 400);
+    setTimeout(() => setThinking((p) => p && ({ ...p, steps: p.steps.map((s) => s.id === "route" ? { ...s, status: "done" } : s.id === "fetch" ? { ...s, status: "active" } : s) })), 1200);
+
+    // Resolve panels one by one
+    demoPanels.forEach((d, i) => {
+      setTimeout(() => {
+        upsertPanel(d.id, { status: "done", snippet: d.result });
+      }, 1600 + i * 320);
+    });
+
+    setTimeout(() => setThinking((p) => p && ({ ...p, steps: p.steps.map((s) => s.id === "fetch" ? { ...s, status: "done" } : s.id === "reason" ? { ...s, status: "active" } : s) })), 1800 + demoPanels.length * 320);
+
+    // Final
+    const finalText = "Demo-Modus: Sechs Service-Holopanels gleichzeitig geöffnet, jeder Service liefert seine Live-Daten an A.R.I.A. Im echten Betrieb füllt sich jedes Panel mit den tatsächlichen Antworten deiner verbundenen Dienste.";
+    setTimeout(() => {
+      setThinking((p) => p && ({ ...p, steps: p.steps.map((s) => ({ ...s, status: "done" })), result: { body: finalText } }));
+      setResponse(finalText);
+      setMode("speaking");
+      ttsCtrlRef.current = speakStreaming(finalText, {
+        onEnd: () => { setMode("idle"); startWakeWord(); },
+        onError: () => { setMode("idle"); startWakeWord(); },
+      });
+      setTimeout(() => closeThinking(), 1800);
+    }, 2600 + demoPanels.length * 320);
   };
 
   /* ─── Route → Google Maps ────────────────────────────────────────── */
@@ -327,101 +556,10 @@ const AriaMode = () => {
     });
   };
 
-  /* ─── Email flow with live-thought overlay ───────────────────────── */
-  const animateThinkingSteps = (kind) => {
-    const steps = (kind === "email" ? THINKING_STEPS_EMAIL : THINKING_STEPS_CHAT).map((s) => ({ ...s, status: "pending" }));
-    setThinking({ kind, steps, result: null });
-
-    // Progress schedule — kick off in series. If backend finishes faster, we
-    // short-circuit via resolveThinking(). If it finishes slower, we just
-    // hold on the last step.
-    thinkingTimersRef.current.forEach((t) => clearTimeout(t));
-    thinkingTimersRef.current = steps.map((s, i) => setTimeout(() => {
-      setThinking((prev) => {
-        if (!prev) return prev;
-        const next = prev.steps.map((st, idx) => {
-          if (idx < i) return { ...st, status: "done" };
-          if (idx === i) return { ...st, status: "active" };
-          return st;
-        });
-        return { ...prev, steps: next };
-      });
-    }, s.delay));
-  };
-
-  const resolveThinking = (resultText) => {
-    thinkingTimersRef.current.forEach((t) => clearTimeout(t));
-    thinkingTimersRef.current = [];
-    setThinking((prev) => {
-      if (!prev) return null;
-      const done = prev.steps.map((s) => ({ ...s, status: "done" }));
-      return { ...prev, steps: done, result: { body: resultText } };
-    });
-  };
-
   const closeThinking = () => {
     thinkingTimersRef.current.forEach((t) => clearTimeout(t));
     thinkingTimersRef.current = [];
     setThinking(null);
-  };
-
-  const postChat = async (text) => {
-    const { data } = await axios.post(`${API}/chat`, {
-      message: text,
-      session_id: "aria_mode_session",
-    });
-    return data?.response || "";
-  };
-
-  const handleEmailIntent = async (text) => {
-    setMode("thinking");
-    setTranscript(text);
-    setResponse("");
-    animateThinkingSteps("email");
-    try {
-      const reply = await postChat(text);
-      resolveThinking(reply);
-      setResponse(reply);
-      setMode("speaking");
-      // For TTS we strip the structural markdown but keep the meaningful text
-      const spoken = stripMarkdownForTTS(reply);
-      ttsCtrlRef.current = speakStreaming(spoken, {
-        onEnd: () => { setMode("idle"); startWakeWord(); },
-        onError: () => { setMode("idle"); startWakeWord(); },
-      });
-    } catch (e) {
-      const msg = "Entwurf konnte nicht erstellt werden.";
-      resolveThinking(msg);
-      setResponse(msg);
-      setMode("idle");
-      startWakeWord();
-    }
-  };
-
-  const handleChatIntent = async (text) => {
-    setMode("thinking");
-    setTranscript(text);
-    setResponse("");
-    animateThinkingSteps("chat");
-    try {
-      const reply = await postChat(text);
-      resolveThinking(reply);
-      // Auto-close the thinking overlay after a short moment so the cortex is visible again.
-      setTimeout(() => closeThinking(), 1200);
-      setResponse(reply);
-      setMode("speaking");
-      ttsCtrlRef.current = speakStreaming(stripMarkdownForTTS(reply), {
-        onEnd: () => { setMode("idle"); startWakeWord(); },
-        onError: () => { setMode("idle"); startWakeWord(); },
-      });
-    } catch (e) {
-      const msg = "Entschuldigung, ich konnte die Anfrage nicht verarbeiten.";
-      resolveThinking(msg);
-      setTimeout(() => closeThinking(), 1200);
-      setResponse(msg);
-      setMode("idle");
-      startWakeWord();
-    }
   };
 
   /* ─── Exit → back to standard dashboard ──────────────────────────── */
@@ -479,9 +617,9 @@ const AriaMode = () => {
         </button>
       </div>
 
-      {/* Side panels (decorative HUD) */}
-      <SideHudPanel side="left" user={user} mode={mode} />
-      <SideHudPanel side="right" mode={mode} />
+      {/* Side panels (decorative HUD) — hidden while search holo-panels are open */}
+      {panels.length === 0 && <SideHudPanel side="left" user={user} mode={mode} />}
+      {panels.length === 0 && <SideHudPanel side="right" mode={mode} />}
 
       {/* Center: Cortex cloud */}
       <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
@@ -498,6 +636,16 @@ const AriaMode = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating holo-panels (JARVIS-style search windows around the cortex) */}
+      <HoloPanelLayer panels={panels} />
+
+      {/* Pending email confirmation banner */}
+      {pendingEmail && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 px-5 py-2.5 rounded-full bg-cyan-500/20 border border-cyan-300/60 text-cyan-100 text-sm tracking-wide backdrop-blur shadow-[0_0_30px_rgba(100,220,255,0.35)] animate-pulse">
+          Sage <b className="text-cyan-200">„ja versende"</b> oder <b className="text-cyan-200">„verwerfen"</b>
+        </div>
+      )}
 
       {/* Bottom: transcript + response */}
       <div className="absolute bottom-0 left-0 right-0 z-20 px-8 pb-6 pointer-events-none">
@@ -752,6 +900,144 @@ const MapsOverlay = ({ data, onClose }) => {
           />
         </div>
       </div>
+    </div>
+  );
+};
+
+/* ─── Holo Panel Layer (JARVIS search windows around the cortex) ─── */
+
+const SERVICE_META = {
+  weather:        { color: "200", emoji: "☀" },
+  system:         { color: "260", emoji: "⚙" },
+  homeassistant:  { color: "100", emoji: "🏠" },
+  casedesk:       { color: "30",  emoji: "✉" },
+  plex:           { color: "320", emoji: "▶" },
+  cookpilot:      { color: "20",  emoji: "🍳" },
+};
+
+// Pre-computed positions around a 560-px cortex.  Six slots arranged like
+// floating holograms beside the orb.  We index into them in panel-arrival
+// order so two simultaneous searches show side-by-side.
+const PANEL_SLOTS = [
+  { top: "14%",  left:  "3%"  },   // top-left
+  { top: "14%",  right: "3%"  },   // top-right
+  { top: "44%",  left:  "1.5%" },  // mid-left
+  { top: "44%",  right: "1.5%" },  // mid-right
+  { bottom: "20%", left:  "4%" },  // bot-left
+  { bottom: "20%", right: "4%" },  // bot-right
+  { top: "29%",  left:  "20%" },   // overflow inner-left (rare)
+  { top: "29%",  right: "20%" },   // overflow inner-right (rare)
+];
+
+const HoloPanelLayer = ({ panels }) => {
+  if (!panels || panels.length === 0) return null;
+  // Sort by ts so layout is stable based on arrival order
+  const ordered = [...panels].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  return (
+    <div className="absolute inset-0 z-20 pointer-events-none">
+      {ordered.map((p, i) => {
+        const slot = PANEL_SLOTS[i % PANEL_SLOTS.length];
+        return <HoloPanel key={p.id} panel={p} slot={slot} index={i} />;
+      })}
+    </div>
+  );
+};
+
+const HoloPanel = ({ panel, slot, index }) => {
+  const meta = SERVICE_META[panel.service] || { color: "190", emoji: "◆" };
+  const hue = meta.color;
+  const status = panel.status || "active";
+
+  const statusBadge =
+    status === "active" ? { color: "text-cyan-300", text: "SUCHE …", icon: <CircleNotch size={12} weight="bold" className="animate-spin" /> }
+    : status === "done" ? { color: "text-emerald-300", text: "FERTIG",  icon: <CheckCircle size={12} weight="fill" /> }
+    : status === "empty" ? { color: "text-amber-300/80", text: "LEER",   icon: <CircleNotch size={12} weight="bold" /> }
+    : { color: "text-red-300", text: "FEHLER", icon: <Warning size={12} weight="fill" /> };
+
+  return (
+    <div
+      className="absolute pointer-events-none holo-panel"
+      style={{
+        ...slot,
+        width: 260,
+        animation: "aria-holo-in 460ms cubic-bezier(.2,.9,.3,1.2) both",
+        animationDelay: `${index * 70}ms`,
+      }}
+    >
+      <div
+        className="relative rounded-md border backdrop-blur-md overflow-hidden"
+        style={{
+          background: `linear-gradient(180deg, hsla(${hue},90%,40%,0.18), hsla(${hue},90%,15%,0.45))`,
+          borderColor: `hsla(${hue},90%,65%,0.55)`,
+          boxShadow: `0 0 22px hsla(${hue},90%,55%,0.25), inset 0 0 24px hsla(${hue},90%,40%,0.15)`,
+        }}
+      >
+        {/* HUD top stripe */}
+        <div
+          className="flex items-center justify-between px-3 py-1.5 text-[10px] tracking-[0.25em] font-bold border-b"
+          style={{
+            color: `hsl(${hue},90%,80%)`,
+            borderColor: `hsla(${hue},90%,65%,0.4)`,
+            background: `hsla(${hue},90%,30%,0.25)`,
+          }}
+        >
+          <span className="flex items-center gap-1.5">
+            <MagnifyingGlass size={11} weight="bold" />
+            {panel.title || (panel.service || "").toUpperCase()}
+          </span>
+          <span className={`flex items-center gap-1 ${statusBadge.color}`}>
+            {statusBadge.icon}
+            {statusBadge.text}
+          </span>
+        </div>
+        {/* Body */}
+        <div className="px-3 py-2.5 space-y-1.5">
+          {panel.query && (
+            <div className="text-[11px] text-cyan-100/85 leading-snug line-clamp-2">
+              <span className="text-cyan-400/80">QUERY ›</span> {panel.query}
+            </div>
+          )}
+          {panel.snippet && (
+            <div className="text-[11px] text-emerald-100/85 leading-snug line-clamp-3">
+              <span className="text-emerald-400/80">↳</span> {panel.snippet}
+            </div>
+          )}
+          {!panel.query && !panel.snippet && (
+            <div className="text-[11px] text-cyan-300/60 italic">verarbeite…</div>
+          )}
+          {/* mini scan bar */}
+          {status === "active" && (
+            <div className="h-[2px] mt-1 rounded overflow-hidden" style={{ background: `hsla(${hue},90%,40%,0.3)` }}>
+              <div
+                className="h-full rounded"
+                style={{
+                  width: "40%",
+                  background: `hsl(${hue},90%,70%)`,
+                  animation: "aria-holo-bar 1.4s linear infinite",
+                  boxShadow: `0 0 10px hsl(${hue},90%,70%)`,
+                }}
+              />
+            </div>
+          )}
+        </div>
+        {/* Corner ticks */}
+        <div className="absolute -top-px -left-px w-3 h-3 border-t border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+        <div className="absolute -top-px -right-px w-3 h-3 border-t border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+        <div className="absolute -bottom-px -left-px w-3 h-3 border-b border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+        <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+      </div>
+      <style>{`
+        @keyframes aria-holo-in {
+          0%   { opacity: 0; transform: translateY(8px) scale(0.85); filter: blur(4px); }
+          60%  { opacity: 1; transform: translateY(0) scale(1.03); filter: blur(0); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes aria-holo-bar {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(260%); }
+        }
+        .holo-panel:hover { filter: brightness(1.12); }
+      `}</style>
     </div>
   );
 };
