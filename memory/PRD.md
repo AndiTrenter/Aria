@@ -376,3 +376,12 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 - Receipt-OCR (`POST /api/ai/parse-receipt`)
 - CookPilot-Frontend hört auf `aria-sso-token` postMessage (Code-Change auf CookPilot-Seite nötig)
 
+
+### Phase 15 — A.R.I.A. Mode Stufe 3 (DONE 2026-02-07, V 9.0)
+- [x] Bug-Fix `AriaMode.jsx`: `setThinking`-Callback gab nur `next`-Array zurück statt `{...prev, steps: next}` → Ursache des `Cannot read properties of undefined (reading 'findIndex')` Crashes; defensive Array-Checks in `upsertPanel` und in allen `setThinking`-Callbacks ergänzt
+- [x] **3D Cortex Cloud (Three.js)** — `/app/frontend/src/components/CortexCloud.jsx` komplett neu geschrieben: WebGL-Renderer, 3000 Partikel auf zwei verschachtelten Sphären, emissiver Glow-Core, 3 nested HUD-Ringe + 36 Tick-Marks, dynamische Lightning-Arcs (≥35 % intensity) und Shockwave-Ringe beim Speaking. Drop-in: gleiche Props (`intensity`, `speaking`, `listening`, `size`)
+- [x] **Echte Live-Token-Updates** — Backend `process_chat_message` streamt nun bei `progress_cb is not None` über `openai_client.chat.completions.create(stream=True)` und emittiert `result_chunk`-SSE-Events mit `{delta, text}`. Frontend-Handler `onResultChunk` aktualisiert `response`-State und `thinking.result.body` live → Antwort tippt sich direkt in der Box, statt erst nach Abschluss zu erscheinen
+- [x] **3D-Holo-Panels** — `HoloPanelLayer` mit `perspective: 1400px` + `perspectiveOrigin: 50% 45%`; jeder Panel-Slot hat eigene `tz/ry/rx`-Koordinaten (Tiefe + Y-/X-Rotation), gentle Float-Animation (`aria-holo-float`) wackelt z-Tiefe und Y-Rotation kontinuierlich → Panels schweben wie Stark-Industries-Hologramme im Raum, plus subtiler Scan-Line-Overlay
+- [x] Dependency: `three@0.184.0` via `yarn add three`
+- [x] Smoke-Test bestanden: ARIA-Mode öffnet, Cortex rendert, `/demo` triggert Holo-Panels ohne Crash
+

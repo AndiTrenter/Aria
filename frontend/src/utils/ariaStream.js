@@ -6,6 +6,8 @@
  *   const ctrl = streamAriaChat(message, {
  *     sessionId: "...",
  *     onThought: (data) => {...},     // {id, label, status, detail?}
+ *     onPanel:   ({kind, payload}) => {...}, // kind: "open"|"update"
+ *     onResultChunk: (data) => {...}, // {delta, text}  — streamed live tokens
  *     onResult:  (data) => {...},     // {text, session_id}
  *     onError:   (err)  => {...},
  *     onDone:    ()     => {...},
@@ -58,6 +60,7 @@ export function streamAriaChat(message, opts = {}) {
         if (event === "thought") opts.onThought?.(parsed);
         else if (event === "panel_open") opts.onPanel?.({ kind: "open", payload: parsed });
         else if (event === "panel_update") opts.onPanel?.({ kind: "update", payload: parsed });
+        else if (event === "result_chunk") opts.onResultChunk?.(parsed);
         else if (event === "result") opts.onResult?.(parsed);
         else if (event === "error")  opts.onError?.(new Error(parsed.message || "stream error"));
         else if (event === "done")   { /* handled below */ }

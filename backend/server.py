@@ -2234,6 +2234,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
             model_preference = ["gpt-5.4-mini", "gpt-4o"]
         
         response = None
+        response_text = ""
         await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "active"})
         for model in model_preference:
             try:
@@ -2242,7 +2243,28 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
                     kwargs["max_completion_tokens"] = 1000
                 else:
                     kwargs["max_tokens"] = 1000
-                response = await openai_client.chat.completions.create(**kwargs)
+
+                # Stream tokens live to A.R.I.A. UI when a progress callback
+                # is connected (SSE endpoint). Falls back to non-streaming
+                # for the legacy /api/chat path.
+                if progress_cb is not None:
+                    kwargs["stream"] = True
+                    stream = await openai_client.chat.completions.create(**kwargs)
+                    collected = ""
+                    async for chunk in stream:
+                        try:
+                            choice = chunk.choices[0] if chunk.choices else None
+                            delta = getattr(choice.delta, "content", None) if choice else None
+                        except Exception:
+                            delta = None
+                        if delta:
+                            collected += delta
+                            await _emit("result_chunk", {"delta": delta, "text": collected})
+                    response_text = collected
+                    response = True  # marker: stream completed successfully
+                else:
+                    response = await openai_client.chat.completions.create(**kwargs)
+                    response_text = response.choices[0].message.content
                 break
             except Exception as e:
                 if "401" in str(e) or "model" in str(e).lower():
@@ -2252,8 +2274,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         if not response:
             await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "error"})
             return "KI-Modell nicht verfügbar."
-        
-        response_text = response.choices[0].message.content
+
         await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "done"})
         await _emit("thought", {"id": "respond", "label": "Antwort fertig", "status": "done"})
         

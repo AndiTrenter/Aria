@@ -272,9 +272,10 @@ const AriaMode = () => {
   /* ─── Floating holo-panels around the cortex (JARVIS visual) ───────── */
   const upsertPanel = (id, patch) => {
     setPanels((prev) => {
-      const idx = prev.findIndex((p) => p.id === id);
-      if (idx === -1) return [...prev, { id, ts: Date.now(), ...patch }];
-      const copy = [...prev];
+      const list = Array.isArray(prev) ? prev : [];
+      const idx = list.findIndex((p) => p.id === id);
+      if (idx === -1) return [...list, { id, ts: Date.now(), ...patch }];
+      const copy = [...list];
       copy[idx] = { ...copy[idx], ...patch, ts: Date.now() };
       return copy;
     });
@@ -327,16 +328,16 @@ const AriaMode = () => {
       onThought: (data) => {
         const { id, label, status, detail } = data || {};
         if (!id) return;
-        // Update or append step
+        // Update or append step (always preserve the wrapping {kind,steps,result} shape)
         setThinking((prev) => {
-          if (!prev) return prev;
+          if (!prev || !Array.isArray(prev.steps)) return prev;
           const idx = prev.steps.findIndex((s) => s.id === id);
           if (idx === -1) {
             return { ...prev, steps: [...prev.steps, { id, label: label || id, status, detail }] };
           }
           const next = [...prev.steps];
           next[idx] = { ...next[idx], label: label || next[idx].label, status, detail: detail ?? next[idx].detail };
-          return next;
+          return { ...prev, steps: next };
         });
         // Email draft creation success → user can confirm verbally
         if (id === "body" && status === "done" && kind === "email") {
@@ -359,8 +360,19 @@ const AriaMode = () => {
           });
         }
       },
+      onResultChunk: ({ text }) => {
+        // Live token stream from GPT — fill the response box AND the
+        // thinking overlay's result body in real time.
+        if (typeof text !== "string") return;
+        finalText = text;
+        setResponse(text);
+        setThinking((prev) => {
+          if (!prev) return prev;
+          return { ...prev, result: { body: text } };
+        });
+      },
       onResult: (data) => {
-        finalText = data?.text || "";
+        finalText = data?.text || finalText || "";
       },
       onError: (err) => {
         finalText = `Fehler: ${err?.message || "Stream konnte nicht verarbeitet werden."}`;
@@ -368,7 +380,7 @@ const AriaMode = () => {
       onDone: () => {
         // mark all pending steps as done
         setThinking((prev) => {
-          if (!prev) return null;
+          if (!prev || !Array.isArray(prev.steps)) return null;
           const done = prev.steps.map((s) => ({
             ...s,
             status: s.status === "pending" || s.status === "active" ? "done" : s.status,
@@ -915,18 +927,19 @@ const SERVICE_META = {
   cookpilot:      { color: "20",  emoji: "🍳" },
 };
 
-// Pre-computed positions around a 560-px cortex.  Six slots arranged like
-// floating holograms beside the orb.  We index into them in panel-arrival
-// order so two simultaneous searches show side-by-side.
+// 3D positioning around a 560-px cortex.  Each slot has a CSS position
+// AND a 3D transform offset (translateZ + rotateY) so panels feel like
+// holograms floating at slightly different distances/angles around the
+// orb.  Indexed in panel-arrival order.
 const PANEL_SLOTS = [
-  { top: "14%",  left:  "3%"  },   // top-left
-  { top: "14%",  right: "3%"  },   // top-right
-  { top: "44%",  left:  "1.5%" },  // mid-left
-  { top: "44%",  right: "1.5%" },  // mid-right
-  { bottom: "20%", left:  "4%" },  // bot-left
-  { bottom: "20%", right: "4%" },  // bot-right
-  { top: "29%",  left:  "20%" },   // overflow inner-left (rare)
-  { top: "29%",  right: "20%" },   // overflow inner-right (rare)
+  { top: "14%",    left:  "3%",   tz: 60,  ry:  18, rx: -6 }, // top-left
+  { top: "14%",    right: "3%",   tz: 60,  ry: -18, rx: -6 }, // top-right
+  { top: "44%",    left:  "1.5%", tz: 90,  ry:  26, rx:  0 }, // mid-left  (closer to viewer)
+  { top: "44%",    right: "1.5%", tz: 90,  ry: -26, rx:  0 }, // mid-right (closer to viewer)
+  { bottom: "20%", left:  "4%",   tz: 50,  ry:  14, rx:  6 }, // bot-left
+  { bottom: "20%", right: "4%",   tz: 50,  ry: -14, rx:  6 }, // bot-right
+  { top: "29%",    left:  "20%",  tz: 30,  ry:  10, rx: -2 }, // overflow inner-left
+  { top: "29%",    right: "20%",  tz: 30,  ry: -10, rx: -2 }, // overflow inner-right
 ];
 
 const HoloPanelLayer = ({ panels }) => {
@@ -934,7 +947,10 @@ const HoloPanelLayer = ({ panels }) => {
   // Sort by ts so layout is stable based on arrival order
   const ordered = [...panels].sort((a, b) => (a.ts || 0) - (b.ts || 0));
   return (
-    <div className="absolute inset-0 z-20 pointer-events-none">
+    <div
+      className="absolute inset-0 z-20 pointer-events-none"
+      style={{ perspective: "1400px", perspectiveOrigin: "50% 45%" }}
+    >
       {ordered.map((p, i) => {
         const slot = PANEL_SLOTS[i % PANEL_SLOTS.length];
         return <HoloPanel key={p.id} panel={p} slot={slot} index={i} />;
@@ -954,77 +970,110 @@ const HoloPanel = ({ panel, slot, index }) => {
     : status === "empty" ? { color: "text-amber-300/80", text: "LEER",   icon: <CircleNotch size={12} weight="bold" /> }
     : { color: "text-red-300", text: "FEHLER", icon: <Warning size={12} weight="fill" /> };
 
+  // 3D transform: slot-based base rotation/translation + entrance fade-in.
+  // Inner div carries continuous floating idle animation so the box
+  // genuinely drifts in space like a Stark-Industries hologram.
+  const tz = slot.tz ?? 60;
+  const ry = slot.ry ?? 0;
+  const rx = slot.rx ?? 0;
+
+  const positionStyle = {
+    top: slot.top,
+    bottom: slot.bottom,
+    left: slot.left,
+    right: slot.right,
+  };
+
   return (
     <div
       className="absolute pointer-events-none holo-panel"
       style={{
-        ...slot,
+        ...positionStyle,
         width: 260,
-        animation: "aria-holo-in 460ms cubic-bezier(.2,.9,.3,1.2) both",
+        transformStyle: "preserve-3d",
+        animation: "aria-holo-in 520ms cubic-bezier(.2,.9,.3,1.2) both",
         animationDelay: `${index * 70}ms`,
       }}
     >
       <div
-        className="relative rounded-md border backdrop-blur-md overflow-hidden"
+        className="holo-panel-inner"
         style={{
-          background: `linear-gradient(180deg, hsla(${hue},90%,40%,0.18), hsla(${hue},90%,15%,0.45))`,
-          borderColor: `hsla(${hue},90%,65%,0.55)`,
-          boxShadow: `0 0 22px hsla(${hue},90%,55%,0.25), inset 0 0 24px hsla(${hue},90%,40%,0.15)`,
+          transformStyle: "preserve-3d",
+          transform: `translateZ(${tz}px) rotateY(${ry}deg) rotateX(${rx}deg)`,
+          animation: `aria-holo-float ${5 + (index % 3)}s ease-in-out ${index * 0.35}s infinite alternate`,
         }}
       >
-        {/* HUD top stripe */}
         <div
-          className="flex items-center justify-between px-3 py-1.5 text-[10px] tracking-[0.25em] font-bold border-b"
+          className="relative rounded-md border backdrop-blur-md overflow-hidden"
           style={{
-            color: `hsl(${hue},90%,80%)`,
-            borderColor: `hsla(${hue},90%,65%,0.4)`,
-            background: `hsla(${hue},90%,30%,0.25)`,
+            background: `linear-gradient(180deg, hsla(${hue},90%,40%,0.18), hsla(${hue},90%,15%,0.45))`,
+            borderColor: `hsla(${hue},90%,65%,0.55)`,
+            boxShadow: `0 0 22px hsla(${hue},90%,55%,0.35), 0 0 60px hsla(${hue},90%,55%,0.15), inset 0 0 28px hsla(${hue},90%,40%,0.18)`,
           }}
         >
-          <span className="flex items-center gap-1.5">
-            <MagnifyingGlass size={11} weight="bold" />
-            {panel.title || (panel.service || "").toUpperCase()}
-          </span>
-          <span className={`flex items-center gap-1 ${statusBadge.color}`}>
-            {statusBadge.icon}
-            {statusBadge.text}
-          </span>
+          {/* HUD top stripe */}
+          <div
+            className="flex items-center justify-between px-3 py-1.5 text-[10px] tracking-[0.25em] font-bold border-b"
+            style={{
+              color: `hsl(${hue},90%,80%)`,
+              borderColor: `hsla(${hue},90%,65%,0.4)`,
+              background: `hsla(${hue},90%,30%,0.25)`,
+            }}
+          >
+            <span className="flex items-center gap-1.5">
+              <MagnifyingGlass size={11} weight="bold" />
+              {panel.title || (panel.service || "").toUpperCase()}
+            </span>
+            <span className={`flex items-center gap-1 ${statusBadge.color}`}>
+              {statusBadge.icon}
+              {statusBadge.text}
+            </span>
+          </div>
+          {/* Body */}
+          <div className="px-3 py-2.5 space-y-1.5">
+            {panel.query && (
+              <div className="text-[11px] text-cyan-100/85 leading-snug line-clamp-2">
+                <span className="text-cyan-400/80">QUERY ›</span> {panel.query}
+              </div>
+            )}
+            {panel.snippet && (
+              <div className="text-[11px] text-emerald-100/85 leading-snug line-clamp-3">
+                <span className="text-emerald-400/80">↳</span> {panel.snippet}
+              </div>
+            )}
+            {!panel.query && !panel.snippet && (
+              <div className="text-[11px] text-cyan-300/60 italic">verarbeite…</div>
+            )}
+            {/* mini scan bar */}
+            {status === "active" && (
+              <div className="h-[2px] mt-1 rounded overflow-hidden" style={{ background: `hsla(${hue},90%,40%,0.3)` }}>
+                <div
+                  className="h-full rounded"
+                  style={{
+                    width: "40%",
+                    background: `hsl(${hue},90%,70%)`,
+                    animation: "aria-holo-bar 1.4s linear infinite",
+                    boxShadow: `0 0 10px hsl(${hue},90%,70%)`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {/* Corner ticks */}
+          <div className="absolute -top-px -left-px w-3 h-3 border-t border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+          <div className="absolute -top-px -right-px w-3 h-3 border-t border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+          <div className="absolute -bottom-px -left-px w-3 h-3 border-b border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+          <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
+
+          {/* Faux scan-line shimmer to underline the holo feel */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `repeating-linear-gradient(0deg, hsla(${hue},90%,80%,0.05) 0, hsla(${hue},90%,80%,0.05) 1px, transparent 1px, transparent 4px)`,
+              mixBlendMode: "overlay",
+            }}
+          />
         </div>
-        {/* Body */}
-        <div className="px-3 py-2.5 space-y-1.5">
-          {panel.query && (
-            <div className="text-[11px] text-cyan-100/85 leading-snug line-clamp-2">
-              <span className="text-cyan-400/80">QUERY ›</span> {panel.query}
-            </div>
-          )}
-          {panel.snippet && (
-            <div className="text-[11px] text-emerald-100/85 leading-snug line-clamp-3">
-              <span className="text-emerald-400/80">↳</span> {panel.snippet}
-            </div>
-          )}
-          {!panel.query && !panel.snippet && (
-            <div className="text-[11px] text-cyan-300/60 italic">verarbeite…</div>
-          )}
-          {/* mini scan bar */}
-          {status === "active" && (
-            <div className="h-[2px] mt-1 rounded overflow-hidden" style={{ background: `hsla(${hue},90%,40%,0.3)` }}>
-              <div
-                className="h-full rounded"
-                style={{
-                  width: "40%",
-                  background: `hsl(${hue},90%,70%)`,
-                  animation: "aria-holo-bar 1.4s linear infinite",
-                  boxShadow: `0 0 10px hsl(${hue},90%,70%)`,
-                }}
-              />
-            </div>
-          )}
-        </div>
-        {/* Corner ticks */}
-        <div className="absolute -top-px -left-px w-3 h-3 border-t border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
-        <div className="absolute -top-px -right-px w-3 h-3 border-t border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
-        <div className="absolute -bottom-px -left-px w-3 h-3 border-b border-l" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
-        <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r" style={{ borderColor: `hsla(${hue},90%,80%,0.9)` }} />
       </div>
       <style>{`
         @keyframes aria-holo-in {
@@ -1032,11 +1081,15 @@ const HoloPanel = ({ panel, slot, index }) => {
           60%  { opacity: 1; transform: translateY(0) scale(1.03); filter: blur(0); }
           100% { opacity: 1; transform: translateY(0) scale(1); }
         }
+        @keyframes aria-holo-float {
+          0%   { transform: translateZ(${tz}px) rotateY(${ry}deg) rotateX(${rx}deg) translateY(0); }
+          100% { transform: translateZ(${tz + 14}px) rotateY(${ry + (ry >= 0 ? 3 : -3)}deg) rotateX(${rx - 2}deg) translateY(-6px); }
+        }
         @keyframes aria-holo-bar {
           0%   { transform: translateX(-100%); }
           100% { transform: translateX(260%); }
         }
-        .holo-panel:hover { filter: brightness(1.12); }
+        .holo-panel:hover .holo-panel-inner { filter: brightness(1.15); }
       `}</style>
     </div>
   );
