@@ -73,6 +73,11 @@ export default function CortexCloud({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(size, size, false);
     renderer.setClearColor(0x000000, 0);
+    // Proper colour pipeline → eliminates the heavy gradient banding that
+    // 8-bit RGB additive blending produces in dark areas.
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -86,12 +91,12 @@ export default function CortexCloud({
     composer.setSize(size, size);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
-    // strength, radius, threshold — kept gentle so it stays elegant
+    // strength, radius, threshold — kept gentle to avoid 8-bit banding
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size, size),
-      0.85, // strength
-      0.7,  // radius
-      0.0   // threshold (everything contributes a little)
+      0.55, // strength (was 0.85 — caused over-bright halos)
+      0.5,  // radius
+      0.25  // threshold (only mid+ bright pixels bloom → cleaner gradients)
     );
     composer.addPass(bloomPass);
 
@@ -176,7 +181,7 @@ export default function CortexCloud({
     const coreMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(MODE_PALETTES.idle.core),
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.32,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -186,7 +191,7 @@ export default function CortexCloud({
     const halo1Geom = new THREE.SphereGeometry(0.55, 48, 48);
     const halo1Mat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(MODE_PALETTES.idle.halo),
-      transparent: true, opacity: 0.22,
+      transparent: true, opacity: 0.14,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
     });
     const halo1 = new THREE.Mesh(halo1Geom, halo1Mat);
@@ -195,7 +200,7 @@ export default function CortexCloud({
     const halo2Geom = new THREE.SphereGeometry(0.95, 48, 48);
     const halo2Mat = new THREE.MeshBasicMaterial({
       color: new THREE.Color("#2a7fd0"),
-      transparent: true, opacity: 0.07,
+      transparent: true, opacity: 0.04,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
     });
     const halo2 = new THREE.Mesh(halo2Geom, halo2Mat);
@@ -293,7 +298,7 @@ export default function CortexCloud({
       lerpColor(ringMat2.color,  tgt.ring, k);
       lerpColor(tickMat.color,   tgt.ring, k);
       // Bloom strength rises during speaking/thinking for cinematic punch
-      const targetBloom = s.speaking ? 1.15 : (s.mode === "thinking" ? 1.0 : 0.85);
+      const targetBloom = s.speaking ? 0.85 : (s.mode === "thinking" ? 0.7 : 0.55);
       bloomPass.strength += (targetBloom - bloomPass.strength) * Math.min(1, dt * 3);
 
       // Cloud rotation
@@ -315,9 +320,9 @@ export default function CortexCloud({
 
       // Core pulse
       core.scale.setScalar(1 + Math.sin(totalTime * (0.9 + I * 1.4)) * (0.08 + I * 0.10));
-      coreMat.opacity = 0.35 + I * 0.35 + (s.speaking ? 0.08 : 0);
-      halo1Mat.opacity = 0.16 + I * 0.18 + (s.speaking ? 0.06 : 0);
-      halo2Mat.opacity = 0.05 + I * 0.10 + (s.speaking ? 0.04 : 0);
+      coreMat.opacity = 0.25 + I * 0.25 + (s.speaking ? 0.05 : 0);
+      halo1Mat.opacity = 0.10 + I * 0.12 + (s.speaking ? 0.04 : 0);
+      halo2Mat.opacity = 0.03 + I * 0.06 + (s.speaking ? 0.02 : 0);
       halo1.scale.setScalar(1 + Math.sin(totalTime * 1.1) * 0.04);
       halo2.scale.setScalar(1 + Math.sin(totalTime * 0.7) * 0.03);
 
@@ -434,18 +439,44 @@ export default function CortexCloud({
 
   return (
     <div
-      ref={mountRef}
-      data-testid="cortex-cloud-3d"
       style={{
         width: size,
         height: size,
         display: "block",
         position: "relative",
-        WebkitMaskImage:
-          "radial-gradient(circle at 50% 50%, black 38%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0) 78%)",
-        maskImage:
-          "radial-gradient(circle at 50% 50%, black 38%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0) 78%)",
       }}
-    />
+    >
+      <div
+        ref={mountRef}
+        data-testid="cortex-cloud-3d"
+        style={{
+          width: size,
+          height: size,
+          display: "block",
+          position: "relative",
+          // Softer radial fade — the previous version had a hard 38% inner
+          // edge that combined with bloom produced visible color bands.
+          WebkitMaskImage:
+            "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
+          maskImage:
+            "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
+        }}
+      />
+      {/* Dithering noise overlay — breaks up 8-bit gradient banding. SVG
+          fractalNoise is subpixel-stable and costs nothing per frame. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          mixBlendMode: "overlay",
+          opacity: 0.07,
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+          backgroundSize: "160px 160px",
+        }}
+      />
+    </div>
   );
 }
