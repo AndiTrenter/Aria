@@ -50,6 +50,10 @@ export function stripMarkdownForTTS(text) {
   s = s.replace(/_+(?=\s|$)/g, "");
   // html
   s = s.replace(/<[^>]+>/g, "");
+  // Normalize ARIA pronunciation — TTS reads "A.R.I.A." letter-by-letter
+  // ("A. R. I. A.") which sounds robotic. Replace with the spoken form
+  // "Aria" so it's pronounced as a proper name.
+  s = s.replace(/\bA\.?\s*R\.?\s*I\.?\s*A\.?/gi, "Aria");
   // collapse whitespace
   s = s.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   return s;

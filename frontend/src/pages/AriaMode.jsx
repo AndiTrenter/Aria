@@ -134,7 +134,7 @@ const AriaMode = () => {
     if (bootRef.current) return;
     bootRef.current = true;
     const firstName = (user?.name || "").split(" ")[0] || "Commander";
-    const text = `A.R.I.A. online. Willkommen zurück, ${firstName}. Systeme bereit. Wie kann ich helfen?`;
+    const text = `Aria online. Willkommen zurück, ${firstName}. Systeme bereit. Wie kann ich helfen?`;
     setResponse(text);
     setMode("speaking");
     let finished = false;

@@ -445,12 +445,13 @@ export default function CortexCloud({
         height: size,
         display: "block",
         position: "relative",
-        // Single radial mask on the wrapper — applies to BOTH the WebGL
-        // canvas and the dither overlay so neither shows a visible square.
+        // Primary fade: CSS mask makes canvas pixels transparent toward
+        // the edges. Wraps both the canvas and the vignette so they fade
+        // together — no visible square in any browser that supports masks.
         WebkitMaskImage:
-          "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
+          "radial-gradient(circle at 50% 50%, black 28%, rgba(0,0,0,0.95) 46%, rgba(0,0,0,0.6) 62%, rgba(0,0,0,0.15) 78%, rgba(0,0,0,0) 92%)",
         maskImage:
-          "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
+          "radial-gradient(circle at 50% 50%, black 28%, rgba(0,0,0,0.95) 46%, rgba(0,0,0,0.6) 62%, rgba(0,0,0,0.15) 78%, rgba(0,0,0,0) 92%)",
       }}
     >
       <div
@@ -463,18 +464,18 @@ export default function CortexCloud({
           position: "relative",
         }}
       />
-      {/* Dithering noise overlay — breaks up 8-bit gradient banding. */}
+      {/* Solid-paint vignette as a robust fallback — paints in the page's
+          dark-navy background colour (`#001424`) so the canvas square edge
+          blends seamlessly with the surrounding screen, even on browsers
+          where CSS mask-image isn't applied perfectly to a child canvas. */}
       <div
         aria-hidden
         style={{
           position: "absolute",
           inset: 0,
           pointerEvents: "none",
-          mixBlendMode: "overlay",
-          opacity: 0.05,
-          backgroundImage:
-            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
-          backgroundSize: "160px 160px",
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(0,20,36,0) 0%, rgba(0,20,36,0) 40%, rgba(0,20,36,0.45) 60%, rgba(0,20,36,0.92) 80%, #001424 100%)",
         }}
       />
     </div>
