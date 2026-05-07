@@ -25,6 +25,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
  */
 
 // ── Mode palettes ──────────────────────────────────────────────
+//   Bolder, more saturated palette so mode changes are clearly visible.
 //   particle = outer cloud cyan/tint
 //   inner    = central white-blue mist
 //   core     = emissive sphere
@@ -32,10 +33,10 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 //   ring     = HUD ring lines
 const MODE_PALETTES = {
   idle:     { particle: "#9be0ff", inner: "#ffffff", core: "#bdf2ff", halo: "#5cc8ff", ring: "#8ed8ff" },
-  wakeword: { particle: "#86d8ff", inner: "#e6f6ff", core: "#bdf2ff", halo: "#5cc8ff", ring: "#8ed8ff" },
-  listening:{ particle: "#5af0e5", inner: "#dafff7", core: "#9bffe8", halo: "#3ce4cf", ring: "#6cf2dc" },
-  thinking: { particle: "#ffc66e", inner: "#fff2cf", core: "#ffd984", halo: "#ff9a3c", ring: "#ffb56a" },
-  speaking: { particle: "#b8f2ff", inner: "#ffffff", core: "#dffaff", halo: "#5cc8ff", ring: "#a6e8ff" },
+  wakeword: { particle: "#7accff", inner: "#e6f6ff", core: "#a0e8ff", halo: "#3aa6ff", ring: "#6cc8ff" },
+  listening:{ particle: "#2effd0", inner: "#c8fff0", core: "#7fffd8", halo: "#0fd6b0", ring: "#3affc8" },
+  thinking: { particle: "#ff9a2a", inner: "#ffe9c0", core: "#ffb04e", halo: "#ff7a14", ring: "#ffaa50" },
+  speaking: { particle: "#a0f6ff", inner: "#ffffff", core: "#dcffff", halo: "#3acfff", ring: "#7be8ff" },
 };
 
 const lerpColor = (target, source, t) => {
@@ -289,7 +290,7 @@ export default function CortexCloud({
       tgt.core.set(pal.core);
       tgt.halo.set(pal.halo);
       tgt.ring.set(pal.ring);
-      const k = Math.min(1, dt * 4.5); // ~quarter second crossfade
+      const k = Math.min(1, dt * 9); // ~tenth-second crossfade — snappier mode change
       lerpColor(cloud1Mat.color, tgt.particle, k);
       lerpColor(cloud2Mat.color, tgt.inner, k);
       lerpColor(coreMat.color,   tgt.core, k);
@@ -444,6 +445,12 @@ export default function CortexCloud({
         height: size,
         display: "block",
         position: "relative",
+        // Single radial mask on the wrapper — applies to BOTH the WebGL
+        // canvas and the dither overlay so neither shows a visible square.
+        WebkitMaskImage:
+          "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
+        maskImage:
+          "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
       }}
     >
       <div
@@ -454,16 +461,9 @@ export default function CortexCloud({
           height: size,
           display: "block",
           position: "relative",
-          // Softer radial fade — the previous version had a hard 38% inner
-          // edge that combined with bloom produced visible color bands.
-          WebkitMaskImage:
-            "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
-          maskImage:
-            "radial-gradient(circle at 50% 50%, black 30%, rgba(0,0,0,0.92) 50%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0) 86%)",
         }}
       />
-      {/* Dithering noise overlay — breaks up 8-bit gradient banding. SVG
-          fractalNoise is subpixel-stable and costs nothing per frame. */}
+      {/* Dithering noise overlay — breaks up 8-bit gradient banding. */}
       <div
         aria-hidden
         style={{
@@ -471,7 +471,7 @@ export default function CortexCloud({
           inset: 0,
           pointerEvents: "none",
           mixBlendMode: "overlay",
-          opacity: 0.07,
+          opacity: 0.05,
           backgroundImage:
             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
           backgroundSize: "160px 160px",
