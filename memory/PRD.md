@@ -379,9 +379,12 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 
 ### Phase 15 — A.R.I.A. Mode Stufe 3 (DONE 2026-02-07, V 9.0)
 - [x] Bug-Fix `AriaMode.jsx`: `setThinking`-Callback gab nur `next`-Array zurück statt `{...prev, steps: next}` → Ursache des `Cannot read properties of undefined (reading 'findIndex')` Crashes; defensive Array-Checks in `upsertPanel` und in allen `setThinking`-Callbacks ergänzt
-- [x] **3D Cortex Cloud (Three.js)** — `/app/frontend/src/components/CortexCloud.jsx` komplett neu geschrieben: WebGL-Renderer, 3000 Partikel auf zwei verschachtelten Sphären, emissiver Glow-Core, 3 nested HUD-Ringe + 36 Tick-Marks, dynamische Lightning-Arcs (≥35 % intensity) und Shockwave-Ringe beim Speaking. Drop-in: gleiche Props (`intensity`, `speaking`, `listening`, `size`)
-- [x] **Echte Live-Token-Updates** — Backend `process_chat_message` streamt nun bei `progress_cb is not None` über `openai_client.chat.completions.create(stream=True)` und emittiert `result_chunk`-SSE-Events mit `{delta, text}`. Frontend-Handler `onResultChunk` aktualisiert `response`-State und `thinking.result.body` live → Antwort tippt sich direkt in der Box, statt erst nach Abschluss zu erscheinen
-- [x] **3D-Holo-Panels** — `HoloPanelLayer` mit `perspective: 1400px` + `perspectiveOrigin: 50% 45%`; jeder Panel-Slot hat eigene `tz/ry/rx`-Koordinaten (Tiefe + Y-/X-Rotation), gentle Float-Animation (`aria-holo-float`) wackelt z-Tiefe und Y-Rotation kontinuierlich → Panels schweben wie Stark-Industries-Hologramme im Raum, plus subtiler Scan-Line-Overlay
-- [x] Dependency: `three@0.184.0` via `yarn add three`
-- [x] Smoke-Test bestanden: ARIA-Mode öffnet, Cortex rendert, `/demo` triggert Holo-Panels ohne Crash
+- [x] **3D Cortex Cloud (Three.js)** mit runden Glow-Sprites (CanvasTexture-Partikel statt eckige Three.js-Standardpunkte), radialer Mask-Fade am Container, layered Halos und subtiler Animation
+- [x] **UnrealBloomPass Postprocessing** (EffectComposer + RenderPass + UnrealBloomPass): cinematischer Glow, dynamische Bloom-Strength je Modus (Speaking → 1.15, Thinking → 1.0, Idle → 0.85)
+- [x] **Mode-reaktive Cortex-Farbe**: 5 Paletten (idle/wakeword/listening/thinking/speaking) — listening = türkis, thinking = warm-amber, speaking = helles cyan; Material-Farben lerpen smooth via `lerpColor` jeden Frame
+- [x] **Sound-Effekte** (`/app/frontend/src/utils/ariaSounds.js`, Web Audio API synthesized): Boot-Sweep, Wake-Chirp (bei "aria" wakeword), Listen-Ping, Done-Confirmation, Error-Buzz, Think-Tick. Auto-unlock bei erster User-Interaktion (Browser-Autoplay-Policy)
+- [x] **Echte Live-Token-Updates** — Backend `process_chat_message` streamt nun bei `progress_cb is not None` über `chat.completions.create(stream=True)` und emittiert `result_chunk`-SSE-Events
+- [x] **3D-Holo-Panels** — `perspective: 1400px` mit eigenen tz/ry/rx-Koordinaten pro Slot + kontinuierliche Float-Animation
+- [x] **A.R.I.A. Personality (J.A.R.V.I.S.-Stil)** — `_get_system_prompt()` neu: Anrede "Sir/Commander/Vorname", ruhig + elegant, trockener britischer Humor, NIE überschwänglich, IMMER respektvoll-untergeordnet, ehrlich bei Unwissen, proaktiv mit konkreten Vorschlägen, kurze 1-3-Satz-Antworten
+- [x] Dependency: `three@0.184.0`
 

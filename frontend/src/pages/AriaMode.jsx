@@ -11,6 +11,10 @@ import CortexCloud from "@/components/CortexCloud";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 import { streamAriaChat } from "@/utils/ariaStream";
+import {
+  playBootSound, playWakeSound, playListenSound,
+  playDoneSound, playErrorSound, playThinkTick, unlockAudio,
+} from "@/utils/ariaSounds";
 
 /*  ────────────────────────────────────────────────────────────────────
     INTENT PARSERS – deterministic client-side detection for the two
@@ -140,6 +144,9 @@ const AriaMode = () => {
       setMode("idle");
       startWakeWord();
     };
+    // Sci-fi boot sweep — fires before the spoken greeting so it feels
+    // like the system "powers on" (J.A.R.V.I.S.-style).
+    try { unlockAudio(); playBootSound(); } catch {}
     try {
       ttsCtrlRef.current = speakStreaming(text, {
         onEnd: finish,
@@ -187,6 +194,7 @@ const AriaMode = () => {
         const t = e.results[i][0].transcript.toLowerCase();
         if (t.includes("aria") || t.includes("arya")) {
           try { rec.stop(); } catch {}
+          try { playWakeSound(); } catch {}
           startListening();
           return;
         }
@@ -244,6 +252,7 @@ const AriaMode = () => {
     setTranscript("");
     setResponse("");
     setError("");
+    try { playListenSound(); } catch {}
     try { rec.start(); } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -328,6 +337,10 @@ const AriaMode = () => {
       onThought: (data) => {
         const { id, label, status, detail } = data || {};
         if (!id) return;
+        // Subtle audio click whenever a step appears or transitions to done
+        if (status === "active" || status === "done") {
+          try { playThinkTick(); } catch {}
+        }
         // Update or append step (always preserve the wrapping {kind,steps,result} shape)
         setThinking((prev) => {
           if (!prev || !Array.isArray(prev.steps)) return prev;
@@ -376,6 +389,7 @@ const AriaMode = () => {
       },
       onError: (err) => {
         finalText = `Fehler: ${err?.message || "Stream konnte nicht verarbeitet werden."}`;
+        try { playErrorSound(); } catch {}
       },
       onDone: () => {
         // mark all pending steps as done
@@ -397,6 +411,7 @@ const AriaMode = () => {
         }
 
         if (finalText) {
+          try { playDoneSound(); } catch {}
           setMode("speaking");
           ttsCtrlRef.current = speakStreaming(stripMarkdownForTTS(finalText), {
             onEnd: () => {
@@ -640,6 +655,7 @@ const AriaMode = () => {
             intensity={intensity}
             speaking={mode === "speaking"}
             listening={mode === "listening"}
+            mode={mode}
             size={560}
           />
           {/* Status ring label */}
