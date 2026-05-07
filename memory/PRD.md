@@ -388,3 +388,12 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 - [x] **A.R.I.A. Personality (J.A.R.V.I.S.-Stil)** — `_get_system_prompt()` neu: Anrede "Sir/Commander/Vorname", ruhig + elegant, trockener britischer Humor, NIE überschwänglich, IMMER respektvoll-untergeordnet, ehrlich bei Unwissen, proaktiv mit konkreten Vorschlägen, kurze 1-3-Satz-Antworten
 - [x] Dependency: `three@0.184.0`
 
+### Phase 16 — ARIA-Memory + Telegram Watchdog (DONE 2026-02-07, V 9.1)
+- [x] **Persistent Personal Memory** (`/app/backend/aria_memory.py`): MongoDB-Collection `aria_memories` mit `{user_id, category, key, value, source, confidence, ts}`; CRUD-Endpoints `GET/POST/DELETE /api/aria/memory`; unique index auf `(user_id, key)` für upsert-Verhalten
+- [x] **Prompt-Injection** in `process_chat_message`: `build_memory_context()` injiziert kompakten "ARIA-GEDÄCHTNIS"-Block (max 1800 chars, gruppiert nach Kategorie) in jeden System-Prompt → ARIA verhält sich wie persönlicher Butler
+- [x] **`[AKTION:MEMORY]`-Tag** im System-Prompt: ARIA kann selbstständig Vorlieben/Routinen/Familie/Identität persistieren während des Gesprächs (`process_memory_tags()` strippt den Tag aus der sichtbaren Antwort und speichert)
+- [x] **Background-Extraktor** (`extract_memories_from_chat`, GPT-4o-mini, JSON-mode): nach jeder User-Nachricht analysiert ein async Task im Hintergrund auf langfristige Fakten — ARIA "lernt" passiv mit
+- [x] **CaseDesk-Profil-Sync** (`sync_casedesk_profile`): pullt persönliche Dokumente (Steuer/Versicherung/Vertrag/Kontoauszug etc.), GPT extrahiert Stammdaten, persistiert als Memory mit `source: "casedesk"`. Admin-Endpoint `POST /api/aria/memory/sync-casedesk`. Auto-Trigger alle 24h via `maybe_async_resync_casedesk` bei jedem Chat
+- [x] **Telegram-Watchdog** (`/app/backend/telegram_bot.py`): `watchdog_loop()` prüft alle 60s ob `last_poll_at` älter als 180s ist oder ein 409-Conflict >60s ansteht → ruft `restart_bot()` auf. Status-Endpoint `GET /api/admin/telegram/watchdog` (admin-only). Watchdog läuft auch ohne Token (no-op bis konfiguriert)
+- [x] **Lifespan-Bug behoben**: `@app.on_event("startup")` wurde wegen `lifespan=lifespan` von FastAPI ignoriert → Telegram-Bot wurde nie automatisch gestartet. Init nun direkt im Lifespan-Manager
+

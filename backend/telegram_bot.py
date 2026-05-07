@@ -456,3 +456,103 @@ def stop_bot():
         bot_task = None
         _status["running"] = False
         logger.info("Telegram bot polling stopped")
+
+
+# ==================== WATCHDOG ====================
+#
+# A background loop that keeps an eye on the polling task and restarts it
+# when it goes silent. The bot occasionally drops out (network blips, 409
+# conflicts after redeploys, server.py reloads) and stays "stuck" — the
+# watchdog auto-recovers without manual intervention.
+
+watchdog_task = None
+_watchdog_stats = {
+    "last_check_at": "",
+    "last_restart_at": "",
+    "restarts": 0,
+    "checks": 0,
+    "last_reason": "",
+    "running": False,
+}
+
+
+def get_watchdog_stats() -> dict:
+    return dict(_watchdog_stats)
+
+
+async def _is_bot_stuck() -> tuple[bool, str]:
+    """Return (stuck, reason)."""
+    token = await get_bot_token()
+    if not token:
+        return False, "no token configured"
+    if not _status.get("running"):
+        return True, "polling task not running"
+    last_poll = _status.get("last_poll_at") or ""
+    last_err = _status.get("last_error") or ""
+    if not last_poll:
+        # Bot was started but never polled successfully — only treat as
+        # stuck if we have an error too, otherwise it might just be booting.
+        if last_err:
+            return True, f"never polled: {last_err[:100]}"
+        return False, ""
+    try:
+        last_dt = datetime.fromisoformat(last_poll.replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - last_dt).total_seconds()
+    except Exception:
+        return False, ""
+    # Long-polling uses timeout=25 → expect a poll roughly every 0-30s.
+    # Anything > 180s means something's wrong.
+    if age > 180:
+        return True, f"silent for {int(age)}s"
+    # 409 conflict tends to never auto-resolve — treat as stuck after 60s
+    if "409" in last_err and age > 60:
+        return True, f"409 conflict + {int(age)}s silent"
+    return False, ""
+
+
+async def watchdog_loop(interval_s: int = 60):
+    """Periodically health-check the bot and restart if stuck.
+
+    interval_s: how often to check (default 60s).
+    """
+    _watchdog_stats["running"] = True
+    logger.info(f"Telegram watchdog started (interval={interval_s}s)")
+    try:
+        while True:
+            await asyncio.sleep(interval_s)
+            try:
+                _watchdog_stats["checks"] += 1
+                _watchdog_stats["last_check_at"] = datetime.now(timezone.utc).isoformat()
+                stuck, reason = await _is_bot_stuck()
+                _watchdog_stats["last_reason"] = reason
+                if stuck:
+                    logger.warning(f"Telegram watchdog: bot is stuck ({reason}) → restarting")
+                    try:
+                        await restart_bot()
+                        _watchdog_stats["restarts"] += 1
+                        _watchdog_stats["last_restart_at"] = datetime.now(timezone.utc).isoformat()
+                    except Exception as e:
+                        logger.error(f"Telegram watchdog: restart failed: {e}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Telegram watchdog tick error: {e}")
+    except asyncio.CancelledError:
+        logger.info("Telegram watchdog cancelled")
+    finally:
+        _watchdog_stats["running"] = False
+
+
+def start_watchdog(interval_s: int = 60):
+    global watchdog_task
+    if watchdog_task and not watchdog_task.done():
+        return
+    watchdog_task = asyncio.create_task(watchdog_loop(interval_s))
+
+
+def stop_watchdog():
+    global watchdog_task
+    if watchdog_task and not watchdog_task.done():
+        watchdog_task.cancel()
+        watchdog_task = None
+        _watchdog_stats["running"] = False

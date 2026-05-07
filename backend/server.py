@@ -211,6 +211,31 @@ async def lifespan(app: FastAPI):
             await db.services.update_one({"id": service["id"]}, {"$setOnInsert": service}, upsert=True)
     except Exception as e:
         logger.warning(f"Service seeding failed: {e}")
+
+    # Initialize ARIA-Memory module + indexes (CaseDesk-aware personal facts)
+    try:
+        import aria_memory as _aria_memory
+        _aria_memory.init(db, get_llm_api_key, casedesk_mod=casedesk)
+        await _aria_memory.ensure_indexes()
+    except Exception as e:
+        logger.warning(f"aria_memory init failed: {e}")
+
+    # Initialize Telegram bot module + start polling and watchdog
+    try:
+        telegram_bot.init(db, get_ha_settings, get_llm_api_key)
+        telegram_bot.chat_handler = process_chat_message
+        token = await telegram_bot.get_bot_token()
+        if token:
+            telegram_bot.start_bot()
+            logger.info("Telegram bot polling started")
+        else:
+            logger.info("Telegram bot token not configured - polling deferred until token is set")
+        # Watchdog runs unconditionally; it no-ops without a token and
+        # auto-recovers the bot whenever it stops responding.
+        telegram_bot.start_watchdog(interval_s=60)
+        logger.info("Telegram watchdog started (60s interval)")
+    except Exception as e:
+        logger.error(f"Telegram bot startup failed: {e}")
     
     logger.info("Aria Dashboard v2.0 started")
     yield
@@ -2162,6 +2187,18 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         openai_client = AsyncOpenAI(api_key=api_key)
         
         system_prompt = _get_system_prompt()
+
+        # Inject ARIA-Memory (personal facts from chat + CaseDesk) so ARIA
+        # behaves like a real personal butler instead of a stateless chatbot.
+        try:
+            import aria_memory as _aria_memory
+            mem_block = await _aria_memory.build_memory_context(user_id, max_chars=1800)
+            if mem_block:
+                system_prompt += "\n\n" + mem_block
+            # Trigger CaseDesk profile sync in background (no-op if <24h old)
+            await _aria_memory.maybe_async_resync_casedesk(user_id)
+        except Exception as e:
+            logger.debug(f"aria_memory inject skipped: {e}")
         
         # Add routing info to system prompt
         if routed_services:
@@ -2280,6 +2317,15 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
         
         # Step 5: Process action tags
         response_text = await _process_action_tags(response_text, user_id)
+        # Strip + persist [AKTION:MEMORY] tags before storing/returning
+        try:
+            import aria_memory as _aria_memory
+            response_text = await _aria_memory.process_memory_tags(response_text, user_id)
+            # Background extractor — looks for long-term facts in the user's
+            # own message (not the assistant reply). Fire-and-forget.
+            asyncio.create_task(_aria_memory.extract_memories_from_chat(user_id, message_text))
+        except Exception as e:
+            logger.debug(f"aria_memory post-process skipped: {e}")
         
         # Store messages
         now = datetime.now(timezone.utc).isoformat()
@@ -2370,6 +2416,14 @@ WICHTIG für E-Mails: Wenn der User dich bittet eine E-Mail zu senden:
 Home Assistant:
 - Gerät steuern: [AKTION:HA_STEUERUNG] {"entity_id":"light.wohnzimmer", "service":"turn_on", "data":{}}
 - Automation erstellen: [AKTION:HA_AUTOMATION] {"alias":"...","description":"...","trigger":[...],"action":[...]}
+
+ARIA-GEDÄCHTNIS (PERSÖNLICHE NOTIZEN):
+- Wenn du eine wichtige langfristige Information über den User aufschnappst (Vorliebe, Routine, Stammdatum, Familie, Arbeit), speichere sie für künftige Konversationen:
+  [AKTION:MEMORY] {"key":"slug_unique","value":"kurzer Fakt in einem Satz","category":"preference|routine|identity|family|work"}
+- Speichere NUR konkrete, langfristig nützliche Fakten (z.B. "trinkt morgens schwarzen Kaffee", "hat einen Sohn namens Max, geb. 2018", "wohnt in Köln-Ehrenfeld").
+- Speichere NIEMALS flüchtige Aussagen, Smalltalk, Aufgaben, Daten von heute oder unsichere Vermutungen.
+- Mehrere Memory-Tags pro Antwort sind erlaubt (max. 3).
+- Nutze das Wissen aus dem ARIA-GEDÄCHTNIS-Block proaktiv, ohne explizit darauf hinzuweisen ("wie üblich für Sie, Sir, …" statt "ich erinnere mich, dass …").
 
 Denke MIT: Wenn der User eine Szene oder Automation beschreibt, überlege welche Geräte betroffen sind und schlage konkret vor."""
 
@@ -2560,6 +2614,69 @@ async def get_chat_sessions(request: Request):
     ]
     sessions = await db.chat_messages.aggregate(pipeline).to_list(20)
     return [{"session_id": s["_id"], "preview": s["last_message"][:80], "timestamp": s["last_time"], "messages": s["count"]} for s in sessions]
+
+
+# ==================== ARIA MEMORY ====================
+
+@api_router.get("/aria/memory")
+async def aria_memory_list(request: Request, category: str = None):
+    user = await get_current_user(request)
+    import aria_memory as _aria_memory
+    cats = [category] if category else None
+    items = await _aria_memory.get_memories(user["id"], categories=cats, limit=200)
+    return {"items": items, "count": len(items)}
+
+
+@api_router.post("/aria/memory")
+async def aria_memory_add(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    import aria_memory as _aria_memory
+    value = (body.get("value") or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="value required")
+    res = await _aria_memory.add_memory(
+        user["id"],
+        value=value,
+        category=body.get("category", "other"),
+        key=body.get("key"),
+        source=body.get("source", "manual"),
+        confidence=float(body.get("confidence", 1.0)),
+    )
+    return res
+
+
+@api_router.delete("/aria/memory/{memory_id}")
+async def aria_memory_delete(memory_id: str, request: Request):
+    user = await get_current_user(request)
+    import aria_memory as _aria_memory
+    return await _aria_memory.delete_memory(user["id"], memory_id)
+
+
+@api_router.delete("/aria/memory")
+async def aria_memory_clear(request: Request):
+    user = await get_current_user(request)
+    import aria_memory as _aria_memory
+    return await _aria_memory.clear_all(user["id"])
+
+
+@api_router.post("/aria/memory/sync-casedesk")
+async def aria_memory_sync_casedesk(request: Request):
+    user = await get_current_user(request)
+    import aria_memory as _aria_memory
+    return await _aria_memory.sync_casedesk_profile(user["id"])
+
+
+# ==================== TELEGRAM WATCHDOG STATUS ====================
+
+@api_router.get("/admin/telegram/watchdog")
+async def admin_telegram_watchdog(request: Request):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return {
+        "stats": telegram_bot.get_watchdog_stats(),
+        "bot_status": telegram_bot.get_status(),
+    }
 
 @api_router.get("/chat/history/{session_id}")
 async def get_chat_history(session_id: str, request: Request):
@@ -2959,15 +3076,6 @@ service_router.init(db, get_llm_api_key)
 # Initialize ForgePilot integration
 forgepilot.init(db, get_llm_api_key)
 
-# Initialize Telegram Bot module
-telegram_bot.init(db, get_ha_settings, get_llm_api_key)
-telegram_bot.chat_handler = process_chat_message
-
-@app.on_event("startup")
-async def start_telegram_bot():
-    token = await telegram_bot.get_bot_token()
-    if token:
-        telegram_bot.start_bot()
-        logger.info("Telegram bot started")
-    else:
-        logger.info("Telegram bot token not configured - bot not started")
+# ARIA-Memory + Telegram bot are initialized inside the lifespan() startup
+# manager above (the @app.on_event("startup") below is unreachable because
+# FastAPI ignores it when lifespan= is set on the app).
