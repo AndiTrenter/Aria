@@ -104,6 +104,23 @@ const AriaMode = () => {
   // cortex intensity (drives animation)
   const [intensity, setIntensity] = useState(0.25);
 
+  // Viewport-responsive cortex size — keeps the orb fully visible even
+  // inside a narrow split-pane preview (Emergent App-Builder, half-screen).
+  // We pick the smaller of viewport-width × 0.55 and viewport-height × 0.65,
+  // capped at 600px and floored at 320px.
+  const computeOrbSize = () => {
+    if (typeof window === "undefined") return 520;
+    const w = window.innerWidth || 1280;
+    const h = window.innerHeight || 720;
+    return Math.max(320, Math.min(600, Math.floor(Math.min(w * 0.55, h * 0.62))));
+  };
+  const [orbSize, setOrbSize] = useState(computeOrbSize);
+  useEffect(() => {
+    const onResize = () => setOrbSize(computeOrbSize());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const recognitionRef = useRef(null);
   const stateRef = useRef(mode);
   const ttsCtrlRef = useRef(null);
@@ -650,13 +667,13 @@ const AriaMode = () => {
 
       {/* Center: Cortex cloud */}
       <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-        <div className="relative" style={{ width: 560, height: 560 }}>
+        <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
             intensity={intensity}
             speaking={mode === "speaking"}
             listening={mode === "listening"}
             mode={mode}
-            size={560}
+            size={orbSize}
           />
           {/* Status ring label */}
           <div className="absolute bottom-[-10px] left-1/2 -translate-x-1/2 text-[11px] tracking-[0.4em] text-cyan-300/90 font-bold whitespace-nowrap">

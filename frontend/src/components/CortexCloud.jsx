@@ -258,17 +258,18 @@ export default function CortexCloud({
 
     /* ─── Data packets (animated dots flowing along edges) ──────── */
     // Packets pick a random edge in one of the wireframes, travel from
-    // one endpoint to the other in ~0.6s, then fade and respawn.
-    const PACKET_MAX = 14;
+    // one endpoint to the other, then fade and respawn.  More + brighter
+    // than before so the wireframes feel actively "thinking".
+    const PACKET_MAX = 28;
     const packetGeom = new THREE.BufferGeometry();
     const packetPos = new Float32Array(PACKET_MAX * 3);
     packetGeom.setAttribute("position", new THREE.BufferAttribute(packetPos, 3));
     const packetMat = new THREE.PointsMaterial({
       map: dotTex,
       color: new THREE.Color(pal.hot),
-      size: 0.12,
+      size: 0.16,
       transparent: true,
-      opacity: 0.95,
+      opacity: 1.0,
       depthWrite: false,
       depthTest: false,
       blending: THREE.AdditiveBlending,
@@ -342,14 +343,23 @@ export default function CortexCloud({
 
       // ─── Rotation: each layer at different speed/axis for a complex feel
       const speedMul = 0.4 + I * 1.4;
-      outerGroup.rotation.y += dt * 0.10 * speedMul;
-      outerGroup.rotation.x += dt * 0.04 * speedMul;
-      middleGroup.rotation.y -= dt * 0.18 * speedMul;
-      middleGroup.rotation.z += dt * 0.06 * speedMul;
-      innerGroup.rotation.y += dt * 0.34 * speedMul;
-      innerGroup.rotation.x -= dt * 0.12 * speedMul;
-      ring.rotation.z += dt * 0.18 * speedMul;
+      // Outer wireframe rotates the fastest now — much more visible motion
+      outerGroup.rotation.y += dt * 0.28 * speedMul;
+      outerGroup.rotation.x += dt * 0.10 * speedMul;
+      outerGroup.rotation.z += dt * 0.05 * speedMul;
+      middleGroup.rotation.y -= dt * 0.20 * speedMul;
+      middleGroup.rotation.z += dt * 0.08 * speedMul;
+      innerGroup.rotation.y += dt * 0.40 * speedMul;
+      innerGroup.rotation.x -= dt * 0.16 * speedMul;
+      ring.rotation.z += dt * 0.20 * speedMul;
       stars.rotation.y += dt * 0.012;
+
+      // Outer wireframe brightness wave — sin pulse adds visible "life"
+      const outerWave = 0.5 + 0.5 * Math.sin(totalTime * 1.4);
+      outer.mat.opacity = (0.40 + I * 0.30) + outerWave * 0.18;
+      // Middle wireframe slight contrasting pulse
+      const middleWave = 0.5 + 0.5 * Math.sin(totalTime * 2.1 + 1.0);
+      middle.mat.opacity = (0.55 + I * 0.25) + middleWave * 0.12;
 
       // ─── Pulse the core + glow
       const pulse = 1 + Math.sin(totalTime * (1.6 + I * 1.2)) * (0.10 + I * 0.10);
@@ -360,8 +370,7 @@ export default function CortexCloud({
       glowMat.opacity = 0.45 + I * 0.30 + (s.speaking ? 0.10 : 0);
 
       // ─── Wireframe + node opacities react to intensity / speaking
-      outer.mat.opacity   = 0.45 + I * 0.30;
-      middle.mat.opacity  = 0.65 + I * 0.25;
+      // (outer.mat + middle.mat already updated above with brightness wave)
       inner.mat.opacity   = 0.85 + I * 0.10;
       outerNodes.material.opacity  = 0.85 + I * 0.10;
       middleNodes.material.opacity = 0.90 + I * 0.10;
@@ -413,7 +422,7 @@ export default function CortexCloud({
         packetPos[j * 3 + 2] = 999;
       }
       packets.geometry.attributes.position.needsUpdate = true;
-      packetMat.size = 0.10 + I * 0.10;
+      packetMat.size = 0.13 + I * 0.10;
 
       // ─── Spawn lightning arcs at high intensity (rare)
       if (I > 0.45 && Math.random() < 0.018 + I * 0.04) {
