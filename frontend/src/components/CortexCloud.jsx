@@ -1,12 +1,16 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
 /**
- * J.A.R.V.I.S.-style 3D cortex orb — refined with cinematic bloom and
+ * J.A.R.V.I.S.-style 3D cortex orb — refined with cinematic glow and
  * mode-reactive color tinting.
+ *
+ * NOTE: We deliberately avoid Three.js EffectComposer + UnrealBloomPass.
+ * Bloom bleeds bright pixels into the transparent canvas corners which,
+ * once the canvas is composited onto the page, makes the rectangular
+ * canvas boundary visible as a faint halo. Instead we get the same
+ * cinematic feel with multi-layer additive emissive spheres and a
+ * generous radial CSS mask.
  *
  * Props:
  *   intensity (0..1)   overall energy — drives motion + glow strength
@@ -19,7 +23,6 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
  * Implementation notes:
  *   - Round soft-edged particles via a generated CanvasTexture
  *   - Container has a radial mask so the canvas square is never visible
- *   - Postprocessing: subtle UnrealBloomPass for cinematic glow
  *   - All material colors lerp toward the active mode palette every frame
  *     so transitions feel smooth instead of snapping
  */
@@ -85,21 +88,6 @@ export default function CortexCloud({
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
     camera.position.set(0, 0, 5.0);
     camera.lookAt(0, 0, 0);
-
-    /* ─── Postprocessing: subtle bloom for cinematic glow ─────── */
-    const composer = new EffectComposer(renderer);
-    composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    composer.setSize(size, size);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-    // strength, radius, threshold — kept gentle to avoid 8-bit banding
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size, size),
-      0.55, // strength (was 0.85 — caused over-bright halos)
-      0.5,  // radius
-      0.25  // threshold (only mid+ bright pixels bloom → cleaner gradients)
-    );
-    composer.addPass(bloomPass);
 
     /* ─── Round particle sprite (built once) ────────────────────── */
     const makeCircleTexture = () => {
@@ -298,9 +286,7 @@ export default function CortexCloud({
       lerpColor(ringMat1.color,  tgt.ring, k);
       lerpColor(ringMat2.color,  tgt.ring, k);
       lerpColor(tickMat.color,   tgt.ring, k);
-      // Bloom strength rises during speaking/thinking for cinematic punch
-      const targetBloom = s.speaking ? 0.85 : (s.mode === "thinking" ? 0.7 : 0.55);
-      bloomPass.strength += (targetBloom - bloomPass.strength) * Math.min(1, dt * 3);
+      // No bloom anymore — the multi-layer halos handle all the glow.
 
       // Cloud rotation
       yaw += dt * 0.18 * speedMul;
@@ -319,11 +305,11 @@ export default function CortexCloud({
       cloud2Mat.size = 0.062 + I * 0.05;
       cloud2Mat.opacity = 0.5 + I * 0.3;
 
-      // Core pulse
+      // Core pulse — boosted now that bloom is gone, so the glow is still cinematic
       core.scale.setScalar(1 + Math.sin(totalTime * (0.9 + I * 1.4)) * (0.08 + I * 0.10));
-      coreMat.opacity = 0.25 + I * 0.25 + (s.speaking ? 0.05 : 0);
-      halo1Mat.opacity = 0.10 + I * 0.12 + (s.speaking ? 0.04 : 0);
-      halo2Mat.opacity = 0.03 + I * 0.06 + (s.speaking ? 0.02 : 0);
+      coreMat.opacity = 0.55 + I * 0.30 + (s.speaking ? 0.10 : 0);
+      halo1Mat.opacity = 0.28 + I * 0.20 + (s.speaking ? 0.08 : 0);
+      halo2Mat.opacity = 0.10 + I * 0.10 + (s.speaking ? 0.05 : 0);
       halo1.scale.setScalar(1 + Math.sin(totalTime * 1.1) * 0.04);
       halo2.scale.setScalar(1 + Math.sin(totalTime * 0.7) * 0.03);
 
@@ -413,7 +399,7 @@ export default function CortexCloud({
       camera.position.y = Math.cos(totalTime * 0.15) * 0.03;
       camera.lookAt(0, 0, 0);
 
-      composer.render();
+      renderer.render(scene, camera);
       rafRef.current = requestAnimationFrame(animate);
     };
     rafRef.current = requestAnimationFrame(animate);
@@ -432,7 +418,6 @@ export default function CortexCloud({
       sprite.dispose();
       arcs.forEach((a) => { a.geom.dispose(); a.mat.dispose(); });
       shocks.forEach((s) => { s.geom.dispose(); s.mat.dispose(); });
-      composer.dispose?.();
       renderer.dispose();
       try { mount.removeChild(renderer.domElement); } catch {}
     };
