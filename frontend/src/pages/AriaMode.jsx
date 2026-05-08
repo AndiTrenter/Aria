@@ -110,10 +110,10 @@ const AriaMode = () => {
   // We pick the smaller of viewport-width × 0.55 and viewport-height × 0.65,
   // capped at 600px and floored at 320px.
   const computeOrbSize = () => {
-    if (typeof window === "undefined") return 460;
+    if (typeof window === "undefined") return 380;
     const w = window.innerWidth || 1280;
     const h = window.innerHeight || 720;
-    return Math.max(300, Math.min(540, Math.floor(Math.min(w * 0.45, h * 0.55))));
+    return Math.max(260, Math.min(440, Math.floor(Math.min(w * 0.36, h * 0.46))));
   };
   const [orbSize, setOrbSize] = useState(computeOrbSize);
   useEffect(() => {
@@ -673,8 +673,18 @@ const AriaMode = () => {
 
       {/* Center: Cortex cloud — z-50 so it's ALWAYS on top of every HUD
           element, side panels, and background fx (the user explicitly
-          requested the orb sit on the topmost layer). */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none">
+          requested the orb sit on the topmost layer).
+          padding-bottom: shifts the visual centre up — the bottom command
+          bar takes ~100px of screen, so without compensation the orb
+          looks "low".
+          padding-right: small bias to compensate for the wider right-side
+          HUD column (CHRONO + SUBSYSTEMS + NETWORK is denser than the
+          left SYSTEM/NEURAL/CHANNELS column).
+      */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none"
+        style={{ paddingBottom: "8vh", paddingRight: "3vw" }}
+      >
         <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
             intensity={intensity}
@@ -876,33 +886,33 @@ const SideHudPanel = ({ side, user, mode }) => {
 const ThinkingOverlay = ({ data, onClose }) => {
   const { kind, steps, result } = data;
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center p-6 pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-xl bg-black/80 border border-cyan-400/50 rounded-xl backdrop-blur-lg shadow-[0_0_60px_rgba(100,220,255,0.25)]">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-cyan-400/30">
-          <div className="flex items-center gap-2 text-cyan-200 font-bold tracking-[0.25em] text-sm">
+    <div className="absolute inset-0 z-[60] flex items-center justify-center p-6 pointer-events-none">
+      <div className="pointer-events-auto w-full max-w-xl bg-black/85 border border-orange-400/55 rounded-xl backdrop-blur-lg shadow-[0_0_60px_rgba(255,120,60,0.35)]">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-orange-400/30">
+          <div className="flex items-center gap-2 text-orange-200 font-bold tracking-[0.25em] text-sm">
             {kind === "email" ? <EnvelopeSimple size={16} weight="bold" /> : <Brain size={16} weight="bold" />}
             A.R.I.A. {kind === "email" ? "VERFASST E-MAIL" : "DENKT"}
           </div>
-          <button onClick={onClose} className="text-cyan-300/70 hover:text-cyan-200">
+          <button onClick={onClose} className="text-orange-300/70 hover:text-orange-200">
             <X size={16} />
           </button>
         </div>
         <div className="p-5 space-y-3">
           {steps.map((s) => (
-            <div key={s.id} className={`flex items-center gap-3 text-sm ${s.status === "active" ? "aria-step-active text-cyan-200" : s.status === "done" ? "text-cyan-300" : "text-cyan-500/50"}`}>
-              {s.status === "done" ? <CheckCircle size={18} weight="fill" className="text-cyan-400" />
-                : s.status === "active" ? <CircleNotch size={18} weight="bold" className="animate-spin text-cyan-300" />
-                : <div className="w-[18px] h-[18px] rounded-full border border-cyan-500/40" />}
+            <div key={s.id} className={`flex items-center gap-3 text-sm ${s.status === "active" ? "aria-step-active text-orange-100" : s.status === "done" ? "text-orange-300" : "text-orange-500/50"}`}>
+              {s.status === "done" ? <CheckCircle size={18} weight="fill" className="text-orange-400" />
+                : s.status === "active" ? <CircleNotch size={18} weight="bold" className="animate-spin text-orange-300" />
+                : <div className="w-[18px] h-[18px] rounded-full border border-orange-500/40" />}
               <span className="tracking-wide">{s.label}</span>
             </div>
           ))}
           {result?.body && (
-            <div className="mt-4 p-4 rounded-lg bg-cyan-950/40 border border-cyan-400/40 text-cyan-100 text-sm whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
+            <div className="mt-4 p-4 rounded-lg bg-orange-950/40 border border-orange-400/40 text-orange-50 text-sm whitespace-pre-wrap max-h-[40vh] overflow-y-auto">
               {stripMarkdownForTTS(result.body)}
             </div>
           )}
           {kind === "email" && result?.body && (
-            <div className="text-[11px] text-cyan-400/70 pt-2">
+            <div className="text-[11px] text-orange-400/70 pt-2">
               Sage „<b>ja versende die Email</b>" zum Absenden oder „<b>verwerfen</b>" zum Verwerfen.
             </div>
           )}
@@ -960,12 +970,12 @@ const MapsOverlay = ({ data, onClose }) => {
 /* ─── Holo Panel Layer (JARVIS search windows around the cortex) ─── */
 
 const SERVICE_META = {
-  weather:        { color: "200", emoji: "☀" },
-  system:         { color: "260", emoji: "⚙" },
-  homeassistant:  { color: "100", emoji: "🏠" },
-  casedesk:       { color: "30",  emoji: "✉" },
-  plex:           { color: "320", emoji: "▶" },
-  cookpilot:      { color: "20",  emoji: "🍳" },
+  weather:        { color: "32",  emoji: "☀" },  // amber
+  system:         { color: "10",  emoji: "⚙" },  // crimson
+  homeassistant:  { color: "20",  emoji: "🏠" },  // red-orange
+  casedesk:       { color: "38",  emoji: "✉" },  // gold
+  plex:           { color: "5",   emoji: "▶" },  // deep red
+  cookpilot:      { color: "28",  emoji: "🍳" },  // orange
 };
 
 // 3D positioning around a 560-px cortex.  Each slot has a CSS position
@@ -989,7 +999,7 @@ const HoloPanelLayer = ({ panels }) => {
   const ordered = [...panels].sort((a, b) => (a.ts || 0) - (b.ts || 0));
   return (
     <div
-      className="absolute inset-0 z-20 pointer-events-none"
+      className="absolute inset-0 z-[55] pointer-events-none"
       style={{ perspective: "1400px", perspectiveOrigin: "50% 45%" }}
     >
       {ordered.map((p, i) => {
@@ -1001,7 +1011,7 @@ const HoloPanelLayer = ({ panels }) => {
 };
 
 const HoloPanel = ({ panel, slot, index }) => {
-  const meta = SERVICE_META[panel.service] || { color: "190", emoji: "◆" };
+  const meta = SERVICE_META[panel.service] || { color: "20", emoji: "◆" };
   const hue = meta.color;
   const status = panel.status || "active";
 
