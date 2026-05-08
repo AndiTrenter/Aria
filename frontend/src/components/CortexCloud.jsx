@@ -394,9 +394,10 @@ export default function CortexCloud({
         }
       }
 
-      // Camera drift
-      camera.position.x = Math.sin(totalTime * 0.18) * 0.04;
-      camera.position.y = Math.cos(totalTime * 0.15) * 0.03;
+      // Camera stays perfectly still — earlier sin/cos drift made the orb
+      // float slightly off-centre, which combined with the radial mask
+      // produced an "eclipse" half-shadow on the side opposite the drift.
+      camera.position.set(0, 0, 5.0);
       camera.lookAt(0, 0, 0);
 
       renderer.render(scene, camera);
@@ -430,15 +431,14 @@ export default function CortexCloud({
         height: size,
         display: "block",
         position: "relative",
-        // Aggressive radial mask — the orb itself only fills the inner
-        // ~50% of the canvas, so we fade everything beyond that to fully
-        // transparent. This guarantees the rectangular canvas boundary is
-        // invisible (no solid-paint vignette can match the page's own
-        // radial gradient bg perfectly, so we use a real mask instead).
+        // Generous radial mask — keeps the entire orb (and its outer
+        // particle cloud) in the fully-visible centre, then smoothly
+        // fades to transparent by ~90% radius. Even with subtle internal
+        // animation no part of the orb ever falls into the fade zone.
         WebkitMaskImage:
-          "radial-gradient(circle at 50% 50%, black 0%, black 32%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0) 70%)",
+          "radial-gradient(circle at 50% 50%, black 0%, black 48%, rgba(0,0,0,0.8) 62%, rgba(0,0,0,0.3) 78%, rgba(0,0,0,0) 92%)",
         maskImage:
-          "radial-gradient(circle at 50% 50%, black 0%, black 32%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0) 70%)",
+          "radial-gradient(circle at 50% 50%, black 0%, black 48%, rgba(0,0,0,0.8) 62%, rgba(0,0,0,0.3) 78%, rgba(0,0,0,0) 92%)",
       }}
     >
       <div
