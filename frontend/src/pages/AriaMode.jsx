@@ -8,6 +8,7 @@ import {
   SignOut, SpeakerHigh, MagnifyingGlass, Warning
 } from "@phosphor-icons/react";
 import CortexCloud from "@/components/CortexCloud";
+import BackgroundFx from "@/components/BackgroundFx";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 import { streamAriaChat } from "@/utils/ariaStream";
@@ -109,10 +110,10 @@ const AriaMode = () => {
   // We pick the smaller of viewport-width × 0.55 and viewport-height × 0.65,
   // capped at 600px and floored at 320px.
   const computeOrbSize = () => {
-    if (typeof window === "undefined") return 520;
+    if (typeof window === "undefined") return 460;
     const w = window.innerWidth || 1280;
     const h = window.innerHeight || 720;
-    return Math.max(320, Math.min(600, Math.floor(Math.min(w * 0.55, h * 0.62))));
+    return Math.max(300, Math.min(540, Math.floor(Math.min(w * 0.45, h * 0.55))));
   };
   const [orbSize, setOrbSize] = useState(computeOrbSize);
   useEffect(() => {
@@ -637,6 +638,11 @@ const AriaMode = () => {
 
       {/* HUD scan-lines + grid */}
       <div className="absolute inset-0 pointer-events-none aria-hud-grid" />
+
+      {/* Animated tech background — floating nodes + network lines + scan
+          bursts.  Sits above the static HUD grid but well below all
+          foreground UI.  Mode-reactive colour. */}
+      <BackgroundFx mode={mode} />
       <div className="absolute inset-0 pointer-events-none aria-scanlines" />
 
       {/* Top bar */}
@@ -665,8 +671,10 @@ const AriaMode = () => {
       {panels.length === 0 && <SideHudPanel side="left" user={user} mode={mode} />}
       {panels.length === 0 && <SideHudPanel side="right" mode={mode} />}
 
-      {/* Center: Cortex cloud */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+      {/* Center: Cortex cloud — z-50 so it's ALWAYS on top of every HUD
+          element, side panels, and background fx (the user explicitly
+          requested the orb sit on the topmost layer). */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none">
         <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
             intensity={intensity}

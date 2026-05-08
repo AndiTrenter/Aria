@@ -26,12 +26,15 @@ import * as THREE from "three";
  *   mode ("idle"|"wakeword"|"listening"|"thinking"|"speaking"), size (px)
  */
 
+// ── Mode palettes ──────────────────────────────────────────────
+//   Red / orange "arc-reactor" colour scheme — inspired by Iron Man's
+//   chest core and warm-tech UI accents.  No more cold cyan/white look.
 const MODE_PALETTES = {
-  idle:     { primary: 0x5cc8ff, secondary: 0x9be0ff, accent: 0xbdf2ff, hot: 0xffffff },
-  wakeword: { primary: 0x3aa6ff, secondary: 0x7accff, accent: 0xa0e8ff, hot: 0xffffff },
-  listening:{ primary: 0x0fd6b0, secondary: 0x2effd0, accent: 0x7fffd8, hot: 0xffffff },
-  thinking: { primary: 0xff7a14, secondary: 0xff9a2a, accent: 0xffd17a, hot: 0xfff4d0 },
-  speaking: { primary: 0x3acfff, secondary: 0xa0f6ff, accent: 0xdcffff, hot: 0xffffff },
+  idle:     { primary: 0xff5a3c, secondary: 0xff8a5c, accent: 0xffb88a, hot: 0xfff0d8 },
+  wakeword: { primary: 0xff4a2a, secondary: 0xff7c4c, accent: 0xffaa75, hot: 0xfff0d8 },
+  listening:{ primary: 0xff7a14, secondary: 0xffaa3c, accent: 0xffd57c, hot: 0xfff8e0 },
+  thinking: { primary: 0xffb800, secondary: 0xffd24a, accent: 0xfff0a0, hot: 0xfffae0 },
+  speaking: { primary: 0xff3a1a, secondary: 0xff6a3a, accent: 0xffa07a, hot: 0xffe8d0 },
 };
 
 const lerpColor = (target, source, t) => {
@@ -499,15 +502,11 @@ export default function CortexCloud({
         height: size,
         display: "block",
         position: "relative",
-        // Generous radial mask — keeps the entire neural core in the
-        // fully-visible centre, then smoothly fades to transparent by
-        // ~92% radius. With no BackSide spheres, no bloom, no large
-        // particle cloud, the structure is contained well within the
-        // visible zone — no eclipse, no rectangle.
-        WebkitMaskImage:
-          "radial-gradient(circle at 50% 50%, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.2) 84%, rgba(0,0,0,0) 95%)",
-        maskImage:
-          "radial-gradient(circle at 50% 50%, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.2) 84%, rgba(0,0,0,0) 95%)",
+        // No mask — the canvas background is fully transparent (clearColor
+        // alpha=0), so only the rendered geometry produces visible pixels.
+        // Adding a radial mask was creating a visible circular fade-edge
+        // that the user perceived as a "rectangle hiding the orb".  The
+        // wireframes naturally have nothing in the corners.
       }}
     />
   );
