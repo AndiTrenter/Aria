@@ -683,7 +683,7 @@ const AriaMode = () => {
       */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none"
-        style={{ paddingBottom: "8vh", paddingRight: "3vw" }}
+        style={{ paddingBottom: "16vh", paddingRight: "10vw" }}
       >
         <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
