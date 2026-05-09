@@ -656,6 +656,8 @@ const Admin = () => {
   const [tavilyLogs, setTavilyLogs] = useState([]);
   const [tavilyApiKeyDraft, setTavilyApiKeyDraft] = useState("");
   const [savingTavily, setSavingTavily] = useState(false);
+  const [tavilyMsg, setTavilyMsg] = useState(null); // {type:'ok'|'err', text}
+  const [testingTavily, setTestingTavily] = useState(false);
 
   const loadTavilyAll = async () => {
     try {
@@ -677,16 +679,51 @@ const Admin = () => {
 
   const saveTavilySettings = async (patch) => {
     setSavingTavily(true);
+    setTavilyMsg(null);
     try {
       const body = { ...patch };
+      // Strip the masked key field so we never accidentally PUT "***"
+      delete body.api_key;
+      delete body.api_key_masked;
+      // Always sanitise numeric inputs (HTML inputs return strings)
+      ["daily_limit", "monthly_limit", "per_user_limit_per_day",
+       "cache_ttl_days", "max_results"].forEach((k) => {
+        if (body[k] !== undefined) body[k] = parseInt(body[k] || 0, 10);
+      });
       if (tavilyApiKeyDraft && tavilyApiKeyDraft !== "***") {
         body.api_key = tavilyApiKeyDraft;
       }
-      await axios.put(`${API}/admin/tavily/settings`, body);
+      const r = await axios.put(`${API}/admin/tavily/settings`, body);
       setTavilyApiKeyDraft("");
-      await loadTavilyAll();
+      setTavilyMsg({ type: "ok", text: "Einstellungen gespeichert." });
+      setTavilySettings(r.data || null);
+      // Background-refresh stats/knowledge/logs
+      loadTavilyAll();
+    } catch (e) {
+      setTavilyMsg({ type: "err", text: `Speichern fehlgeschlagen: ${e?.response?.data?.detail || e?.message || e}` });
     } finally {
       setSavingTavily(false);
+      setTimeout(() => setTavilyMsg(null), 4000);
+    }
+  };
+
+  const testTavilyConnection = async () => {
+    setTestingTavily(true);
+    setTavilyMsg(null);
+    try {
+      const body = {};
+      if (tavilyApiKeyDraft && tavilyApiKeyDraft !== "***") body.api_key = tavilyApiKeyDraft;
+      const r = await axios.post(`${API}/admin/tavily/test`, body);
+      if (r.data?.success) {
+        setTavilyMsg({ type: "ok", text: `OK — ${r.data.results_count ?? 0} Treffer in ${r.data.elapsed_ms ?? "?"} ms` });
+      } else {
+        setTavilyMsg({ type: "err", text: `Test fehlgeschlagen: ${r.data?.error || "unbekannter Fehler"}` });
+      }
+    } catch (e) {
+      setTavilyMsg({ type: "err", text: `Test-Anfrage fehlgeschlagen: ${e?.response?.data?.detail || e?.message || e}` });
+    } finally {
+      setTestingTavily(false);
+      setTimeout(() => setTavilyMsg(null), 6000);
     }
   };
 
@@ -1882,7 +1919,7 @@ const Admin = () => {
               <div className="text-sm text-gray-500">Lade Einstellungen…</div>
             )}
 
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex gap-2 flex-wrap items-center">
               <button
                 onClick={() => saveTavilySettings(tavilySettings)}
                 disabled={savingTavily || !tavilySettings}
@@ -1891,6 +1928,28 @@ const Admin = () => {
               >
                 {savingTavily ? "Speichere…" : "Einstellungen speichern"}
               </button>
+              <button
+                onClick={testTavilyConnection}
+                disabled={testingTavily}
+                className={`${btnClass} px-4 py-2 text-sm`}
+                data-testid="tavily-test-btn"
+                title="Sendet eine Test-Suche an Tavily und meldet zurück, ob der Key funktioniert."
+              >
+                {testingTavily ? "Teste…" : "Verbindung testen"}
+              </button>
+              {tavilyMsg && (
+                <span
+                  data-testid="tavily-msg"
+                  className={`text-xs px-3 py-1.5 rounded ${
+                    tavilyMsg.type === "ok"
+                      ? "bg-emerald-900/40 text-emerald-200 border border-emerald-500/40"
+                      : "bg-red-900/40 text-red-200 border border-red-500/40"
+                  }`}
+                  style={{ textTransform: "none" }}
+                >
+                  {tavilyMsg.text}
+                </span>
+              )}
             </div>
           </div>
 

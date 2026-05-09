@@ -2875,6 +2875,22 @@ async def admin_tavily_knowledge_delete(entry_id: str, request: Request):
     return await _tavily.delete_knowledge(entry_id)
 
 
+@api_router.post("/admin/tavily/test")
+async def admin_tavily_test(request: Request, body: dict = Body(default=None)):
+    """Test the Tavily API connection with the saved key, OR with a key
+    passed in the body (so the user can verify a key BEFORE saving)."""
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    override = None
+    if body and isinstance(body, dict):
+        override = (body.get("api_key") or "").strip() or None
+        if override == "***":
+            override = None
+    return await _tavily.test_connection(api_key_override=override)
+
+
 @api_router.post("/aria/research")
 async def aria_research(request: Request, body: dict = Body(...)):
     user = await get_current_user(request)

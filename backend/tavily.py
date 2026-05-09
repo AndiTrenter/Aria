@@ -454,6 +454,44 @@ async def list_logs(limit: int = 100) -> list:
     return await cursor.to_list(limit)
 
 
+async def test_connection(api_key_override: str = None) -> dict:
+    """Quick health-check: send a minimal query to Tavily and return
+    whether the call succeeded. Doesn't store anything in cache/logs."""
+    settings = await get_settings()
+    api_key = (api_key_override or settings.get("api_key") or "").strip()
+    if not api_key:
+        return {"success": False, "error": "kein API-Key gesetzt"}
+    started = _now()
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            resp = await client.post(
+                TAVILY_ENDPOINT,
+                json={
+                    "api_key": api_key,
+                    "query": "test",
+                    "search_depth": "basic",
+                    "max_results": 1,
+                    "include_answer": False,
+                },
+            )
+            elapsed = int((_now() - started).total_seconds() * 1000)
+            if resp.status_code == 200:
+                data = resp.json() or {}
+                return {
+                    "success": True,
+                    "elapsed_ms": elapsed,
+                    "results_count": len(data.get("results") or []),
+                    "message": "Tavily-Verbindung OK",
+                }
+            return {
+                "success": False,
+                "elapsed_ms": elapsed,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+    except Exception as e:
+        return {"success": False, "error": f"Anfrage fehlgeschlagen: {e}"}
+
+
 # ── Embeddings + semantic cache search ─────────────────────────────
 #
 # We store an OpenAI text-embedding-3-small (1536 dim) vector alongside
