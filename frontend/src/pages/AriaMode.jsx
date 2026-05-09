@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import CortexCloud from "@/components/CortexCloud";
 import BackgroundFx from "@/components/BackgroundFx";
+import TemperatureWatermark from "@/components/TemperatureWatermark";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 import { streamAriaChat } from "@/utils/ariaStream";
@@ -145,6 +146,31 @@ const AriaMode = () => {
   useEffect(() => {
     const t = setTimeout(() => setBooting(false), 1500);
     return () => clearTimeout(t);
+  }, []);
+
+  /* ─── Kiosk fullscreen — request when ARIA mode opens, exit on leave.
+       Using the Fullscreen API.  Requires a user-gesture trigger; the
+       click that activated ARIA mode IS such a gesture, so this
+       implicit call usually succeeds.  If the browser refuses
+       (Safari sometimes), we silently fall back to windowed mode. ── */
+  useEffect(() => {
+    const enter = async () => {
+      try {
+        const el = document.documentElement;
+        if (!document.fullscreenElement && el.requestFullscreen) {
+          await el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+        }
+      } catch { /* user-gesture missing → silently ignore */ }
+    };
+    enter();
+    return () => {
+      // Leave fullscreen when ARIA mode unmounts (toggle back to standard)
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      } catch { /* noop */ }
+    };
   }, []);
 
   /* ─── Boot greeting (one-time per session, only when this mode opens) ─ */
@@ -643,6 +669,10 @@ const AriaMode = () => {
           bursts.  Sits above the static HUD grid but well below all
           foreground UI.  Mode-reactive colour. */}
       <BackgroundFx mode={mode} />
+
+      {/* Holographic temperature watermark — large faint digits behind
+          the action, refreshes every 5min from /api/weather. */}
+      <TemperatureWatermark />
       <div className="absolute inset-0 pointer-events-none aria-scanlines" />
 
       {/* Top bar */}
@@ -683,7 +713,7 @@ const AriaMode = () => {
       */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none"
-        style={{ paddingBottom: "16vh", paddingRight: "10vw" }}
+        style={{ paddingBottom: "22vh", paddingRight: "16vw" }}
       >
         <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
