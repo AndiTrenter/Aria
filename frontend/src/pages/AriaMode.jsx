@@ -17,6 +17,7 @@ import {
   playBootSound, playWakeSound, playListenSound,
   playDoneSound, playErrorSound, playThinkTick, unlockAudio,
 } from "@/utils/ariaSounds";
+import useMicLevel from "@/utils/useMicLevel";
 
 /*  ────────────────────────────────────────────────────────────────────
     INTENT PARSERS – deterministic client-side detection for the two
@@ -105,6 +106,43 @@ const AriaMode = () => {
 
   // cortex intensity (drives animation)
   const [intensity, setIntensity] = useState(0.25);
+
+  // Live microphone amplitude — only sampled while ARIA is "listening".
+  // Drives the cortex animation intensity in real time so the orb
+  // visibly reacts to the user's voice (J.A.R.V.I.S.-style).
+  const micLevelRef = useMicLevel(mode === "listening");
+
+  // Drive intensity from mic-level when listening, otherwise a fixed
+  // mode-derived baseline.  Updates ~30/s (lighter than 60Hz to reduce
+  // setState pressure).
+  useEffect(() => {
+    let alive = true;
+    let raf = null;
+    let last = 0;
+    const baseline = () => {
+      if (mode === "listening") return 0.55;
+      if (mode === "thinking")  return 0.7;
+      if (mode === "speaking")  return 0.85;
+      return 0.25;
+    };
+    const tick = (ts) => {
+      if (!alive) return;
+      if (ts - last > 33) {
+        last = ts;
+        const base = baseline();
+        if (mode === "listening") {
+          const lvl = micLevelRef.current || 0;
+          // Scale: baseline 0.45 + 0.5 × mic level → range 0.45..0.95
+          setIntensity(Math.max(base, 0.45 + lvl * 0.5));
+        } else {
+          setIntensity(base);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { alive = false; if (raf) cancelAnimationFrame(raf); };
+  }, [mode, micLevelRef]);
 
   // Viewport-responsive cortex size — keeps the orb fully visible even
   // inside a narrow split-pane preview (Emergent App-Builder, half-screen).

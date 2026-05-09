@@ -696,6 +696,51 @@ const Admin = () => {
     await loadTavilyAll();
   };
 
+  // ── ARIA-Memory ──────────────────────────────────────────────────
+  const [memoryItems, setMemoryItems] = useState([]);
+  const [memoryDraft, setMemoryDraft] = useState({ value: "", category: "preference", key: "" });
+  const loadMemory = async () => {
+    try {
+      const r = await axios.get(`${API}/aria/memory`);
+      setMemoryItems(r.data?.items || []);
+    } catch (e) { console.warn("loadMemory", e); }
+  };
+  useEffect(() => { if (activeTab === "memory") loadMemory(); }, [activeTab]);
+  const addMemory = async () => {
+    if (!memoryDraft.value.trim()) return;
+    await axios.post(`${API}/aria/memory`, memoryDraft);
+    setMemoryDraft({ value: "", category: "preference", key: "" });
+    await loadMemory();
+  };
+  const deleteMemory = async (id) => {
+    if (!window.confirm("Diesen Memory-Eintrag wirklich löschen?")) return;
+    await axios.delete(`${API}/aria/memory/${id}`);
+    await loadMemory();
+  };
+  const syncCasedeskMemory = async () => {
+    const r = await axios.post(`${API}/aria/memory/sync-casedesk`);
+    alert(`CaseDesk-Sync: ${r.data?.synced ?? 0} Einträge ${r.data?.success ? "OK" : "(fehlgeschlagen)"}`);
+    await loadMemory();
+  };
+
+  // ── Briefing ────────────────────────────────────────────────────
+  const [briefingSettings, setBriefingSettings] = useState(null);
+  const loadBriefing = async () => {
+    try {
+      const r = await axios.get(`${API}/admin/briefing/settings`);
+      setBriefingSettings(r.data || null);
+    } catch (e) { console.warn("loadBriefing", e); }
+  };
+  useEffect(() => { if (activeTab === "briefing") loadBriefing(); }, [activeTab]);
+  const saveBriefing = async () => {
+    await axios.put(`${API}/admin/briefing/settings`, briefingSettings || {});
+    await loadBriefing();
+  };
+  const triggerBriefingNow = async () => {
+    const r = await axios.post(`${API}/aria/briefing/now`);
+    alert(`Briefing: ${r.data?.success ? "erfolgreich gesendet via " + (r.data.channels || []).join(", ") : "fehlgeschlagen"}`);
+  };
+
   // SmartHome Builder handlers
   const loadBuilderConfig = async (userId) => {
     setBuilderUser(userId);
@@ -755,6 +800,8 @@ const Admin = () => {
     { id: "router", label: isLcars ? "KI-ROUTER" : "KI-Router" },
     { id: "cookpilot", label: isLcars ? "COOKPILOT" : "CookPilot" },
     { id: "tavily", label: isLcars ? "TAVILY" : "Tavily" },
+    { id: "memory", label: isLcars ? "GEDÄCHTNIS" : "ARIA-Memory" },
+    { id: "briefing", label: isLcars ? "BRIEFING" : "Briefing" },
     { id: "settings", label: isLcars ? "EINSTELLUNGEN" : "Einstellungen" },
   ];
 
@@ -1939,6 +1986,141 @@ const Admin = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== ARIA-MEMORY TAB ==================== */}
+      {activeTab === "memory" && (
+        <div className="space-y-6" data-testid="memory-tab">
+          <div className={cardClass}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                ARIA-Gedächtnis ({memoryItems.length} Einträge)
+              </h3>
+              <button onClick={syncCasedeskMemory} className={`${btnClass} px-3 py-1 text-xs`}>CaseDesk-Sync</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4" style={{ textTransform: "none" }}>
+              Persönliche Fakten, die ARIA über dich gespeichert hat. Diese werden bei jeder Anfrage in den System-Prompt injiziert, damit ARIA wie ein echter persönlicher Butler agiert.
+            </p>
+
+            {/* Add new */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-4">
+              <input
+                type="text"
+                value={memoryDraft.value}
+                onChange={(e) => setMemoryDraft({ ...memoryDraft, value: e.target.value })}
+                placeholder="z.B. 'trinkt morgens schwarzen Kaffee'"
+                className="md:col-span-6 px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                data-testid="memory-value-input"
+              />
+              <select
+                value={memoryDraft.category}
+                onChange={(e) => setMemoryDraft({ ...memoryDraft, category: e.target.value })}
+                className="md:col-span-3 px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+              >
+                <option value="preference">preference</option>
+                <option value="routine">routine</option>
+                <option value="identity">identity</option>
+                <option value="family">family</option>
+                <option value="work">work</option>
+                <option value="other">other</option>
+              </select>
+              <input
+                type="text"
+                value={memoryDraft.key}
+                onChange={(e) => setMemoryDraft({ ...memoryDraft, key: e.target.value })}
+                placeholder="key (optional)"
+                className="md:col-span-2 px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+              />
+              <button onClick={addMemory} className={`${btnClass} px-3 py-1.5 text-sm`} data-testid="memory-add-btn">+ Add</button>
+            </div>
+
+            {/* List */}
+            <div className="overflow-x-auto max-h-[500px]">
+              <table className="w-full text-xs">
+                <thead className="text-orange-300/70">
+                  <tr>
+                    <th className="text-left p-2">Kategorie</th>
+                    <th className="text-left p-2">Wert</th>
+                    <th className="text-left p-2">Quelle</th>
+                    <th className="text-left p-2">Confidence</th>
+                    <th className="text-left p-2">Aktualisiert</th>
+                    <th className="text-left p-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {memoryItems.length === 0 && (
+                    <tr><td colSpan={6} className="text-gray-500 p-3 text-center">Noch leer.</td></tr>
+                  )}
+                  {memoryItems.map((m) => (
+                    <tr key={m.id} className="border-t border-orange-500/10">
+                      <td className="p-2 text-orange-300">{m.category}</td>
+                      <td className="p-2 max-w-[420px]" style={{ textTransform: "none" }}>{m.value}</td>
+                      <td className="p-2 text-gray-500">{m.source}</td>
+                      <td className="p-2 text-gray-500">{(m.confidence || 0).toFixed(2)}</td>
+                      <td className="p-2 text-gray-500 whitespace-nowrap">{(m.updated_at || "").replace("T", " ").slice(0, 16)}</td>
+                      <td className="p-2"><button onClick={() => deleteMemory(m.id)} className="text-red-400 hover:text-red-300 text-xs">Löschen</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== BRIEFING TAB ==================== */}
+      {activeTab === "briefing" && (
+        <div className="space-y-6" data-testid="briefing-tab">
+          <div className={cardClass}>
+            <h3 className={`text-sm mb-3 ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+              Tagesroutine-Briefing
+            </h3>
+            <p className="text-xs text-gray-500 mb-4" style={{ textTransform: "none" }}>
+              ARIA sendet jeden Morgen ein personalisiertes Briefing: Wetter, Kalendertermine, ungelesene E-Mails und offene Aufgaben — über Telegram (sofern verbunden) und/oder als Dashboard-Anzeige beim ersten Login des Tages.
+            </p>
+            {briefingSettings ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input type="checkbox" checked={!!briefingSettings.enabled}
+                    onChange={(e) => setBriefingSettings({ ...briefingSettings, enabled: e.target.checked })} />
+                  <span className="text-sm">Briefing aktivieren</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input type="checkbox" checked={!!briefingSettings.send_via_telegram}
+                    onChange={(e) => setBriefingSettings({ ...briefingSettings, send_via_telegram: e.target.checked })} />
+                  <span className="text-sm">Per Telegram senden</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input type="checkbox" checked={!!briefingSettings.send_via_app}
+                    onChange={(e) => setBriefingSettings({ ...briefingSettings, send_via_app: e.target.checked })} />
+                  <span className="text-sm">In-App (Dashboard) anzeigen</span>
+                </label>
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Lokale Uhrzeit (HH:MM)</div>
+                  <input type="text" value={briefingSettings.time_local}
+                    onChange={(e) => setBriefingSettings({ ...briefingSettings, time_local: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm" />
+                </div>
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Zeitzonen-Offset (Minuten von UTC, z.B. 60=CET, 120=CEST)</div>
+                  <input type="number" value={briefingSettings.timezone_offset_minutes}
+                    onChange={(e) => setBriefingSettings({ ...briefingSettings, timezone_offset_minutes: parseInt(e.target.value || "60", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm" />
+                </div>
+              </div>
+            ) : <div className="text-sm text-gray-500">Lade…</div>}
+            <div className="mt-4 flex gap-2">
+              <button onClick={saveBriefing} className={`${btnClass} px-4 py-2 text-sm`} data-testid="briefing-save-btn">Einstellungen speichern</button>
+              <button onClick={triggerBriefingNow} className={`${btnClass} px-4 py-2 text-sm`} data-testid="briefing-test-btn">Jetzt testen</button>
+            </div>
+          </div>
+          <div className={cardClass}>
+            <h3 className="text-sm font-bold mb-2 text-orange-200">Hinweis</h3>
+            <p className="text-xs text-gray-400" style={{ textTransform: "none" }}>
+              Jeder User muss sich individuell für das Briefing opt-in setzen (über das Profil oder per API <code>PUT /api/aria/briefing/opt-in {`{opt_in:true}`}</code>). Das Telegram-Briefing benötigt eine bereits verifizierte Telegram-Bot-Verbindung des Users.
+            </p>
           </div>
         </div>
       )}

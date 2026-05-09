@@ -51,6 +51,24 @@ logger = logging.getLogger(__name__)
 db = None
 TAVILY_ENDPOINT = "https://api.tavily.com/search"
 
+# Wired up by server.py
+get_llm_api_key = None
+
+# Lazy import marker
+_OPENAI_AVAILABLE = False
+try:
+    from openai import AsyncOpenAI  # noqa: F401  (used inside helpers)
+    _OPENAI_AVAILABLE = True
+except Exception:
+    pass
+
+# Allowed auto-recategorisation labels — kept short so the LLM has a
+# consistent vocabulary across runs.
+RECATEGORIZE_LABELS = [
+    "news", "product", "tech", "software", "api_docs", "legal",
+    "health", "finance", "travel", "history", "person", "general",
+]
+
 DEFAULT_SETTINGS = {
     "enabled": False,
     "api_key": "",
@@ -66,9 +84,10 @@ DEFAULT_SETTINGS = {
 }
 
 
-def init(database):
-    global db
+def init(database, llm_key_func=None):
+    global db, get_llm_api_key
     db = database
+    get_llm_api_key = llm_key_func
 
 
 async def ensure_indexes():
@@ -180,7 +199,8 @@ async def is_fresh(entry: dict, ttl_days: int) -> bool:
 
 async def upsert_knowledge(query: str, summary: str, key_facts: list,
                            sources: list, category: str = "general",
-                           query_terms: list = None) -> dict:
+                           query_terms: list = None,
+                           embedding: list = None) -> dict:
     norm = _normalize_query(query)
     now = _now().isoformat()
     payload = {
@@ -192,6 +212,8 @@ async def upsert_knowledge(query: str, summary: str, key_facts: list,
         "last_checked_at": now,
         "topic": query[:200],
     }
+    if embedding is not None:
+        payload["embedding"] = embedding
     await db.tavily_knowledge.update_one(
         {"query_normalized": norm},
         {
@@ -214,7 +236,7 @@ async def list_knowledge(limit: int = 100, category: str = None) -> list:
     q = {}
     if category:
         q["category"] = category
-    cursor = db.tavily_knowledge.find(q, {"_id": 0}).sort("last_checked_at", -1).limit(limit)
+    cursor = db.tavily_knowledge.find(q, {"_id": 0, "embedding": 0}).sort("last_checked_at", -1).limit(limit)
     return await cursor.to_list(limit)
 
 
@@ -271,10 +293,16 @@ async def smart_research(user_id: str, query: str,
 
     started = _now()
 
-    # 1) Cache lookup
+    # 1) Cache lookup — exact match first, then semantic match
     if settings.get("cache_enabled", True) and not force_refresh:
+        ttl_days = int(settings.get("cache_ttl_days", 14))
         existing = await find_knowledge(query)
-        if existing and await is_fresh(existing, int(settings.get("cache_ttl_days", 14))):
+        # If exact-key miss, try embedding-based semantic match
+        if not (existing and await is_fresh(existing, ttl_days)):
+            semantic_hit = await find_semantic_match(query, ttl_days)
+            if semantic_hit:
+                existing = semantic_hit
+        if existing and await is_fresh(existing, ttl_days):
             await db.tavily_logs.insert_one({
                 "id": uuid.uuid4().hex,
                 "user_id": user_id,
@@ -284,6 +312,7 @@ async def smart_research(user_id: str, query: str,
                 "source": "cache",
                 "elapsed_ms": 0,
                 "success": True,
+                "match_score": existing.get("_match_score"),
             })
             return {
                 "success": True,
@@ -294,6 +323,7 @@ async def smart_research(user_id: str, query: str,
                 "sources": existing.get("sources", []),
                 "category": existing.get("category"),
                 "fetched_at": existing.get("last_checked_at"),
+                "match_score": existing.get("_match_score"),
             }
 
     # 2) Quota
@@ -350,14 +380,23 @@ async def smart_research(user_id: str, query: str,
 
     summary = answer or " ".join(key_facts[:3])[:1500]
     if settings.get("cache_enabled", True):
-        await upsert_knowledge(
+        # Compute embedding (best-effort) so future semantic lookups hit
+        embedding = await _embed(f"{query}\n{summary}")
+        entry = await upsert_knowledge(
             query=query,
             summary=summary,
             key_facts=key_facts,
             sources=sources,
             category="general",
             query_terms=[query],
+            embedding=embedding,
         )
+        # Fire-and-forget LLM auto-recategorisation
+        try:
+            if entry and entry.get("id"):
+                asyncio.create_task(_categorize_and_persist(entry["id"], query, summary))
+        except Exception:
+            pass
 
     if settings.get("log_searches", True):
         await db.tavily_logs.insert_one({
@@ -413,3 +452,119 @@ async def list_logs(limit: int = 100) -> list:
         return []
     cursor = db.tavily_logs.find({}, {"_id": 0}).sort("ts", -1).limit(limit)
     return await cursor.to_list(limit)
+
+
+# ── Embeddings + semantic cache search ─────────────────────────────
+#
+# We store an OpenAI text-embedding-3-small (1536 dim) vector alongside
+# each knowledge entry. On a new query, we embed the query and pick the
+# top entry by cosine similarity if it's >= SEMANTIC_THRESHOLD AND fresh.
+#
+# 10k entries × 1536 floats × 4 B = 60 MB in memory — fine for typical
+# personal-assistant scale. For larger scales swap to Mongo Atlas vector
+# search later.
+
+SEMANTIC_THRESHOLD = 0.86
+EMBED_MODEL = "text-embedding-3-small"
+
+
+async def _embed(text: str) -> list | None:
+    if not _OPENAI_AVAILABLE or not get_llm_api_key:
+        return None
+    api_key = await get_llm_api_key() if callable(get_llm_api_key) else None
+    if not api_key:
+        return None
+    try:
+        from openai import AsyncOpenAI as _AC
+        client = _AC(api_key=api_key)
+        resp = await client.embeddings.create(model=EMBED_MODEL, input=text[:1500])
+        return list(resp.data[0].embedding)
+    except Exception as e:
+        logger.debug(f"embed failed: {e}")
+        return None
+
+
+def _cosine(a: list, b: list) -> float:
+    n = min(len(a), len(b))
+    if n == 0:
+        return 0.0
+    dot = 0.0
+    aa = 0.0
+    bb = 0.0
+    for i in range(n):
+        x = a[i]; y = b[i]
+        dot += x * y
+        aa += x * x
+        bb += y * y
+    if aa == 0 or bb == 0:
+        return 0.0
+    return dot / ((aa ** 0.5) * (bb ** 0.5))
+
+
+async def find_semantic_match(query: str, ttl_days: int) -> dict | None:
+    """Return a fresh knowledge entry whose embedding is similar enough."""
+    qvec = await _embed(query)
+    if not qvec:
+        return None
+    cursor = db.tavily_knowledge.find(
+        {"embedding": {"$exists": True, "$ne": None}},
+        {"_id": 0},
+    ).limit(800)
+    best = None
+    best_score = 0.0
+    async for doc in cursor:
+        emb = doc.get("embedding")
+        if not emb:
+            continue
+        sc = _cosine(qvec, emb)
+        if sc > best_score:
+            best_score = sc
+            best = doc
+    if best and best_score >= SEMANTIC_THRESHOLD and await is_fresh(best, ttl_days):
+        best["_match_score"] = round(best_score, 4)
+        return best
+    return None
+
+
+# ── Auto-recategorisation (LLM-backed) ─────────────────────────────
+
+async def auto_categorize(query: str, summary: str) -> str | None:
+    if not _OPENAI_AVAILABLE or not get_llm_api_key:
+        return None
+    api_key = await get_llm_api_key() if callable(get_llm_api_key) else None
+    if not api_key:
+        return None
+    try:
+        from openai import AsyncOpenAI as _AC
+        client = _AC(api_key=api_key)
+        prompt = (
+            "Klassifiziere diese Wissens-Anfrage in EINE der Kategorien: "
+            + ", ".join(RECATEGORIZE_LABELS)
+            + ". Antworte AUSSCHLIESSLICH mit dem Label, kein anderer Text.\n\n"
+            f"FRAGE: {query[:200]}\nZUSAMMENFASSUNG: {summary[:600]}"
+        )
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=10,
+        )
+        label = (resp.choices[0].message.content or "").strip().lower()
+        # accept only known labels
+        return label if label in RECATEGORIZE_LABELS else "general"
+    except Exception as e:
+        logger.debug(f"auto_categorize failed: {e}")
+        return None
+
+
+async def _categorize_and_persist(entry_id: str, query: str, summary: str):
+    """Background task: assign category + persist."""
+    try:
+        cat = await auto_categorize(query, summary)
+        if cat:
+            await db.tavily_knowledge.update_one(
+                {"id": entry_id},
+                {"$set": {"category": cat, "auto_categorized_at": _now().isoformat()}},
+            )
+    except Exception:
+        pass

@@ -223,10 +223,30 @@ async def lifespan(app: FastAPI):
     # Initialize Tavily web research module + indexes
     try:
         import tavily as _tavily
-        _tavily.init(db)
+        _tavily.init(db, llm_key_func=get_llm_api_key)
         await _tavily.ensure_indexes()
     except Exception as e:
         logger.warning(f"tavily init failed: {e}")
+
+    # Initialize Daily Briefing engine
+    try:
+        import aria_briefing as _briefing
+        # Lazy weather wrapper: tries the existing weather endpoint internals.
+        async def _weather_for_user(uid):
+            try:
+                doc = await db.weather_settings.find_one({"user_id": uid}, {"_id": 0})
+                if doc:
+                    # Use stored last-known weather if no live fetch is available
+                    return doc.get("last", {}) or {}
+            except Exception:
+                pass
+            return {}
+        _briefing.init(db, llm_key_func=get_llm_api_key, casedesk_mod=casedesk,
+                       telegram_mod=telegram_bot, weather_func=_weather_for_user)
+        await _briefing.ensure_indexes()
+        _briefing.start_scheduler()
+    except Exception as e:
+        logger.warning(f"briefing init failed: {e}")
 
     # Initialize Telegram bot module + start polling and watchdog
     try:
@@ -2863,6 +2883,50 @@ async def aria_research(request: Request, body: dict = Body(...)):
     if not query:
         raise HTTPException(status_code=400, detail="query required")
     return await _tavily.smart_research(user["id"], query, force_refresh=bool(body.get("force_refresh")))
+
+
+# ==================== DAILY BRIEFING ====================
+
+@api_router.get("/admin/briefing/settings")
+async def admin_briefing_settings_get(request: Request):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import aria_briefing as _b
+    return await _b.get_settings()
+
+
+@api_router.put("/admin/briefing/settings")
+async def admin_briefing_settings_put(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import aria_briefing as _b
+    return await _b.update_settings(body)
+
+
+@api_router.put("/aria/briefing/opt-in")
+async def briefing_opt_in(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    opt_in = bool(body.get("opt_in", True))
+    await db.users.update_one({"id": user["id"]}, {"$set": {"briefing_opt_in": opt_in}})
+    return {"success": True, "opt_in": opt_in}
+
+
+@api_router.get("/aria/briefing/latest")
+async def briefing_latest(request: Request):
+    user = await get_current_user(request)
+    import aria_briefing as _b
+    doc = await _b.get_latest_briefing(user["id"])
+    return doc or {}
+
+
+@api_router.post("/aria/briefing/now")
+async def briefing_now(request: Request):
+    """Trigger the briefing immediately for the current user (test/manual)."""
+    user = await get_current_user(request)
+    import aria_briefing as _b
+    return await _b.deliver_briefing(user)
 
 
 # ==================== TELEGRAM WATCHDOG STATUS ====================

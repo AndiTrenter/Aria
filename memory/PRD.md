@@ -409,3 +409,12 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 - [x] **Frontend Service-Meta**: `websearch` als bright-gold (HSL hue 45) mit 🌐-Icon
 - [x] **API-Endpoints**: `GET/PUT /api/admin/tavily/settings`, `GET /api/admin/tavily/{stats,logs,knowledge}`, `DELETE /api/admin/tavily/knowledge/{id}`, `POST /api/aria/research`
 
+### Phase 18 — Backlog-Cleanup (DONE 2026-02-09, V 9.3)
+- [x] **Audio-reaktive Cortex-Intensity**: Hook `useMicLevel(active)` (Web Audio API, fftSize=256, smoothing=0.65, normalisierte 0–1 Lautstärke); intensity in AriaMode lerpt im listening-Mode auf `0.45 + mic*0.5` → Cortex pulsiert sichtbar zur Stimme
+- [x] **Tavily semantische Cache-Suche**: OpenAI text-embedding-3-small Embeddings pro Wissens-Eintrag; `find_semantic_match` rechnet Cosine-Similarity in-memory (768 Einträge fit), Threshold 0.86 → ähnliche Anfragen treffen den Cache auch ohne wörtliche Übereinstimmung
+- [x] **Tavily Auto-Recategorize**: nach jeder API-Speicherung Fire-and-Forget GPT-4o-mini Kategorisierung in 12 Labels (news/product/tech/software/api_docs/legal/health/finance/travel/history/person/general) — überschreibt das initiale "general" mit präziserer Kategorie
+- [x] **Admin-UI ARIA-Memory-Tab**: vollständige Tabelle mit Add/Delete, CaseDesk-Sync-Button, kategorisiertes Add-Form
+- [x] **Tagesroutine-Briefing** (`/app/backend/aria_briefing.py`): Scheduler-Loop wacht alle 60s, prüft `time_local + tz_offset`, sendet Briefing an alle opt-in-User. Briefing enthält Wetter + Kalender + ungelesene E-Mails + offene Aufgaben aus CaseDesk. Channel: Telegram (sofern chat_id verifiziert) + In-App (`briefing_log` MongoDB). Per-User-Opt-In via `PUT /api/aria/briefing/opt-in`. Manueller Trigger via `POST /api/aria/briefing/now`
+- [x] **Admin-UI Briefing-Tab**: Enable, Telegram/In-App-Toggles, Uhrzeit, Zeitzonen-Offset, Save + Jetzt-Testen
+- [x] Frontend-Mic-Permission ist bereits via `requestMicPermission` in MicReady gewartet → kein zusätzlicher Permission-Prompt
+
