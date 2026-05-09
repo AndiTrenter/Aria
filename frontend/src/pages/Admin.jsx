@@ -649,6 +649,53 @@ const Admin = () => {
   };
   useEffect(() => { if (activeTab === "cookpilot") checkCookpilotStatus(); }, [activeTab]);
 
+  // ── Tavily settings + stats ───────────────────────────────────────
+  const [tavilySettings, setTavilySettings] = useState(null);
+  const [tavilyStats, setTavilyStats] = useState(null);
+  const [tavilyKnowledge, setTavilyKnowledge] = useState([]);
+  const [tavilyLogs, setTavilyLogs] = useState([]);
+  const [tavilyApiKeyDraft, setTavilyApiKeyDraft] = useState("");
+  const [savingTavily, setSavingTavily] = useState(false);
+
+  const loadTavilyAll = async () => {
+    try {
+      const [s, st, k, lg] = await Promise.all([
+        axios.get(`${API}/admin/tavily/settings`).then(r => r.data).catch(() => null),
+        axios.get(`${API}/admin/tavily/stats`).then(r => r.data).catch(() => null),
+        axios.get(`${API}/admin/tavily/knowledge?limit=50`).then(r => r.data).catch(() => []),
+        axios.get(`${API}/admin/tavily/logs?limit=50`).then(r => r.data).catch(() => []),
+      ]);
+      setTavilySettings(s || null);
+      setTavilyStats(st || null);
+      setTavilyKnowledge(Array.isArray(k) ? k : []);
+      setTavilyLogs(Array.isArray(lg) ? lg : []);
+    } catch (e) {
+      console.warn("loadTavilyAll", e);
+    }
+  };
+  useEffect(() => { if (activeTab === "tavily") loadTavilyAll(); }, [activeTab]);
+
+  const saveTavilySettings = async (patch) => {
+    setSavingTavily(true);
+    try {
+      const body = { ...patch };
+      if (tavilyApiKeyDraft && tavilyApiKeyDraft !== "***") {
+        body.api_key = tavilyApiKeyDraft;
+      }
+      await axios.put(`${API}/admin/tavily/settings`, body);
+      setTavilyApiKeyDraft("");
+      await loadTavilyAll();
+    } finally {
+      setSavingTavily(false);
+    }
+  };
+
+  const deleteTavilyKnowledge = async (id) => {
+    if (!window.confirm("Diesen Wissens-Eintrag wirklich löschen?")) return;
+    await axios.delete(`${API}/admin/tavily/knowledge/${id}`);
+    await loadTavilyAll();
+  };
+
   // SmartHome Builder handlers
   const loadBuilderConfig = async (userId) => {
     setBuilderUser(userId);
@@ -707,6 +754,7 @@ const Admin = () => {
     { id: "services", label: isLcars ? "DIENSTE" : "Dienste" },
     { id: "router", label: isLcars ? "KI-ROUTER" : "KI-Router" },
     { id: "cookpilot", label: isLcars ? "COOKPILOT" : "CookPilot" },
+    { id: "tavily", label: isLcars ? "TAVILY" : "Tavily" },
     { id: "settings", label: isLcars ? "EINSTELLUNGEN" : "Einstellungen" },
   ];
 
@@ -1641,6 +1689,253 @@ const Admin = () => {
                   {users.filter(u => !["admin", "superadmin"].includes(u.role)).length === 0 && (
                     <tr><td colSpan={13} className="text-center py-4 text-gray-500 text-xs" style={{ textTransform: "none" }}>Keine User-Accounts vorhanden (nur Admins).</td></tr>
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAVILY TAB ==================== */}
+      {activeTab === "tavily" && (
+        <div className="space-y-6" data-testid="tavily-tab">
+          <div className={cardClass}>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className={`text-sm ${isLcars ? "tracking-widest text-[var(--lcars-orange)]" : "font-bold text-purple-200"}`}>
+                {isLcars ? "TAVILY — WEB-RECHERCHE" : "Tavily — Intelligente Web-Recherche"}
+              </h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-4" style={{ textTransform: "none" }}>
+              ARIA nutzt Tavily proaktiv, wenn lokales Wissen nicht ausreicht oder veraltet sein könnte (Preise, News, Software-Versionen, Gesetze etc.). Ergebnisse werden in der lokalen Wissensdatenbank gecached.
+            </p>
+
+            {tavilySettings ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Enabled */}
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input
+                    type="checkbox"
+                    checked={!!tavilySettings.enabled}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, enabled: e.target.checked })}
+                    data-testid="tavily-enabled"
+                  />
+                  <span className="text-sm">Tavily aktivieren</span>
+                </label>
+
+                {/* API Key */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">API-Key {tavilySettings.api_key_masked ? `(aktuell: ${tavilySettings.api_key_masked})` : "(nicht gesetzt)"}</div>
+                  <input
+                    type="password"
+                    value={tavilyApiKeyDraft}
+                    onChange={(e) => setTavilyApiKeyDraft(e.target.value)}
+                    placeholder="tvly-..."
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                    data-testid="tavily-api-key"
+                  />
+                  <div className="text-[10px] text-gray-500 mt-1">tavily.com → Dashboard → API Keys</div>
+                </div>
+
+                {/* Mode */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Suchmodus</div>
+                  <select
+                    value={tavilySettings.search_mode}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, search_mode: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                    data-testid="tavily-mode"
+                  >
+                    <option value="basic">Basic (1 Credit)</option>
+                    <option value="advanced">Advanced (2 Credits, mehr Tiefe)</option>
+                  </select>
+                </div>
+
+                {/* Max results */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Max. Ergebnisse pro Suche</div>
+                  <input
+                    type="number" min="1" max="20"
+                    value={tavilySettings.max_results}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, max_results: parseInt(e.target.value || "5", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                  />
+                </div>
+
+                {/* Daily limit */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Tägliches Limit (0 = unlimited)</div>
+                  <input
+                    type="number" min="0"
+                    value={tavilySettings.daily_limit}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, daily_limit: parseInt(e.target.value || "0", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                  />
+                </div>
+
+                {/* Monthly limit */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Monatliches Limit (0 = unlimited)</div>
+                  <input
+                    type="number" min="0"
+                    value={tavilySettings.monthly_limit}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, monthly_limit: parseInt(e.target.value || "0", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                  />
+                </div>
+
+                {/* Per-user */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Pro-User Limit / Tag (0 = unlimited)</div>
+                  <input
+                    type="number" min="0"
+                    value={tavilySettings.per_user_limit_per_day}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, per_user_limit_per_day: parseInt(e.target.value || "0", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                  />
+                </div>
+
+                {/* Cache TTL */}
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-xs text-gray-400 mb-1">Cache-Frische (Tage)</div>
+                  <input
+                    type="number" min="1" max="365"
+                    value={tavilySettings.cache_ttl_days}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, cache_ttl_days: parseInt(e.target.value || "14", 10) })}
+                    className="w-full px-3 py-1.5 bg-black/50 border border-orange-500/30 rounded text-sm"
+                  />
+                </div>
+
+                {/* Cache + Freshness toggles */}
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input
+                    type="checkbox"
+                    checked={!!tavilySettings.cache_enabled}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, cache_enabled: e.target.checked })}
+                  />
+                  <span className="text-sm">Cache aktivieren (lokale Wissensdatenbank)</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input
+                    type="checkbox"
+                    checked={!!tavilySettings.freshness_check_enabled}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, freshness_check_enabled: e.target.checked })}
+                  />
+                  <span className="text-sm">Aktualitätsprüfung aktivieren</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-black/30 rounded border border-orange-500/20">
+                  <input
+                    type="checkbox"
+                    checked={!!tavilySettings.log_searches}
+                    onChange={(e) => setTavilySettings({ ...tavilySettings, log_searches: e.target.checked })}
+                  />
+                  <span className="text-sm">Suchen protokollieren</span>
+                </label>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500">Lade Einstellungen…</div>
+            )}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => saveTavilySettings(tavilySettings)}
+                disabled={savingTavily || !tavilySettings}
+                className={`${btnClass} px-4 py-2 text-sm`}
+                data-testid="tavily-save-btn"
+              >
+                {savingTavily ? "Speichere…" : "Einstellungen speichern"}
+              </button>
+            </div>
+          </div>
+
+          {/* Stats */}
+          {tavilyStats && (
+            <div className={cardClass}>
+              <h3 className="text-sm font-bold mb-3 text-orange-200">Verbrauch & Wissensdatenbank</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-[10px] text-gray-500">HEUTE (API)</div>
+                  <div className="text-2xl font-bold text-orange-300">{tavilyStats.today_api}</div>
+                </div>
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-[10px] text-gray-500">30 TAGE (API)</div>
+                  <div className="text-2xl font-bold text-orange-300">{tavilyStats.month_api}</div>
+                </div>
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-[10px] text-gray-500">HEUTE (Cache-Hits)</div>
+                  <div className="text-2xl font-bold text-emerald-300">{tavilyStats.today_cache_hits}</div>
+                </div>
+                <div className="p-3 bg-black/30 rounded border border-orange-500/20">
+                  <div className="text-[10px] text-gray-500">WISSENS-EINTRÄGE</div>
+                  <div className="text-2xl font-bold text-amber-300">{tavilyStats.knowledge_count}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge base */}
+          <div className={cardClass}>
+            <h3 className="text-sm font-bold mb-3 text-orange-200">Wissensdatenbank</h3>
+            <div className="overflow-x-auto max-h-[420px]">
+              <table className="w-full text-xs">
+                <thead className="text-orange-300/70">
+                  <tr>
+                    <th className="text-left p-2">Thema</th>
+                    <th className="text-left p-2">Zusammenfassung</th>
+                    <th className="text-left p-2">Geprüft</th>
+                    <th className="text-left p-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tavilyKnowledge.length === 0 && (
+                    <tr><td colSpan={4} className="text-gray-500 p-3 text-center">Noch leer — sobald ARIA recherchiert, erscheinen hier Einträge.</td></tr>
+                  )}
+                  {tavilyKnowledge.map((k) => (
+                    <tr key={k.id} className="border-t border-orange-500/10">
+                      <td className="p-2 align-top max-w-[180px] truncate">{k.topic}</td>
+                      <td className="p-2 align-top max-w-[420px]" style={{ textTransform: "none" }}>
+                        <span className="text-gray-300">{(k.summary || "").slice(0, 220)}</span>
+                      </td>
+                      <td className="p-2 align-top text-gray-500 whitespace-nowrap">{(k.last_checked_at || "").replace("T", " ").slice(0, 16)}</td>
+                      <td className="p-2 align-top">
+                        <button
+                          onClick={() => deleteTavilyKnowledge(k.id)}
+                          className="text-red-400 hover:text-red-300 text-xs"
+                        >Löschen</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Logs */}
+          <div className={cardClass}>
+            <h3 className="text-sm font-bold mb-3 text-orange-200">Letzte Anfragen</h3>
+            <div className="overflow-x-auto max-h-[420px]">
+              <table className="w-full text-xs">
+                <thead className="text-orange-300/70">
+                  <tr>
+                    <th className="text-left p-2">Zeit</th>
+                    <th className="text-left p-2">Quelle</th>
+                    <th className="text-left p-2">Anfrage</th>
+                    <th className="text-left p-2">Treffer</th>
+                    <th className="text-left p-2">ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tavilyLogs.length === 0 && (
+                    <tr><td colSpan={5} className="text-gray-500 p-3 text-center">Keine Logs vorhanden.</td></tr>
+                  )}
+                  {tavilyLogs.map((l) => (
+                    <tr key={l.id} className="border-t border-orange-500/10">
+                      <td className="p-2 whitespace-nowrap text-gray-500">{(l.ts || "").replace("T", " ").slice(0, 16)}</td>
+                      <td className="p-2"><span className={l.source === "cache" ? "text-emerald-300" : "text-orange-300"}>{l.source}</span></td>
+                      <td className="p-2" style={{ textTransform: "none" }}>{(l.query || "").slice(0, 100)}</td>
+                      <td className="p-2 text-center">{l.results_count}</td>
+                      <td className="p-2 text-right">{l.elapsed_ms}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

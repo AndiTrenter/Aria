@@ -220,6 +220,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"aria_memory init failed: {e}")
 
+    # Initialize Tavily web research module + indexes
+    try:
+        import tavily as _tavily
+        _tavily.init(db)
+        await _tavily.ensure_indexes()
+    except Exception as e:
+        logger.warning(f"tavily init failed: {e}")
+
     # Initialize Telegram bot module + start polling and watchdog
     try:
         telegram_bot.init(db, get_ha_settings, get_llm_api_key)
@@ -2313,6 +2321,90 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
             return "KI-Modell nicht verfügbar."
 
         await _emit("thought", {"id": "reason", "label": "Denke nach", "status": "done"})
+
+        # Step 4.5: Detect [AKTION:WEBSUCHE] tag → run Tavily smart-research
+        # and re-prompt the model with the fresh facts. Single-pass; we keep
+        # the original message so persistent action tags (HA, email) still
+        # work in the final response.
+        try:
+            import re as _re
+            websearch_match = _re.search(
+                r'\[AKTION:WEBSUCHE\]\s*(\{[^}]+\})',
+                response_text or "",
+                _re.IGNORECASE,
+            )
+            if websearch_match:
+                import json as _json
+                try:
+                    payload = _json.loads(websearch_match.group(1))
+                except Exception:
+                    payload = {}
+                wq = (payload.get("query") or "").strip()
+                if wq:
+                    await _emit("thought", {"id": "websearch", "label": f"Recherchiere im Internet: {wq[:60]}", "status": "active"})
+                    await _emit("panel_open", {
+                        "id": "panel-websearch",
+                        "service": "websearch",
+                        "title": "WEB-RECHERCHE",
+                        "query": wq,
+                    })
+                    import tavily as _tavily
+                    research = await _tavily.smart_research(user_id, wq)
+                    if research.get("success"):
+                        snippet = (research.get("summary") or "")[:300]
+                        sources = research.get("sources") or []
+                        await _emit("panel_update", {
+                            "id": "panel-websearch",
+                            "status": "done",
+                            "snippet": snippet,
+                            "count": len(sources),
+                        })
+                        await _emit("thought", {
+                            "id": "websearch",
+                            "label": f"Internet-Recherche {'(Cache)' if research.get('source')=='cache' else ''}",
+                            "status": "done",
+                        })
+                        # Re-prompt the model with the fresh facts so it
+                        # produces the FINAL user-facing answer, NOT a
+                        # half-baked one that still contains the websearch tag.
+                        facts_block = "\n".join(
+                            ["• " + (f or "")[:240] for f in (research.get("key_facts") or [])[:5]]
+                        )
+                        sources_block = "\n".join(
+                            [f"  – {s.get('title','')} ({s.get('url','')})"
+                             for s in sources[:5] if s.get("url")]
+                        )
+                        followup_messages = list(gpt_messages)
+                        followup_messages.append({
+                            "role": "system",
+                            "content": (
+                                "Web-Recherche abgeschlossen für die letzte Anfrage.\n"
+                                f"Zusammenfassung: {(research.get('summary') or '')[:1500]}\n"
+                                f"Wichtige Fakten:\n{facts_block}\n"
+                                f"Quellen:\n{sources_block}\n\n"
+                                "Erstelle JETZT die finale, kompakte Antwort für den User. "
+                                "Nutze die Fakten oben proaktiv. Erwähne 1-2 Quellen-Titel falls relevant. "
+                                "Verwende KEINE [AKTION:WEBSUCHE]-Tags mehr. Bleibe im J.A.R.V.I.S.-Stil."
+                            ),
+                        })
+                        try:
+                            kwargs2 = {"model": "gpt-4o-mini", "messages": followup_messages, "temperature": 0.6, "max_tokens": 800}
+                            r2 = await openai_client.chat.completions.create(**kwargs2)
+                            response_text = r2.choices[0].message.content or response_text
+                        except Exception as e:
+                            logger.warning(f"websearch followup failed: {e}")
+                    else:
+                        await _emit("panel_update", {
+                            "id": "panel-websearch",
+                            "status": "error",
+                            "snippet": research.get("error") or "Recherche fehlgeschlagen",
+                        })
+                        await _emit("thought", {"id": "websearch", "label": "Recherche fehlgeschlagen", "status": "error"})
+                        # Strip the orphan tag so the user doesn't see it
+                        response_text = _re.sub(r'\[AKTION:WEBSUCHE\][^\[\n]*', '', response_text or '').strip()
+        except Exception as e:
+            logger.warning(f"web research handling failed: {e}")
+
         await _emit("thought", {"id": "respond", "label": "Antwort fertig", "status": "done"})
         
         # Step 5: Process action tags
@@ -2341,7 +2433,7 @@ async def process_chat_message(message_text: str, user_id: str, session_id: str 
 
 
 def _get_system_prompt():
-    return """Du bist A.R.I.A. (Artificial Responsive Intelligence Assistant) — der persönliche Assistent von Andreas (Tobias), modelliert nach J.A.R.V.I.S. aus Iron Man. Du bist sein erster Ansprechpartner für ALLES und hast VOLLEN ZUGRIFF auf alle verbundenen Dienste.
+    return """Du bist A.R.I.A. (Adaptive Reasoning Intelligence Assistant) — der persönliche Assistent von Andreas (Tobias), modelliert nach J.A.R.V.I.S. aus Iron Man. Du bist sein erster Ansprechpartner für ALLES und hast VOLLEN ZUGRIFF auf alle verbundenen Dienste.
 
 ╔══════════════════════════════════════════════════════════════════╗
 ║                    PERSÖNLICHKEIT & TONFALL                      ║
@@ -2441,6 +2533,14 @@ WICHTIG für E-Mails: Wenn der User dich bittet eine E-Mail zu senden:
 Home Assistant:
 - Gerät steuern: [AKTION:HA_STEUERUNG] {"entity_id":"light.wohnzimmer", "service":"turn_on", "data":{}}
 - Automation erstellen: [AKTION:HA_AUTOMATION] {"alias":"...","description":"...","trigger":[...],"action":[...]}
+
+INTELLIGENTE WEB-RECHERCHE (Tavily):
+- Wenn dein lokales Wissen für eine Anfrage NICHT AUSREICHT, oder die Information möglicherweise VERALTET ist (Preise, News, aktuelle Versionen, neue Gesetze, Software-Updates, technische Daten neuer Produkte, etc.), füge das Tag [AKTION:WEBSUCHE] in deine Antwort ein:
+  [AKTION:WEBSUCHE] {"query":"konkrete Suchanfrage in einer Phrase","reason":"warum recherchiert wird"}
+- Der Server führt dann eine echte Internetrecherche aus, gibt dir die Ergebnisse zurück und du erstellst die finale Antwort daraus.
+- Nutze Web-Recherche PROAKTIV bei: aktuellen News, Produktinfos, Preisvergleichen, Fehlersuche, API-Dokumentation, Gesetzesänderungen, unbekannten Begriffen, Software-Versionen, technischen Daten.
+- Nutze sie NICHT bei Smalltalk, Witzen, persönlichen Fragen, Aufgaben/Kalender, Smart-Home-Befehlen, oder wenn lokale CaseDesk-/Plex-/Wetter-Daten bereits genügen.
+- Maximal 1 Websuche pro User-Anfrage (außer der User bittet ausdrücklich um mehr).
 
 ARIA-GEDÄCHTNIS (PERSÖNLICHE NOTIZEN):
 - Wenn du eine wichtige langfristige Information über den User aufschnappst (Vorliebe, Routine, Stammdatum, Familie, Arbeit), speichere sie für künftige Konversationen:
@@ -2689,6 +2789,80 @@ async def aria_memory_sync_casedesk(request: Request):
     user = await get_current_user(request)
     import aria_memory as _aria_memory
     return await _aria_memory.sync_casedesk_profile(user["id"])
+
+
+# ==================== TAVILY (Web Research) ====================
+
+@api_router.get("/admin/tavily/settings")
+async def admin_tavily_settings_get(request: Request):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    s = await _tavily.get_settings()
+    # Mask the API key in responses
+    if s.get("api_key"):
+        s["api_key_masked"] = (s["api_key"][:6] + "..." + s["api_key"][-4:]) if len(s["api_key"]) > 10 else "***"
+        s["api_key"] = "***"
+    return s
+
+
+@api_router.put("/admin/tavily/settings")
+async def admin_tavily_settings_put(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    # If api_key is "***" (placeholder from masked GET), don't overwrite
+    if body.get("api_key") in ("***", "", None):
+        body.pop("api_key", None)
+    return await _tavily.update_settings(body)
+
+
+@api_router.get("/admin/tavily/stats")
+async def admin_tavily_stats(request: Request):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    return await _tavily.get_usage_stats()
+
+
+@api_router.get("/admin/tavily/logs")
+async def admin_tavily_logs(request: Request, limit: int = 100):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    return await _tavily.list_logs(limit=limit)
+
+
+@api_router.get("/admin/tavily/knowledge")
+async def admin_tavily_knowledge_list(request: Request, limit: int = 100, category: str = None):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    return await _tavily.list_knowledge(limit=limit, category=category)
+
+
+@api_router.delete("/admin/tavily/knowledge/{entry_id}")
+async def admin_tavily_knowledge_delete(entry_id: str, request: Request):
+    user = await get_current_user(request)
+    if user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin only")
+    import tavily as _tavily
+    return await _tavily.delete_knowledge(entry_id)
+
+
+@api_router.post("/aria/research")
+async def aria_research(request: Request, body: dict = Body(...)):
+    user = await get_current_user(request)
+    import tavily as _tavily
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query required")
+    return await _tavily.smart_research(user["id"], query, force_refresh=bool(body.get("force_refresh")))
 
 
 # ==================== TELEGRAM WATCHDOG STATUS ====================

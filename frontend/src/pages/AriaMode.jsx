@@ -684,7 +684,7 @@ const AriaMode = () => {
               A.R.I.A.
             </div>
             <div className="text-[10px] tracking-[0.3em] text-cyan-400/70 mt-0.5">
-              ARTIFICIAL RESPONSIVE INTELLIGENCE ASSISTANT
+              ADAPTIVE REASONING INTELLIGENCE ASSISTANT
             </div>
           </div>
         </div>
@@ -1006,6 +1006,7 @@ const SERVICE_META = {
   casedesk:       { color: "38",  emoji: "✉" },  // gold
   plex:           { color: "5",   emoji: "▶" },  // deep red
   cookpilot:      { color: "28",  emoji: "🍳" },  // orange
+  websearch:      { color: "45",  emoji: "🌐" },  // bright gold — internet research
 };
 
 // 3D positioning around a 560-px cortex.  Each slot has a CSS position

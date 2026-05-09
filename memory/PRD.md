@@ -397,3 +397,15 @@ Nach wiederholtem Problem: _Movie-Grid Thumbnails laden nicht, Actor-Bilder lade
 - [x] **Telegram-Watchdog** (`/app/backend/telegram_bot.py`): `watchdog_loop()` prüft alle 60s ob `last_poll_at` älter als 180s ist oder ein 409-Conflict >60s ansteht → ruft `restart_bot()` auf. Status-Endpoint `GET /api/admin/telegram/watchdog` (admin-only). Watchdog läuft auch ohne Token (no-op bis konfiguriert)
 - [x] **Lifespan-Bug behoben**: `@app.on_event("startup")` wurde wegen `lifespan=lifespan` von FastAPI ignoriert → Telegram-Bot wurde nie automatisch gestartet. Init nun direkt im Lifespan-Manager
 
+### Phase 17 — Tavily Web-Recherche + ARIA Hyper-Intelligenz (DONE 2026-02-09, V 9.2)
+- [x] **Subtitle**: "Adaptive Reasoning Intelligence Assistant" (vorher "Artificial Responsive…")
+- [x] **Mehr Stil-Variation** im System-Prompt: 13 verschiedene Bestätigungs-Formeln, explizite Anweisung NICHT immer dieselbe Anrede zu verwenden
+- [x] **HYPER-INTELLIGENZ + Internet-Verbote**: explizite Liste verbotener Phrasen ("Ich habe keinen Internetzugriff" etc.) — ARIA muss IMMER eine fundierte Antwort + konkrete Tool-Empfehlung liefern
+- [x] **Holographisches Temperatur-Wasserzeichen** (`TemperatureWatermark.jsx`): faintes 8.5-rem Display rechts-mittig mit Pulse-Animation, /api/weather alle 5min
+- [x] **Vollbild-Kiosk-Modus**: `requestFullscreen({navigationUI:"hide"})` beim Mount, `exitFullscreen()` beim Verlassen
+- [x] **Tavily-Modul** (`/app/backend/tavily.py`): `smart_research(user_id, query)` mit Cache-First-Logik, Quota-Tracking (daily/monthly/per-user), lokale Wissensdatenbank `tavily_knowledge` mit unique-index auf `query_normalized`, Logs in `tavily_logs`, Stats-Endpoint
+- [x] **Admin-UI Tab "Tavily"** in `Admin.jsx`: Enable-Toggle, API-Key (masked), Suchmodus (Basic/Advanced), Limits, Cache-TTL, Toggles, Verbrauchs-Stats (today_api/month_api/cache_hits/knowledge_count), Wissensdatenbank-Tabelle mit Löschen, Logs-Tabelle
+- [x] **`[AKTION:WEBSUCHE]`-Tag** im System-Prompt: ARIA emittiert Tag wenn lokales Wissen nicht reicht (Preise, News, Software-Versionen, Gesetzesänderungen, API-Docs, unbekannte Begriffe). Backend interceptet, ruft `smart_research()`, sendet `panel_open`/`panel_update` SSE-Events, dann Re-Prompt mit den Fakten für die finale Antwort
+- [x] **Frontend Service-Meta**: `websearch` als bright-gold (HSL hue 45) mit 🌐-Icon
+- [x] **API-Endpoints**: `GET/PUT /api/admin/tavily/settings`, `GET /api/admin/tavily/{stats,logs,knowledge}`, `DELETE /api/admin/tavily/knowledge/{id}`, `POST /api/aria/research`
+
