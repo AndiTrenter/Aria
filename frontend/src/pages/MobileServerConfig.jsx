@@ -20,16 +20,34 @@ const normaliseUrl = (raw) => {
   return url;
 };
 
+// Common port the ARIA backend runs on — we try this as a fallback if
+// the user enters a bare hostname without a port and the first attempt fails.
+const DEFAULT_BACKEND_PORTS = [8001, 80, 443];
+
+const DEFAULT_SUGGESTION = "https://www.trenter.internet-box.ch:8001";
+
 export default function MobileServerConfig() {
   const [url, setUrl] = useState("");
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
 
-  // Suggest user's previously saved value (in case of re-config)
+  // Suggest user's previously saved value (in case of re-config),
+  // otherwise pre-fill the personal DynDNS URL.
   useEffect(() => {
     const prev = localStorage.getItem("aria_server_url");
-    if (prev) setUrl(prev);
+    setUrl(prev || DEFAULT_SUGGESTION);
   }, []);
+
+  // Try a single URL — return true if it looks like an ARIA backend.
+  const probe = async (target) => {
+    try {
+      const res = await axios.get(`${target}/api/setup/status`, { timeout: 6000 });
+      return typeof res.data?.setup_completed === "boolean";
+    } catch {
+      return false;
+    }
+  };
 
   const save = async () => {
     setError("");
@@ -40,23 +58,36 @@ export default function MobileServerConfig() {
     }
     setTesting(true);
     try {
-      // Hit /api/setup/status as a lightweight probe — it works whether
-      // setup is completed or not, and is unauthenticated.
-      const res = await axios.get(`${clean}/api/setup/status`, { timeout: 8000 });
-      if (typeof res.data?.setup_completed !== "boolean") {
-        throw new Error("Antwort ist kein ARIA-Backend");
+      // 1) Try the user's URL exactly as entered
+      let working = (await probe(clean)) ? clean : null;
+
+      // 2) If no port was specified, also try common ARIA ports
+      if (!working) {
+        const hasExplicitPort = /:\d+(\/|$)/.test(clean.replace(/^https?:\/\//, ""));
+        if (!hasExplicitPort) {
+          for (const port of DEFAULT_BACKEND_PORTS) {
+            const candidate = `${clean}:${port}`;
+            if (await probe(candidate)) { working = candidate; break; }
+          }
+        }
       }
-      localStorage.setItem("aria_server_url", clean);
+
+      if (!working) {
+        throw new Error("not-reachable");
+      }
+
+      localStorage.setItem("aria_server_url", working);
       toast.success("Verbindung erfolgreich!");
-      // Tiny delay so the toast is visible, then hard reload
       setTimeout(() => { window.location.href = "/"; }, 500);
     } catch (e) {
-      const msg = e?.message?.includes("Network Error")
-        ? "Server nicht erreichbar. Prüfe IP, Port und ob ARIA läuft."
-        : e?.message?.includes("timeout")
-        ? "Timeout — Server antwortet nicht."
-        : e?.message || "Verbindung fehlgeschlagen";
-      setError(msg);
+      setShowHelp(true);
+      setError(
+        "Server nicht erreichbar. Häufige Ursachen:\n" +
+        "• Port-Weiterleitung am Router fehlt\n" +
+        "• Falscher Port (ARIA läuft meist auf 8001)\n" +
+        "• ARIA-Container auf Unraid ist nicht gestartet\n" +
+        "• HTTPS-Zertifikat fehlt (versuche http:// statt https://)"
+      );
     } finally {
       setTesting(false);
     }
@@ -87,21 +118,37 @@ export default function MobileServerConfig() {
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              placeholder="http://192.168.1.50:8001"
+              placeholder="https://www.trenter.internet-box.ch:8001"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="w-full px-4 py-3 rounded-lg bg-[#0a0f1c] border border-orange-500/40 text-orange-100 placeholder-orange-200/30 focus:outline-none focus:border-orange-400"
             />
-            <p className="text-xs text-orange-200/50 mt-2">
-              Beispiel: <code className="text-orange-300">http://192.168.1.50:8001</code><br />
-              (deine Unraid-IP &amp; ARIA-Port)
-            </p>
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-orange-200/60" style={{ textTransform: "none" }}>
+                Beispiele:
+              </p>
+              <button
+                type="button"
+                onClick={() => setUrl("https://www.trenter.internet-box.ch:8001")}
+                className="block text-xs text-orange-300/80 hover:text-orange-200 underline"
+              >
+                https://www.trenter.internet-box.ch:8001 <span className="opacity-60">(DynDNS, von überall)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUrl("http://192.168.1.140:8001")}
+                className="block text-xs text-orange-300/80 hover:text-orange-200 underline"
+              >
+                http://192.168.1.140:8001 <span className="opacity-60">(lokal, nur im WLAN)</span>
+              </button>
+            </div>
           </div>
 
           {error && (
             <div
               data-testid="server-config-error"
-              className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3"
+              className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3 whitespace-pre-line"
+              style={{ textTransform: "none" }}
             >
               {error}
             </div>
@@ -115,6 +162,24 @@ export default function MobileServerConfig() {
           >
             {testing ? "Verbinde…" : "Verbinden & Speichern"}
           </button>
+
+          {showHelp && (
+            <details className="text-xs text-orange-200/70 bg-black/30 border border-orange-500/20 rounded-lg p-3" open>
+              <summary className="cursor-pointer text-orange-300 font-semibold mb-2" style={{ textTransform: "none" }}>
+                💡 Hilfe zum Port-Forwarding
+              </summary>
+              <div className="space-y-2 mt-2" style={{ textTransform: "none" }}>
+                <p>Damit die DynDNS-Adresse von unterwegs funktioniert, brauchst du Port-Weiterleitung in deiner Internet-Box:</p>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>Internet-Box öffnen: <code className="text-orange-300">http://192.168.1.1</code></li>
+                  <li>Heimnetzwerk → Port-Weiterleitung</li>
+                  <li>Neue Regel: Externer Port <code className="text-orange-300">8001</code> → Ziel-IP (Unraid) <code className="text-orange-300">192.168.1.140</code> → Ziel-Port <code className="text-orange-300">8001</code></li>
+                  <li>Speichern, dann hier nochmal „Verbinden" klicken</li>
+                </ol>
+                <p className="mt-2">Alternativ kannst du auch erstmal die lokale IP im eigenen WLAN nutzen.</p>
+              </div>
+            </details>
+          )}
         </div>
 
         <p className="text-center text-xs text-orange-200/40 mt-6">
