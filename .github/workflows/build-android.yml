@@ -94,6 +94,10 @@ jobs:
               sed -i "s|<uses-permission android:name=\"android.permission.INTERNET\" />|<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.${perm}\" />|" "$MANIFEST"
             fi
           done
+          # Allow HTTP traffic to the user's local ARIA backend (Unraid LAN IP)
+          if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
+            sed -i 's|<application |<application android:usesCleartextTraffic="true" |' "$MANIFEST"
+          fi
           # Set versionName / versionCode so each build is distinct
           GRADLE=../../build.gradle
           if [ -f "$GRADLE" ]; then

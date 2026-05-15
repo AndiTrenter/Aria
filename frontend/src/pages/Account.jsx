@@ -480,6 +480,32 @@ const Account = () => {
           </div>
         )}
       </div>
+
+      {/* ── Mobile: ARIA-Server-URL ändern (nur in der Android-App sichtbar) ── */}
+      {typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.() && (
+        <div className="bg-black/40 border border-orange-500/30 rounded-lg p-6 mt-6" data-testid="account-mobile-server">
+          <h2 className="text-lg font-bold mb-3 text-orange-200">
+            ARIA-Server-Verbindung
+          </h2>
+          <p className="text-xs text-gray-400 mb-3" style={{ textTransform: "none" }}>
+            Aktueller Server: <code className="text-orange-300">{localStorage.getItem("aria_server_url") || "(nicht konfiguriert)"}</code>
+          </p>
+          <button
+            data-testid="mobile-change-server-btn"
+            onClick={() => {
+              if (window.confirm("Server-URL zurücksetzen? Du wirst ausgeloggt und kannst dann eine neue URL eingeben.")) {
+                localStorage.removeItem("aria_server_url");
+                localStorage.removeItem("aria_token");
+                localStorage.removeItem("aria_user");
+                window.location.href = "/";
+              }
+            }}
+            className="px-4 py-2 rounded border border-orange-500/40 text-orange-200 text-sm hover:bg-orange-500/10"
+          >
+            Server-URL ändern
+          </button>
+        </div>
+      )}
     </div>
   );
 };

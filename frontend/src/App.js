@@ -25,8 +25,24 @@ import VoiceAssistant from "@/components/VoiceAssistant";
 import WelcomeGreeting from "@/components/WelcomeGreeting";
 import LcarsLayout from "@/components/LcarsLayout";
 import AriaMode from "@/pages/AriaMode";
+import MobileServerConfig from "@/pages/MobileServerConfig";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+// --- Native (Capacitor / Android APK) detection ---
+// When the app runs inside the Android wrapper we want a different boot flow:
+//  - The SetupWizard is NEVER shown (the user's ARIA on Unraid already has an admin)
+//  - On first launch we ask for the server URL and store it locally
+//  - All subsequent API calls use that stored URL as their base
+export const IS_NATIVE = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+
+const resolveBackendUrl = () => {
+  if (typeof window !== "undefined") {
+    const stored = (localStorage.getItem("aria_server_url") || "").trim();
+    if (stored) return stored.replace(/\/+$/, "");
+  }
+  return process.env.REACT_APP_BACKEND_URL || "";
+};
+
+const BACKEND_URL = resolveBackendUrl();
 export const API = `${BACKEND_URL}/api`;
 
 axios.defaults.withCredentials = true;
@@ -226,6 +242,25 @@ const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
+      // Mobile (Android APK) flow: server URL must be configured first; we
+      // NEVER show the SetupWizard on mobile since the user's existing ARIA
+      // already has an admin.
+      if (IS_NATIVE) {
+        const hasUrl = !!localStorage.getItem("aria_server_url");
+        if (!hasUrl) {
+          setSetupRequired(false);
+          setLoading(false);
+          return;
+        }
+        // URL is configured → proceed straight to auth, skip setup check
+        setSetupRequired(false);
+        await fetchGlobalDefaultTheme();
+        await checkAuth();
+        setLoading(false);
+        return;
+      }
+
+      // Browser / web flow: original behaviour (run setup wizard if needed)
       const needsSetup = await checkSetupStatus();
       if (!needsSetup) {
         await fetchGlobalDefaultTheme();
@@ -258,7 +293,7 @@ const ProtectedRoute = ({ children }) => {
   }, [user]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse">Loading...</div></div>;
-  if (setupRequired) return <Navigate to="/setup" replace />;
+  if (setupRequired && !IS_NATIVE) return <Navigate to="/setup" replace />;
   if (!user) return <Navigate to="/login" replace />;
   // First-login redirect: if profile needs onboarding AND we're not already on
   // the wizard or login/setup, push the user through it.
@@ -319,13 +354,20 @@ const AppRouter = () => {
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : theme === 'starwars' ? 'bg-black text-[#E10600]' : theme === 'fortnite' ? 'bg-[#0b0d1a] text-[#00eaff]' : theme === 'minesweeper' ? 'bg-[#008080] text-black' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
 
+  // On the Android APK, if no server URL is configured yet, we MUST show
+  // the server-config screen before anything else. This bypasses the entire
+  // router so the user can't accidentally hit a 404 / setup wizard.
+  if (IS_NATIVE && !localStorage.getItem("aria_server_url")) {
+    return <MobileServerConfig />;
+  }
+
   const themeClass = `theme-${THEME_IDS.includes(theme) ? theme : DEFAULT_THEME}`;
 
   return (
     <div className={themeClass}>
       <Routes>
-        <Route path="/setup" element={setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
-        <Route path="/login" element={setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/setup" element={IS_NATIVE ? <Navigate to="/login" replace /> : setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
+        <Route path="/login" element={IS_NATIVE ? (user ? <Navigate to="/" replace /> : <Login />) : setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/" element={<ProtectedRoute><LcarsLayout><Dashboard /></LcarsLayout></ProtectedRoute>} />
         <Route path="/health" element={<ProtectedRoute><LcarsLayout><Health /></LcarsLayout></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><LcarsLayout><Chat /></LcarsLayout></ProtectedRoute>} />
