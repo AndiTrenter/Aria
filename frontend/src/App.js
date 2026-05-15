@@ -362,7 +362,7 @@ const AppRouter = () => {
         <Route path="/setup" element={IS_NATIVE ? <Navigate to="/login" replace /> : setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
         <Route path="/mobile-config" element={IS_NATIVE ? <MobileServerConfig /> : <Navigate to="/" replace />} />
         <Route path="/login" element={IS_NATIVE ? (user ? <Navigate to="/" replace /> : <Login />) : setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/" element={<ProtectedRoute><LcarsLayout><Dashboard /></LcarsLayout></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute>{IS_NATIVE ? <Navigate to="/aria" replace /> : <LcarsLayout><Dashboard /></LcarsLayout>}</ProtectedRoute>} />
         <Route path="/health" element={<ProtectedRoute><LcarsLayout><Health /></LcarsLayout></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><LcarsLayout><Chat /></LcarsLayout></ProtectedRoute>} />
         <Route path="/weather" element={<ProtectedRoute><LcarsLayout><Weather /></LcarsLayout></ProtectedRoute>} />
