@@ -33,8 +33,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "yarn"
-          cache-dependency-path: frontend/yarn.lock
+        # NOTE: yarn cache intentionally disabled — if frontend/yarn.lock
+        # is ever missing from the repo, the cache step would hard-fail
+        # the whole build. yarn install is fast enough without it.
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -58,7 +59,13 @@ jobs:
 
       - name: Install frontend deps
         working-directory: frontend
-        run: yarn install --frozen-lockfile
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          else
+            echo "::warning::yarn.lock missing — installing without lockfile"
+            yarn install
+          fi
 
       - name: Build React app
         working-directory: frontend
