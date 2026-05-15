@@ -52,7 +52,13 @@ const resolveBackendUrl = () => {
 const BACKEND_URL = resolveBackendUrl();
 export const API = `${BACKEND_URL}/api`;
 
-axios.defaults.withCredentials = true;
+// On the Android APK the webview origin is `https://localhost` while the
+// backend runs at a totally different host. Browsers refuse cookies (i.e.
+// `withCredentials: true`) when the server replies with the wildcard
+// `Access-Control-Allow-Origin: *`. Since we authenticate with a Bearer
+// token (Authorization header from localStorage), cookies are NOT needed
+// — turning off `withCredentials` on native fixes the cross-origin login.
+axios.defaults.withCredentials = !IS_NATIVE;
 
 // Add request interceptor to include token from localStorage
 axios.interceptors.request.use((config) => {

@@ -36,7 +36,21 @@ const Login = () => {
       await login(formData.email, formData.password);
       toast.success("Willkommen!");
     } catch (e) {
-      toast.error(formatApiError(e.response?.data?.detail) || "Login fehlgeschlagen");
+      // Detailed error for cross-origin / network issues so the user can
+      // tell whether it's wrong credentials vs. a connectivity problem.
+      let msg = formatApiError(e.response?.data?.detail);
+      if (!msg) {
+        if (e?.code === "ERR_NETWORK" || /Network Error/i.test(e?.message || "")) {
+          msg = "Server nicht erreichbar (Netzwerkfehler). Prüfe Internet, DynDNS und Port-Forwarding.";
+        } else if (e?.response?.status === 401) {
+          msg = "E-Mail oder Passwort ist falsch.";
+        } else if (e?.response?.status >= 500) {
+          msg = `Server-Fehler (${e.response.status}). Bitte ARIA-Container prüfen.`;
+        } else {
+          msg = e?.message || "Login fehlgeschlagen";
+        }
+      }
+      toast.error(msg, { duration: 6000 });
     } finally {
       setLoading(false);
     }
