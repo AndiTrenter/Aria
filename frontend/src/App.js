@@ -30,14 +30,21 @@ import MobileServerConfig from "@/pages/MobileServerConfig";
 // --- Native (Capacitor / Android APK) detection ---
 // When the app runs inside the Android wrapper we want a different boot flow:
 //  - The SetupWizard is NEVER shown (the user's ARIA on Unraid already has an admin)
-//  - On first launch we ask for the server URL and store it locally
-//  - All subsequent API calls use that stored URL as their base
+//  - The backend defaults to the user's hosted DynDNS endpoint
+//  - The user CAN override the URL via the Account → "Server-URL ändern" screen
 export const IS_NATIVE = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+
+// Hardcoded default for the Android APK: this is the user's own DynDNS that
+// already proxies through to their ARIA backend on Unraid. They don't have to
+// type anything on first launch — the app just connects.
+export const NATIVE_DEFAULT_BACKEND_URL = "https://www.trenter.internet-box.ch";
 
 const resolveBackendUrl = () => {
   if (typeof window !== "undefined") {
     const stored = (localStorage.getItem("aria_server_url") || "").trim();
     if (stored) return stored.replace(/\/+$/, "");
+    // On the Android APK, fall back to the baked-in DynDNS endpoint
+    if (window.Capacitor?.isNativePlatform?.()) return NATIVE_DEFAULT_BACKEND_URL;
   }
   return process.env.REACT_APP_BACKEND_URL || "";
 };
@@ -242,17 +249,10 @@ const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
-      // Mobile (Android APK) flow: server URL must be configured first; we
-      // NEVER show the SetupWizard on mobile since the user's existing ARIA
-      // already has an admin.
+      // Mobile (Android APK) flow: use the baked-in DynDNS backend URL
+      // by default; user can later override it from the Account screen.
+      // SetupWizard is NEVER shown on mobile.
       if (IS_NATIVE) {
-        const hasUrl = !!localStorage.getItem("aria_server_url");
-        if (!hasUrl) {
-          setSetupRequired(false);
-          setLoading(false);
-          return;
-        }
-        // URL is configured → proceed straight to auth, skip setup check
         setSetupRequired(false);
         await fetchGlobalDefaultTheme();
         await checkAuth();
@@ -354,19 +354,13 @@ const AppRouter = () => {
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${theme === 'startrek' ? 'bg-black text-orange-500' : theme === 'starwars' ? 'bg-black text-[#E10600]' : theme === 'fortnite' ? 'bg-[#0b0d1a] text-[#00eaff]' : theme === 'minesweeper' ? 'bg-[#008080] text-black' : 'bg-indigo-950 text-purple-200'}`}><div className="animate-pulse text-2xl">ARIA wird geladen...</div></div>;
 
-  // On the Android APK, if no server URL is configured yet, we MUST show
-  // the server-config screen before anything else. This bypasses the entire
-  // router so the user can't accidentally hit a 404 / setup wizard.
-  if (IS_NATIVE && !localStorage.getItem("aria_server_url")) {
-    return <MobileServerConfig />;
-  }
-
   const themeClass = `theme-${THEME_IDS.includes(theme) ? theme : DEFAULT_THEME}`;
 
   return (
     <div className={themeClass}>
       <Routes>
         <Route path="/setup" element={IS_NATIVE ? <Navigate to="/login" replace /> : setupRequired ? <SetupWizard /> : <Navigate to="/" replace />} />
+        <Route path="/mobile-config" element={IS_NATIVE ? <MobileServerConfig /> : <Navigate to="/" replace />} />
         <Route path="/login" element={IS_NATIVE ? (user ? <Navigate to="/" replace /> : <Login />) : setupRequired ? <Navigate to="/setup" replace /> : user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/" element={<ProtectedRoute><LcarsLayout><Dashboard /></LcarsLayout></ProtectedRoute>} />
         <Route path="/health" element={<ProtectedRoute><LcarsLayout><Health /></LcarsLayout></ProtectedRoute>} />

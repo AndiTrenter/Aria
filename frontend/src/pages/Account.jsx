@@ -501,7 +501,7 @@ const Account = () => {
                 localStorage.removeItem("aria_server_url");
                 localStorage.removeItem("aria_token");
                 localStorage.removeItem("aria_user");
-                window.location.href = "/";
+                window.location.href = "/mobile-config";
               }
             }}
             className="px-4 py-2 rounded border border-orange-500/40 text-orange-200 text-sm hover:bg-orange-500/10"
