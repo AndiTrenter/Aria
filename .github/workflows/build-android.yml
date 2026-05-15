@@ -1,0 +1,162 @@
+name: Build Android APK
+
+# Trigger:
+#   - On every push to main (build a debug-signed APK for internal testing)
+#   - On every tag matching v* (e.g. v1.2.3) — creates a GitHub release
+#     with the signed APK attached, which the in-app UpdateNotifier
+#     will pick up automatically.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to create releases
+
+env:
+  # Production backend the bundled webview should hit
+  REACT_APP_BACKEND_URL: ${{ secrets.PROD_BACKEND_URL }}
+  # GitHub repo that the UpdateNotifier + Account download card poll
+  REACT_APP_GITHUB_REPO: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Compute app version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Build React app
+        working-directory: frontend
+        env:
+          REACT_APP_APP_VERSION: ${{ steps.version.outputs.version }}
+          CI: "false"   # let warnings through; webpack treats them as errors on CI by default
+          DISABLE_ESLINT_PLUGIN: "true"
+        run: yarn build
+
+      - name: Add Android platform (first run only)
+        working-directory: frontend
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android --confirm
+          fi
+
+      - name: Patch AndroidManifest for mic / network permissions
+        working-directory: frontend/android/app/src/main
+        run: |
+          # The default Capacitor manifest already has INTERNET; we
+          # additionally need RECORD_AUDIO + MODIFY_AUDIO_SETTINGS for
+          # the wake-word listener.
+          MANIFEST=AndroidManifest.xml
+          for perm in RECORD_AUDIO MODIFY_AUDIO_SETTINGS WAKE_LOCK ACCESS_NETWORK_STATE; do
+            if ! grep -q "$perm" "$MANIFEST"; then
+              sed -i "s|<uses-permission android:name=\"android.permission.INTERNET\" />|<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.${perm}\" />|" "$MANIFEST"
+            fi
+          done
+          # Set versionName / versionCode so each build is distinct
+          GRADLE=../../build.gradle
+          if [ -f "$GRADLE" ]; then
+            VC=$(date +%s)
+            sed -i "s|versionName .*|versionName \"${{ steps.version.outputs.version }}\"|" "$GRADLE" || true
+            sed -i "s|versionCode .*|versionCode ${VC: -8}|" "$GRADLE" || true
+          fi
+
+      - name: Sync Capacitor → Android
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Build APK (debug)
+        if: steps.version.outputs.is_release == 'false'
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Build APK (release, unsigned)
+        if: steps.version.outputs.is_release == 'true'
+        working-directory: frontend/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Sign release APK
+        if: steps.version.outputs.is_release == 'true' && env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: frontend/android/app/build/outputs/apk/release
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          ALIGN="$ANDROID_HOME/build-tools/$BT/zipalign"
+          SIGN="$ANDROID_HOME/build-tools/$BT/apksigner"
+          IN_APK=app-release-unsigned.apk
+          ALIGNED=app-release-aligned.apk
+          OUT_APK=app-release-signed.apk
+          "$ALIGN" -v 4 "$IN_APK" "$ALIGNED"
+          "$SIGN" sign --ks release.jks \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+            --out "$OUT_APK" "$ALIGNED"
+          rm -f release.jks
+          ls -lah
+
+      - name: Rename + upload debug APK as artifact
+        if: steps.version.outputs.is_release == 'false'
+        working-directory: frontend/android/app/build/outputs/apk/debug
+        run: |
+          mv app-debug.apk "aria-${{ steps.version.outputs.version }}-debug.apk"
+          ls -lah
+
+      - name: Upload debug APK artifact
+        if: steps.version.outputs.is_release == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria-debug-apk
+          path: frontend/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release (on tag)
+        if: steps.version.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: A.R.I.A. v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            frontend/android/app/build/outputs/apk/release/app-release-signed.apk
+            frontend/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          fail_on_unmatched_files: false

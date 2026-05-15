@@ -1,0 +1,19 @@
+{
+  "appId": "local.aria.dashboard",
+  "appName": "A.R.I.A.",
+  "webDir": "build",
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "plugins": {
+    "App": {
+      "launchUrl": ""
+    }
+  }
+}

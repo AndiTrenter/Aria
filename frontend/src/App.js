@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import { Toaster } from "@/components/ui/sonner";
+import UpdateNotifier from "@/components/UpdateNotifier";
 
 import SetupWizard from "@/pages/SetupWizard";
 import Login from "@/pages/Login";
@@ -360,6 +361,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
+          <UpdateNotifier />
           <Toaster position="top-right" toastOptions={{
             style: { background: '#1a1a2e', color: '#e0e0e0', border: '1px solid #333' },
             className: 'aria-toast',

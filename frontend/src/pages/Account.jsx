@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth, useTheme, API, formatApiError } from "@/App";
 import axios from "axios";
 import { toast } from "sonner";
-import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, SpeakerSlash, Microphone, Palette } from "@phosphor-icons/react";
+import { User, Link as LinkIcon, Check, X, Eye, EyeSlash, SpeakerHigh, SpeakerSlash, Microphone, Palette, DownloadSimple, AndroidLogo } from "@phosphor-icons/react";
 import { playThemeSound, setThemeSoundMuted } from "@/utils/themeSounds";
 
 const THEME_PREVIEWS = {
@@ -16,6 +16,38 @@ const Account = () => {
   const { user, checkAuth } = useAuth();
   const { theme, setTheme, availableThemes } = useTheme();
   const [soundEnabled, setSoundEnabled] = useState(user?.sound_effects_enabled !== false);
+
+  // ── Android APK release info (from GitHub) ─────────────────────────
+  const [androidRelease, setAndroidRelease] = useState(null);
+  const [androidLoading, setAndroidLoading] = useState(true);
+
+  useEffect(() => {
+    const repo = process.env.REACT_APP_GITHUB_REPO || "";
+    if (!repo) { setAndroidLoading(false); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!res.ok) { setAndroidLoading(false); return; }
+        const data = await res.json();
+        const apk = (data?.assets || []).find((a) => /\.apk$/i.test(a.name));
+        if (!alive) return;
+        setAndroidRelease(apk ? {
+          tag: data?.tag_name || data?.name || "",
+          url: apk.browser_download_url,
+          size: apk.size,
+          published_at: data?.published_at,
+          body: (data?.body || "").slice(0, 600),
+        } : null);
+      } catch { /* silent */ }
+      finally { if (alive) setAndroidLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const repoName = process.env.REACT_APP_GITHUB_REPO || "";
 
   useEffect(() => {
     setSoundEnabled(user?.sound_effects_enabled !== false);
@@ -377,6 +409,76 @@ const Account = () => {
             <p className="text-gray-500 text-center py-4">Keine Konten verknüpft</p>
           )}
         </div>
+      </div>
+
+      {/* ── Android App Download ──────────────────────────────────── */}
+      <div className="bg-black/40 border border-orange-500/30 rounded-lg p-6 mt-6" data-testid="account-android-download">
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2 text-orange-200">
+          <AndroidLogo size={22} weight="bold" /> A.R.I.A. — Android-App
+        </h2>
+        {!repoName && (
+          <p className="text-sm text-gray-500">
+            Kein GitHub-Repository konfiguriert. Setze die Umgebungsvariable <code>REACT_APP_GITHUB_REPO</code> (Format: <code>owner/repo</code>).
+          </p>
+        )}
+        {repoName && androidLoading && (
+          <p className="text-sm text-gray-400">Suche nach aktuellem Release …</p>
+        )}
+        {repoName && !androidLoading && !androidRelease && (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-400" style={{ textTransform: "none" }}>
+              Aktuell ist im Repository <span className="text-orange-300">{repoName}</span> kein Android-Release mit APK-Asset verfügbar. Sobald der GitHub-Actions-Build durchläuft, erscheint hier der Download.
+            </p>
+            <a
+              href={`https://github.com/${repoName}/releases`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-xs text-orange-300 hover:text-orange-200 underline"
+            >
+              Releases auf GitHub öffnen →
+            </a>
+          </div>
+        )}
+        {androidRelease && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-sm">
+              <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-200 text-xs font-bold">
+                {androidRelease.tag}
+              </span>
+              <span className="text-gray-500 text-xs">
+                {(androidRelease.size / (1024 * 1024)).toFixed(1)} MB
+                {androidRelease.published_at && ` · ${new Date(androidRelease.published_at).toLocaleDateString("de-DE")}`}
+              </span>
+            </div>
+            {androidRelease.body && (
+              <p className="text-xs text-gray-400 whitespace-pre-wrap" style={{ textTransform: "none" }}>
+                {androidRelease.body}
+              </p>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <a
+                href={androidRelease.url}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="android-download-btn"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded bg-gradient-to-b from-orange-500 to-orange-700 text-white text-sm font-bold hover:from-orange-400 hover:to-orange-600 transition"
+              >
+                <DownloadSimple size={16} weight="bold" /> APK herunterladen
+              </a>
+              <a
+                href={`https://github.com/${repoName}/releases`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded border border-orange-500/40 text-orange-200 text-sm hover:bg-orange-500/10"
+              >
+                Alle Releases
+              </a>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-2" style={{ textTransform: "none" }}>
+              Hinweis: Auf Android muss „Installation aus unbekannten Quellen" für deinen Browser einmalig erlaubt werden (Einstellungen → Apps → [Browser] → Unbekannte Apps installieren).
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
