@@ -27,19 +27,30 @@ const Account = () => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        // Fetch *all* releases (including pre-releases / nightly builds)
+        // and pick the most recent one that has an APK asset. This way the
+        // rolling "nightly" release we publish on every main push shows up
+        // immediately, without waiting for a tagged stable release.
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
           headers: { Accept: "application/vnd.github+json" },
         });
         if (!res.ok) { setAndroidLoading(false); return; }
-        const data = await res.json();
-        const apk = (data?.assets || []).find((a) => /\.apk$/i.test(a.name));
+        const list = await res.json();
+        let chosen = null;
+        let chosenApk = null;
+        for (const rel of (Array.isArray(list) ? list : [])) {
+          const apk = (rel?.assets || []).find((a) => /\.apk$/i.test(a.name));
+          if (apk) { chosen = rel; chosenApk = apk; break; }
+        }
         if (!alive) return;
-        setAndroidRelease(apk ? {
-          tag: data?.tag_name || data?.name || "",
-          url: apk.browser_download_url,
-          size: apk.size,
-          published_at: data?.published_at,
-          body: (data?.body || "").slice(0, 600),
+        setAndroidRelease(chosen && chosenApk ? {
+          tag: chosen.tag_name || chosen.name || "",
+          name: chosen.name || chosen.tag_name || "",
+          url: chosenApk.browser_download_url,
+          size: chosenApk.size,
+          published_at: chosen.published_at,
+          prerelease: !!chosen.prerelease,
+          body: (chosen.body || "").slice(0, 600),
         } : null);
       } catch { /* silent */ }
       finally { if (alive) setAndroidLoading(false); }
@@ -416,66 +427,59 @@ const Account = () => {
         <h2 className="text-lg font-bold mb-3 flex items-center gap-2 text-orange-200">
           <AndroidLogo size={22} weight="bold" /> A.R.I.A. — Android-App
         </h2>
-        {!repoName && (
-          <p className="text-sm text-gray-500">
-            Kein GitHub-Repository konfiguriert. Setze die Umgebungsvariable <code>REACT_APP_GITHUB_REPO</code> (Format: <code>owner/repo</code>).
-          </p>
-        )}
-        {repoName && androidLoading && (
+
+        {androidLoading && (
           <p className="text-sm text-gray-400">Suche nach aktuellem Release …</p>
         )}
-        {repoName && !androidLoading && !androidRelease && (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-400" style={{ textTransform: "none" }}>
-              Aktuell ist im Repository <span className="text-orange-300">{repoName}</span> kein Android-Release mit APK-Asset verfügbar. Sobald der GitHub-Actions-Build durchläuft, erscheint hier der Download.
+
+        {!androidLoading && !androidRelease && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-300" style={{ textTransform: "none" }}>
+              Aktuell wird die App noch gebaut.
+              Sobald GitHub Actions den ersten Build abgeschlossen hat,
+              erscheint hier ein Download-Button.
             </p>
             <a
-              href={`https://github.com/${repoName}/releases`}
+              href={repoName ? `https://github.com/${repoName}/actions` : "#"}
               target="_blank"
               rel="noreferrer"
-              className="inline-block text-xs text-orange-300 hover:text-orange-200 underline"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded border border-orange-500/40 text-orange-200 text-sm hover:bg-orange-500/10"
             >
-              Releases auf GitHub öffnen →
+              Build-Status auf GitHub ansehen →
             </a>
           </div>
         )}
+
         {androidRelease && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 text-sm">
-              <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-200 text-xs font-bold">
-                {androidRelease.tag}
+          <div className="space-y-4">
+            {/* Big primary download button */}
+            <a
+              href={androidRelease.url}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="android-download-btn"
+              className="flex items-center justify-center gap-3 w-full sm:w-auto px-6 py-4 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold text-base hover:from-orange-600 hover:to-red-600 transition shadow-[0_0_30px_rgba(255,90,30,0.35)]"
+            >
+              <DownloadSimple size={22} weight="bold" />
+              APK herunterladen
+              <span className="text-xs font-normal opacity-80 ml-2">
+                ({(androidRelease.size / (1024 * 1024)).toFixed(1)} MB)
               </span>
-              <span className="text-gray-500 text-xs">
-                {(androidRelease.size / (1024 * 1024)).toFixed(1)} MB
-                {androidRelease.published_at && ` · ${new Date(androidRelease.published_at).toLocaleDateString("de-DE")}`}
+            </a>
+
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span className={`px-2 py-0.5 rounded font-bold ${androidRelease.prerelease ? "bg-yellow-500/20 text-yellow-200" : "bg-green-500/20 text-green-200"}`}>
+                {androidRelease.prerelease ? "Nightly" : "Stable"}
               </span>
+              <span>{androidRelease.tag}</span>
+              {androidRelease.published_at && (
+                <span>· {new Date(androidRelease.published_at).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })}</span>
+              )}
             </div>
-            {androidRelease.body && (
-              <p className="text-xs text-gray-400 whitespace-pre-wrap" style={{ textTransform: "none" }}>
-                {androidRelease.body}
-              </p>
-            )}
-            <div className="flex gap-2 flex-wrap">
-              <a
-                href={androidRelease.url}
-                target="_blank"
-                rel="noreferrer"
-                data-testid="android-download-btn"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded bg-gradient-to-b from-orange-500 to-orange-700 text-white text-sm font-bold hover:from-orange-400 hover:to-orange-600 transition"
-              >
-                <DownloadSimple size={16} weight="bold" /> APK herunterladen
-              </a>
-              <a
-                href={`https://github.com/${repoName}/releases`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded border border-orange-500/40 text-orange-200 text-sm hover:bg-orange-500/10"
-              >
-                Alle Releases
-              </a>
-            </div>
+
             <p className="text-[11px] text-gray-500 mt-2" style={{ textTransform: "none" }}>
-              Hinweis: Auf Android muss „Installation aus unbekannten Quellen" für deinen Browser einmalig erlaubt werden (Einstellungen → Apps → [Browser] → Unbekannte Apps installieren).
+              Hinweis: Auf Android einmalig „Installation aus unbekannten Quellen" für deinen Browser erlauben
+              (Einstellungen → Apps → [Browser] → Unbekannte Apps installieren).
             </p>
           </div>
         )}
