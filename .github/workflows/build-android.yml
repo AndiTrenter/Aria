@@ -79,7 +79,7 @@ jobs:
         working-directory: frontend
         run: |
           if [ ! -d "android" ]; then
-            npx cap add android --confirm
+            npx cap add android
           fi
 
       - name: Patch AndroidManifest for mic / network permissions
