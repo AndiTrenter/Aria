@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/App";
+import { useAuth, API } from "@/App";
 import { toast } from "sonner";
 import {
   Microphone, X, MapTrifold, EnvelopeSimple,
@@ -9,10 +9,12 @@ import {
 } from "@phosphor-icons/react";
 import CortexCloud from "@/components/CortexCloud";
 import BackgroundFx from "@/components/BackgroundFx";
+import RichHoloPanel from "@/components/RichHoloPanel";
 import TemperatureWatermark from "@/components/TemperatureWatermark";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 import { streamAriaChat } from "@/utils/ariaStream";
+import axios from "axios";
 import {
   playBootSound, playWakeSound, playListenSound,
   playDoneSound, playErrorSound, playThinkTick, unlockAudio,
@@ -74,7 +76,30 @@ function parseEmailIntent(text) {
   return false;
 }
 
-/*  ────────────────────────────────────────────────────────────────── */
+function parseWeatherIntent(text) {
+  const t = text.toLowerCase();
+  if (!/\b(wetter|temperatur|grad|regen|schnee|sonne|wettervorhersage|vorhersage|wie\s+(warm|kalt))\b/.test(t)) return null;
+  // Try to extract a city ("in München", "für Berlin", "wetter zürich")
+  const m = t.match(/\b(?:in|für|wetter|bei|von)\s+([a-zäöüß][\wäöüß\- ]{2,40})/i);
+  const city = m ? m[1].replace(/[.?!,;:].*$/, "").trim() : null;
+  return { city };
+}
+
+function parseRecipeIntent(text) {
+  const t = text.toLowerCase();
+  if (!/\b(rezept|koche|kochen|backe|backen|zubereit|gericht|essen kochen)\b/.test(t)) return null;
+  const m = t.match(/\b(?:rezept|kochen|backen|zubereit\w*|gericht)\s+(?:für|von|mit)?\s*([a-zäöüß][\wäöüß\- ]{2,60})/i);
+  const subject = m ? m[1].replace(/[.?!,;:].*$/, "").trim() : null;
+  return { subject };
+}
+
+function parseNewsIntent(text) {
+  const t = text.toLowerCase();
+  if (!/\b(news|nachrichten|schlagzeilen|aktuelles|was passiert|neuigkeiten|aktuelle? lage)\b/.test(t)) return null;
+  const m = t.match(/\b(?:über|zu|von|wegen|um|zum thema)\s+([a-zäöüß][\wäöüß\- ]{2,60})/i);
+  const topic = m ? m[1].replace(/[.?!,;:].*$/, "").trim() : null;
+  return { topic };
+}
 
 /*  ────────────────────────────────────────────────────────────────── */
 
@@ -458,14 +483,25 @@ const AriaMode = () => {
       copy[idx] = { ...copy[idx], ...patch, ts: Date.now() };
       return copy;
     });
-    // Auto-fade panels that finished after a short hold time
-    if (patch.status && patch.status !== "active") {
+    // Auto-fade panels that finished after a short hold time — but ONLY
+    // for the legacy compact "search" panels. Rich panels (weather, recipe,
+    // email, news) manage their own longer lifetime via removePanel.
+    const isRich = patch.kind && patch.kind !== "search";
+    if (patch.status && patch.status !== "active" && !isRich) {
       if (panelTimeoutsRef.current[id]) clearTimeout(panelTimeoutsRef.current[id]);
       panelTimeoutsRef.current[id] = setTimeout(() => {
         setPanels((prev) => prev.filter((p) => p.id !== id));
         delete panelTimeoutsRef.current[id];
       }, 6000);
     }
+  };
+
+  const removePanel = (id) => {
+    if (panelTimeoutsRef.current[id]) {
+      clearTimeout(panelTimeoutsRef.current[id]);
+      delete panelTimeoutsRef.current[id];
+    }
+    setPanels((prev) => prev.filter((p) => p.id !== id));
   };
 
   const clearPanels = () => {
@@ -639,11 +675,225 @@ const AriaMode = () => {
       return;
     }
     if (parseEmailIntent(text)) {
-      runStreamingCommand(text, "email");
+      handleEmailIntent(text);
+      return;
+    }
+    const wx = parseWeatherIntent(text);
+    if (wx) {
+      handleWeatherIntent(text, wx);
+      return;
+    }
+    const rx = parseRecipeIntent(text);
+    if (rx) {
+      handleRecipeIntent(text, rx);
+      return;
+    }
+    const nx = parseNewsIntent(text);
+    if (nx) {
+      handleNewsIntent(text, nx);
       return;
     }
     runStreamingCommand(text, "chat");
   };
+
+  /* ─── Rich Holo-Panel handlers ──────────────────────────────────── */
+
+  // Speak a reply, then resume the wake-word loop. Used by all rich-intent
+  // handlers so they don't have to repeat the begin/endSpeaking dance.
+  const speakAndResume = (text) => {
+    if (!text) { setMode("idle"); startWakeWord(); return; }
+    setResponse(text);
+    setMode("speaking");
+    beginSpeaking();
+    ttsCtrlRef.current = speakStreaming(stripMarkdownForTTS(text), {
+      onEnd:  () => { endSpeaking(); setMode("idle"); startWakeWord(); },
+      onError:() => { endSpeaking(); setMode("idle"); startWakeWord(); },
+    });
+  };
+
+  // WETTER — open weather holo-panel + fetch real data from /api/weather
+  const handleWeatherIntent = async (text, { city }) => {
+    setMode("thinking");
+    setTranscript(text);
+    const panelId = "wx_" + Date.now();
+    upsertPanel(panelId, { kind: "weather", title: city ? city.toUpperCase() : "WETTER", status: "active" });
+    try {
+      const { data } = await axios.get(`${API}/weather`);
+      if (data?.available === false) {
+        upsertPanel(panelId, { status: "error", data: { error: data.message || "Wetter nicht konfiguriert" } });
+        speakAndResume("Wetterdaten sind aktuell nicht verfügbar.");
+        return;
+      }
+      const c = data.current || {};
+      const forecast = (data.forecast || data.daily || []).slice(0, 4).map((f) => ({
+        day_short: f.day_short || f.day || "",
+        temp_max: f.temp_max ?? f.temp?.max ?? f.max,
+        temp_min: f.temp_min ?? f.temp?.min ?? f.min,
+        condition_id: f.condition_id ?? f.id ?? f.weather?.[0]?.id,
+      }));
+      const payload = {
+        current: {
+          city: c.city || data.city || city || "",
+          temp: c.temp ?? c.temperature ?? data.temp,
+          feels_like: c.feels_like ?? data.feels_like,
+          humidity: c.humidity ?? data.humidity,
+          wind_speed: c.wind_speed ?? c.wind ?? data.wind_speed,
+          description: c.description || c.summary || c.weather?.[0]?.description || "",
+          condition_id: c.condition_id ?? c.weather?.[0]?.id,
+        },
+        forecast,
+      };
+      upsertPanel(panelId, { status: "done", data: payload });
+      // Auto-fade after a while so the cortex view returns to clean
+      setTimeout(() => removePanel(panelId), 30000);
+      const spoken = `In ${payload.current.city || "deiner Region"} sind es aktuell ${Math.round(payload.current.temp || 0)} Grad, ${payload.current.description || "keine besonderen Wetterereignisse"}.`;
+      speakAndResume(spoken);
+    } catch (e) {
+      upsertPanel(panelId, { status: "error", data: { error: "Wetter-API nicht erreichbar." } });
+      speakAndResume("Ich konnte die Wetterdaten gerade nicht abrufen.");
+    }
+  };
+
+  // E-MAIL — open email draft panel and stream its contents as Aria writes
+  const handleEmailIntent = (text) => {
+    const panelId = "em_" + Date.now();
+    upsertPanel(panelId, { kind: "email", title: "ENTWURF", status: "active", data: { to: "", subject: "", body: "" } });
+    let acc = "";
+    setMode("thinking");
+    setTranscript(text);
+    streamCtrlRef.current = streamAriaChat(text, {
+      onResultChunk: ({ delta, text: t }) => {
+        acc = t || (acc + (delta || ""));
+        upsertPanel(panelId, { data: parseEmailDraft(acc) });
+      },
+      onResult: ({ text: finalText }) => {
+        const parsed = parseEmailDraft(finalText || acc);
+        upsertPanel(panelId, { status: "done", data: parsed });
+        setPendingEmail(true);
+        setTimeout(() => removePanel(panelId), 45000);
+        speakAndResume(`Entwurf bereit. Sage "ja versende" zum Senden oder "verwerfen" zum Abbrechen.`);
+      },
+      onError: () => {
+        upsertPanel(panelId, { status: "error" });
+        speakAndResume("Ich konnte den Entwurf nicht erstellen.");
+      },
+    });
+  };
+
+  // REZEPT — generate via chat stream, render as recipe card
+  const handleRecipeIntent = (text, { subject }) => {
+    const panelId = "rec_" + Date.now();
+    upsertPanel(panelId, {
+      kind: "recipe",
+      title: subject ? subject.toUpperCase() : "REZEPT",
+      status: "active",
+      data: { title: subject || "Rezept", ingredients: [], steps: [] },
+    });
+    let acc = "";
+    setMode("thinking");
+    setTranscript(text);
+    const prompt = `Erstelle ein einfaches Rezept ${subject ? "für " + subject : ""}. Antworte EXAKT in diesem Format:\nTITEL: <titel>\nZEIT: <ca. minuten>\nZUTATEN:\n- <zutat 1>\n- <zutat 2>\n...\nSCHRITTE:\n1. <schritt 1>\n2. <schritt 2>\n...`;
+    streamCtrlRef.current = streamAriaChat(prompt, {
+      onResultChunk: ({ delta, text: t }) => {
+        acc = t || (acc + (delta || ""));
+        upsertPanel(panelId, { data: parseRecipe(acc, subject) });
+      },
+      onResult: ({ text: finalText }) => {
+        const data = parseRecipe(finalText || acc, subject);
+        upsertPanel(panelId, { status: "done", data });
+        setTimeout(() => removePanel(panelId), 60000);
+        speakAndResume(`Hier ist mein Rezeptvorschlag${data.title ? " für " + data.title : ""}.`);
+      },
+      onError: () => {
+        upsertPanel(panelId, { status: "error" });
+        speakAndResume("Ich konnte gerade kein Rezept erstellen.");
+      },
+    });
+  };
+
+  // NEWS — stream LLM summary, render headlines as cards
+  const handleNewsIntent = (text, { topic }) => {
+    const panelId = "nw_" + Date.now();
+    upsertPanel(panelId, {
+      kind: "news",
+      title: topic ? topic.toUpperCase() : "AKTUELLES",
+      status: "active",
+      data: { items: [] },
+    });
+    let acc = "";
+    setMode("thinking");
+    setTranscript(text);
+    const prompt = topic
+      ? `Recherchiere aktuelle Schlagzeilen zu "${topic}" und gib EXAKT 5 Headlines im Format zurück:\n- TITEL :: QUELLE\n- TITEL :: QUELLE\n...`
+      : `Recherchiere die 5 wichtigsten aktuellen Schlagzeilen weltweit und gib sie im Format zurück:\n- TITEL :: QUELLE\n- TITEL :: QUELLE\n...`;
+    streamCtrlRef.current = streamAriaChat(prompt, {
+      onResultChunk: ({ delta, text: t }) => {
+        acc = t || (acc + (delta || ""));
+        upsertPanel(panelId, { data: { items: parseNewsItems(acc) } });
+      },
+      onResult: ({ text: finalText }) => {
+        const items = parseNewsItems(finalText || acc);
+        upsertPanel(panelId, { status: "done", data: { items } });
+        setTimeout(() => removePanel(panelId), 60000);
+        speakAndResume(items.length
+          ? `Hier sind die wichtigsten ${items.length} Schlagzeilen.`
+          : "Ich konnte gerade keine aktuellen Schlagzeilen finden.");
+      },
+      onError: () => {
+        upsertPanel(panelId, { status: "error" });
+        speakAndResume("Ich konnte keine aktuellen Nachrichten abrufen.");
+      },
+    });
+  };
+
+  /* ─── Parsers for streaming LLM payloads ────────────────────────── */
+  // (Loose & forgiving — the chat stream may arrive token by token.)
+
+  /* eslint-disable */ // these are pure parsers, no React deps
+  const _parseEmailDraft = (txt) => {
+    const out = { to: "", subject: "", body: "" };
+    const toM   = txt.match(/^\s*An\s*[:\-]\s*(.+)$/im) || txt.match(/^\s*To\s*[:\-]\s*(.+)$/im);
+    const sbjM  = txt.match(/^\s*Betreff\s*[:\-]\s*(.+)$/im) || txt.match(/^\s*Subject\s*[:\-]\s*(.+)$/im);
+    if (toM)  out.to = toM[1].trim();
+    if (sbjM) out.subject = sbjM[1].trim();
+    // Body = everything after a blank line OR after "Body:" / "Inhalt:"
+    const bodyM = txt.match(/(?:^|\n)\s*(?:Body|Inhalt|Text|Nachricht)\s*[:\-]\s*([\s\S]+)$/i)
+               || txt.match(/\n\s*\n([\s\S]+)$/);
+    if (bodyM) out.body = bodyM[1].trim();
+    else if (!toM && !sbjM) out.body = txt.trim(); // fallback: show raw stream
+    return out;
+  };
+  const _parseRecipe = (txt, fallbackTitle) => {
+    const out = { title: fallbackTitle || "", prep_time: "", ingredients: [], steps: [] };
+    const titleM = txt.match(/^\s*TITEL\s*[:\-]\s*(.+)$/im);
+    const timeM  = txt.match(/^\s*ZEIT\s*[:\-]\s*(.+)$/im);
+    if (titleM) out.title = titleM[1].trim();
+    if (timeM)  out.prep_time = timeM[1].trim();
+    const ingBlock = txt.match(/ZUTATEN\s*[:\-]?\s*([\s\S]*?)(?:SCHRITTE\s*[:\-]|$)/i);
+    if (ingBlock) {
+      out.ingredients = ingBlock[1]
+        .split("\n").map((l) => l.replace(/^[\-\*•\s]+/, "").trim()).filter((l) => l && !/^ZUTATEN/i.test(l));
+    }
+    const stepBlock = txt.match(/SCHRITTE\s*[:\-]?\s*([\s\S]*)$/i);
+    if (stepBlock) {
+      out.steps = stepBlock[1]
+        .split("\n").map((l) => l.replace(/^[\d\.\)\-\*•\s]+/, "").trim()).filter((l) => l && !/^SCHRITTE/i.test(l));
+    }
+    return out;
+  };
+  const _parseNewsItems = (txt) => {
+    const lines = txt.split("\n").map((l) => l.trim()).filter((l) => /^[\-\*•]/.test(l));
+    return lines.map((l) => {
+      const body = l.replace(/^[\-\*•\s]+/, "");
+      const [title, source] = body.split(/::|—|\s\-\s/).map((s) => s?.trim());
+      return { title: title || body, source: source || "" };
+    }).filter((x) => x.title);
+  };
+  // expose as stable refs
+  const parseEmailDraft = _parseEmailDraft;
+  const parseRecipe = _parseRecipe;
+  const parseNewsItems = _parseNewsItems;
+  /* eslint-enable */
 
   /* ─── Visual demo (no backend) ───────────────────────────────────── */
   const runDemoSequence = () => {
@@ -1165,7 +1415,13 @@ const HoloPanelLayer = ({ panels }) => {
     >
       {ordered.map((p, i) => {
         const slot = PANEL_SLOTS[i % PANEL_SLOTS.length];
-        return <HoloPanel key={p.id} panel={p} slot={slot} index={i} />;
+        // Rich-kind panels (weather/email/recipe/news) use the dedicated
+        // RichHoloPanel renderer; everything else falls through to the
+        // legacy compact panel used for the chat-stream "thinking" UI.
+        const isRich = p.kind && p.kind !== "search";
+        return isRich
+          ? <RichHoloPanel key={p.id} panel={p} slot={slot} index={i} />
+          : <HoloPanel     key={p.id} panel={p} slot={slot} index={i} />;
       })}
     </div>
   );
