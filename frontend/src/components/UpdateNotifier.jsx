@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
 
 const REPO = process.env.REACT_APP_GITHUB_REPO || "";
 const APP_VERSION = process.env.REACT_APP_APP_VERSION || "0.0.0";
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 h
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 min — frequent enough to catch fresh CI builds
 
 // Detect Capacitor native runtime (so we don't badger Web users with
 // "install APK" prompts they can't use).

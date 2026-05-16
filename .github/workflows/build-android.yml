@@ -48,12 +48,18 @@ jobs:
 
       - name: Compute app version
         id: version
+        # Strategy: use `0.0.<run_number>` as a monotonically increasing
+        # semver-ish version so the in-app UpdateNotifier can simply
+        # compare with the GitHub `releases/latest` tag (also `0.0.<n>`)
+        # and surface upgrades on every successful main-push build.
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Tagged stable release wins — use the actual tag
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.0.0-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            # Auto-incremented version derived from the workflow run number
+            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
             echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -160,21 +166,21 @@ jobs:
           path: frontend/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      # Rolling "nightly" pre-release on every main push so the in-app
-      # download button + UpdateNotifier always have a freshly built APK
-      # users can install without a GitHub login.
-      - name: Publish rolling debug release (on main push)
+      # Every successful main-push gets its own GitHub Release tagged
+      # `v0.0.<run_number>`. Marked as a normal (non-prerelease) so the
+      # `releases/latest` endpoint returns it, which is what both the
+      # in-app UpdateNotifier and the Account-page download card poll.
+      - name: Publish auto-versioned release (on main push)
         if: steps.version.outputs.is_release == 'false' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly
-          name: "A.R.I.A. Nightly (${{ steps.version.outputs.version }})"
+          tag_name: v${{ steps.version.outputs.version }}
+          name: "A.R.I.A. v${{ steps.version.outputs.version }}"
           body: |
-            Automatischer Build vom letzten main-Push.
+            Automatischer Build #${{ github.run_number }}
             Commit: ${{ github.sha }}
-            Diese Version wird bei jedem Push überschrieben.
-            Für stabile Releases bitte ein Git-Tag `vX.Y.Z` setzen.
-          prerelease: true
+          prerelease: false
+          make_latest: "true"
           files: |
             frontend/android/app/build/outputs/apk/debug/*.apk
           fail_on_unmatched_files: false
