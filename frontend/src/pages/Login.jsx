@@ -4,6 +4,9 @@ import { toast } from "sonner";
 import axios from "axios";
 import { Eye, EyeSlash } from "@phosphor-icons/react";
 
+const APP_VERSION = process.env.REACT_APP_APP_VERSION || "dev";
+const IS_NATIVE = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+
 const Login = () => {
   const { login } = useAuth();
   const { theme } = useTheme();
@@ -36,21 +39,30 @@ const Login = () => {
       await login(formData.email, formData.password);
       toast.success("Willkommen!");
     } catch (e) {
-      // Detailed error for cross-origin / network issues so the user can
-      // tell whether it's wrong credentials vs. a connectivity problem.
-      let msg = formatApiError(e.response?.data?.detail);
-      if (!msg) {
-        if (e?.code === "ERR_NETWORK" || /Network Error/i.test(e?.message || "")) {
-          msg = "Server nicht erreichbar (Netzwerkfehler). Prüfe Internet, DynDNS und Port-Forwarding.";
-        } else if (e?.response?.status === 401) {
-          msg = "E-Mail oder Passwort ist falsch.";
-        } else if (e?.response?.status >= 500) {
-          msg = `Server-Fehler (${e.response.status}). Bitte ARIA-Container prüfen.`;
-        } else {
-          msg = e?.message || "Login fehlgeschlagen";
-        }
+      // Build a meaningful error message. We MUST only call formatApiError
+      // when there's an actual server-supplied detail — otherwise it returns
+      // its generic fallback and masks the real network/CORS/HTTP problem.
+      const detail = e?.response?.data?.detail;
+      let msg;
+      if (detail) {
+        msg = formatApiError(detail);
+      } else if (e?.code === "ERR_NETWORK" || /Network Error/i.test(e?.message || "")) {
+        msg = `Server nicht erreichbar (Netzwerkfehler).\nURL: ${API}\nPrüfe Internet, DynDNS, Port-Forwarding & CORS.`;
+      } else if (e?.response?.status === 401) {
+        msg = "E-Mail oder Passwort ist falsch.";
+      } else if (e?.response?.status === 0 || e?.message?.includes("CORS")) {
+        msg = `CORS / Cross-Origin geblockt.\nURL: ${API}`;
+      } else if (e?.response?.status >= 500) {
+        msg = `Server-Fehler (${e.response.status}). Bitte ARIA-Container prüfen.`;
+      } else if (e?.message) {
+        msg = `Fehler: ${e.message}`;
+      } else {
+        msg = "Login fehlgeschlagen (unbekannter Fehler).";
       }
-      toast.error(msg, { duration: 6000 });
+      toast.error(msg, { duration: 8000 });
+      // Also log the full error to the console so it can be inspected via
+      // chrome://inspect when needed.
+      console.error("[ARIA] Login failed:", e);
     } finally {
       setLoading(false);
     }
@@ -115,6 +127,16 @@ const Login = () => {
           <p className="text-center text-gray-700 text-[10px] mt-4 tracking-[0.2em]" data-testid="login-version">
             ARIA {ariaVersion || "..."} · LCARS INTERFACE
           </p>
+          {IS_NATIVE && (
+            <div className="text-center mt-2 space-y-0.5">
+              <p className="text-[9px] text-gray-600 tracking-widest" data-testid="login-app-version">
+                APP v{APP_VERSION}
+              </p>
+              <p className="text-[8px] text-gray-700 break-all px-2" style={{ textTransform: "none" }}>
+                {API}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -272,7 +272,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Aria Dashboard v2.0", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# CORS — must use a regex-matching all-origins pattern (NOT the literal "*")
+# when allow_credentials=True. Browsers will refuse cross-origin responses
+# that combine wildcard origin with credentials, which was breaking the
+# Android (Capacitor) app login.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=".*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/")
