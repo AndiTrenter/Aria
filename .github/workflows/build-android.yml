@@ -116,6 +116,42 @@ jobs:
         working-directory: frontend
         run: npx cap sync android
 
+      - name: Generate launcher icon + splash from SVG sources
+        # Rasterises /app/frontend/resources/{icon,splash}.svg via librsvg
+        # and then lets @capacitor/assets fan everything out into all
+        # Android densities (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi) plus the
+        # adaptive-icon foreground / background layers + splash screen.
+        # No animation here — Android doesn't allow animated launcher icons —
+        # but the icon itself is a neural orb that pops on the home screen.
+        working-directory: frontend
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y --no-install-recommends librsvg2-bin || true
+          mkdir -p assets
+          # 1) Rasterise to high-res PNG (1024 + 2732)
+          rsvg-convert -w 1024 -h 1024 resources/icon.svg   -o assets/icon-only.png
+          rsvg-convert -w 2732 -h 2732 resources/splash.svg -o assets/splash.png
+          # @capacitor/assets needs three inputs: icon, icon-foreground, icon-background
+          # We split the icon manually: foreground is the same neural orb,
+          # background is a flat dark navy disc — the OS automatically
+          # combines them for the adaptive-icon mask.
+          cp assets/icon-only.png assets/icon.png
+          cp assets/icon-only.png assets/icon-foreground.png
+          # Solid dark background (will be visible behind round/square masks)
+          rsvg-convert -w 1024 -h 1024 \
+            <(printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="#0b0712"/></svg>') \
+            -o assets/icon-background.png
+          # Dark variants for night-mode splash
+          cp assets/splash.png assets/splash-dark.png
+          # 2) Generate every Android density via the official tool
+          npx --yes @capacitor/assets generate --android \
+            --iconBackgroundColor '#0b0712' \
+            --iconBackgroundColorDark '#0b0712' \
+            --splashBackgroundColor '#0b0712' \
+            --splashBackgroundColorDark '#0b0712' || true
+          # 3) Confirm output
+          echo "── generated res/mipmap-* ──"
+          ls -la android/app/src/main/res/mipmap-* 2>/dev/null | head -20 || true
+
       - name: Pin debug keystore (deterministic signature across all builds)
         # IMPORTANT for in-app updates:
         # Android refuses to install an APK over an existing one if the

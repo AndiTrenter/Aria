@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ARIA splash screen — source SVG (2732 × 2732, fits all Android/iOS).
+     Same neural cortex visual language as the launcher icon, scaled and
+     centred for use as the static launch screen behind the React app. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" width="2732" height="2732">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="65%">
+      <stop offset="0%"  stop-color="#1a0a05"/>
+      <stop offset="50%" stop-color="#0a0612"/>
+      <stop offset="100%" stop-color="#020108"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#fff1cc"/>
+      <stop offset="35%" stop-color="#ffb061"/>
+      <stop offset="70%" stop-color="#ff5a1f"/>
+      <stop offset="100%" stop-color="rgba(255,90,30,0)"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"  stop-color="rgba(255,150,80,0.55)"/>
+      <stop offset="55%" stop-color="rgba(255,90,30,0.20)"/>
+      <stop offset="100%" stop-color="rgba(120,20,0,0)"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="60" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="lineGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="2732" height="2732" fill="url(#bg)"/>
+
+  <!-- ARIA wordmark, very subtle -->
+  <text x="1366" y="2400" text-anchor="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="48" letter-spacing="32"
+        fill="rgba(255,180,120,0.55)">A . R . I . A .</text>
+  <text x="1366" y="2460" text-anchor="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="22" letter-spacing="8"
+        fill="rgba(255,180,120,0.30)">ADAPTIVE REASONING INTELLIGENCE ASSISTANT</text>
+
+  <!-- Centred at (1366, 1300) — slight optical lift -->
+  <g transform="translate(1366,1300)">
+    <circle r="900" fill="url(#halo)"/>
+    <g fill="none" stroke="#ff8c4a" stroke-width="3" opacity="0.45"
+       stroke-dasharray="6 12" stroke-linecap="round">
+      <circle r="780"/>
+      <ellipse rx="740" ry="450" transform="rotate(20)"/>
+      <ellipse rx="740" ry="450" transform="rotate(-30)"/>
+      <ellipse rx="740" ry="250" transform="rotate(60)"/>
+    </g>
+    <g fill="none" stroke="#ff7038" stroke-width="5" opacity="0.85" filter="url(#lineGlow)">
+      <polygon points="0,-660 570,-330 570,330 0,660 -570,330 -570,-330"/>
+      <polygon points="0,-660 570,-330 570,330 0,660 -570,330 -570,-330" transform="rotate(30)"/>
+      <polygon points="0,-500 420,-220 290,290 -290,290 -420,-220"/>
+      <polygon points="0,-500 420,-220 290,290 -290,290 -420,-220" transform="rotate(36)"/>
+      <path d="M -570,-330 L 570,330 M -570,330 L 570,-330 M 0,-660 L 0,660"/>
+    </g>
+    <g fill="#ffd28a" filter="url(#lineGlow)">
+      <circle cx="0"    cy="-660" r="22"/>
+      <circle cx="570"  cy="-330" r="22"/>
+      <circle cx="570"  cy="330"  r="22"/>
+      <circle cx="0"    cy="660"  r="22"/>
+      <circle cx="-570" cy="330"  r="22"/>
+      <circle cx="-570" cy="-330" r="22"/>
+    </g>
+    <circle r="380" fill="url(#core)" filter="url(#glow)"/>
+    <circle r="110" fill="#ffffff" opacity="0.95" filter="url(#glow)"/>
+  </g>
+</svg>

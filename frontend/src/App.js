@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import axios from "axios";
 import { Toaster } from "@/components/ui/sonner";
 import UpdateNotifier from "@/components/UpdateNotifier";
+import BootReveal from "@/components/BootReveal";
 
 import SetupWizard from "@/pages/SetupWizard";
 import Login from "@/pages/Login";
@@ -402,6 +403,7 @@ function App() {
     <div className="App min-h-screen">
       <BrowserRouter>
         <AuthProvider>
+          <BootReveal />
           <AppRouter />
           <UpdateNotifier />
           <Toaster position="top-right" toastOptions={{

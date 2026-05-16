@@ -14,6 +14,17 @@
   "plugins": {
     "App": {
       "launchUrl": ""
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 600,
+      "backgroundColor": "#0b0712",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "useDialog": false
     }
   }
 }

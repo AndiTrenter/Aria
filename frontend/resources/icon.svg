@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ARIA neural launcher icon — source SVG (1024 × 1024).
+     This SVG is rasterised in CI by `rsvg-convert` and then fed into
+     `@capacitor/assets` which fans it out across every Android density
+     (mdpi → xxxhdpi) + adaptive foreground/background. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Deep navy radial backdrop -->
+    <radialGradient id="bg" cx="50%" cy="45%" r="65%">
+      <stop offset="0%"  stop-color="#1b0a05"/>
+      <stop offset="55%" stop-color="#0b0712"/>
+      <stop offset="100%" stop-color="#04030a"/>
+    </radialGradient>
+
+    <!-- Glowing core -->
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#fff1cc"/>
+      <stop offset="35%" stop-color="#ffb061"/>
+      <stop offset="70%" stop-color="#ff5a1f"/>
+      <stop offset="100%" stop-color="rgba(255,90,30,0)"/>
+    </radialGradient>
+
+    <!-- Outer plasma halo -->
+    <radialGradient id="halo" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"  stop-color="rgba(255,150,80,0.55)"/>
+      <stop offset="55%" stop-color="rgba(255,90,30,0.20)"/>
+      <stop offset="100%" stop-color="rgba(120,20,0,0)"/>
+    </radialGradient>
+
+    <!-- Strong glow filter for the core -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle glow for filaments -->
+    <filter id="lineGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- Star dust -->
+  <g fill="#ffb070" opacity="0.65">
+    <circle cx="120"  cy="180" r="1.6"/>
+    <circle cx="240"  cy="780" r="2.2"/>
+    <circle cx="900"  cy="200" r="1.4"/>
+    <circle cx="820"  cy="850" r="2.0"/>
+    <circle cx="180"  cy="540" r="1.2"/>
+    <circle cx="780"  cy="540" r="1.5"/>
+    <circle cx="500"  cy="120" r="1.8"/>
+    <circle cx="500"  cy="900" r="1.6"/>
+  </g>
+
+  <!-- Plasma halo behind everything -->
+  <circle cx="512" cy="512" r="430" fill="url(#halo)"/>
+
+  <!-- Faint dashed orbits — these give the "neural shell" look -->
+  <g fill="none" stroke="#ff8c4a" stroke-width="1.5" opacity="0.45"
+     stroke-dasharray="3 6" stroke-linecap="round">
+    <circle cx="512" cy="512" r="380"/>
+    <ellipse cx="512" cy="512" rx="360" ry="220" transform="rotate(20 512 512)"/>
+    <ellipse cx="512" cy="512" rx="360" ry="220" transform="rotate(-30 512 512)"/>
+    <ellipse cx="512" cy="512" rx="360" ry="120" transform="rotate(60 512 512)"/>
+  </g>
+
+  <!-- Inner geodesic dome — the cortex skeleton -->
+  <g fill="none" stroke="#ff7038" stroke-width="2.4" opacity="0.85" filter="url(#lineGlow)">
+    <!-- Hexagon outer -->
+    <polygon points="
+      512,180  788,335  788,689  512,844  236,689  236,335
+    "/>
+    <!-- Hexagon rotated -->
+    <polygon points="
+      512,180  788,335  788,689  512,844  236,689  236,335
+    " transform="rotate(30 512 512)"/>
+    <!-- Inner pentagon-ish facet lines -->
+    <polygon points="
+      512,260  720,400  640,650  384,650  304,400
+    "/>
+    <polygon points="
+      512,260  720,400  640,650  384,650  304,400
+    " transform="rotate(36 512 512)"/>
+    <!-- Crossing struts -->
+    <path d="M 236,335 L 788,689 M 236,689 L 788,335 M 512,180 L 512,844 M 304,400 L 720,400 M 304,624 L 720,624"/>
+  </g>
+
+  <!-- Neural nodes -->
+  <g fill="#ffd28a" filter="url(#lineGlow)">
+    <circle cx="512" cy="180" r="9"/>
+    <circle cx="788" cy="335" r="9"/>
+    <circle cx="788" cy="689" r="9"/>
+    <circle cx="512" cy="844" r="9"/>
+    <circle cx="236" cy="689" r="9"/>
+    <circle cx="236" cy="335" r="9"/>
+    <circle cx="720" cy="400" r="6"/>
+    <circle cx="640" cy="650" r="6"/>
+    <circle cx="384" cy="650" r="6"/>
+    <circle cx="304" cy="400" r="6"/>
+  </g>
+
+  <!-- Bright pulsing core -->
+  <circle cx="512" cy="512" r="180" fill="url(#core)" filter="url(#glow)"/>
+  <circle cx="512" cy="512" r="50"  fill="#ffffff" opacity="0.92" filter="url(#glow)"/>
+
+  <!-- Outer thin glow ring (signature touch) -->
+  <circle cx="512" cy="512" r="455" fill="none"
+          stroke="rgba(255,140,70,0.55)" stroke-width="3"/>
+  <circle cx="512" cy="512" r="450" fill="none"
+          stroke="rgba(255,200,140,0.25)" stroke-width="1"/>
+</svg>
