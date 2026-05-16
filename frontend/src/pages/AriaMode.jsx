@@ -144,19 +144,27 @@ const AriaMode = () => {
     return () => { alive = false; if (raf) cancelAnimationFrame(raf); };
   }, [mode, micLevelRef]);
 
-  // Viewport-responsive cortex size — keeps the orb fully visible even
-  // inside a narrow split-pane preview (Emergent App-Builder, half-screen).
-  // We pick the smaller of viewport-width × 0.55 and viewport-height × 0.65,
-  // capped at 600px and floored at 320px.
+  // Viewport-responsive cortex size — keeps the orb fully visible.
+  //  • On phones (< 640 px) we shrink it more aggressively so it doesn't
+  //    crowd the screen and the floating HUD/transcript stays readable.
+  //  • On desktop we cap at 440 px so the side-HUD columns fit too.
   const computeOrbSize = () => {
-    if (typeof window === "undefined") return 380;
+    if (typeof window === "undefined") return 320;
     const w = window.innerWidth || 1280;
     const h = window.innerHeight || 720;
+    if (w < 640) {
+      // Phone: ~60 % of width OR 40 % of height, whichever is smaller
+      return Math.max(200, Math.min(280, Math.floor(Math.min(w * 0.6, h * 0.4))));
+    }
     return Math.max(260, Math.min(440, Math.floor(Math.min(w * 0.36, h * 0.46))));
   };
   const [orbSize, setOrbSize] = useState(computeOrbSize);
+  const [isPhone, setIsPhone] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
   useEffect(() => {
-    const onResize = () => setOrbSize(computeOrbSize());
+    const onResize = () => {
+      setOrbSize(computeOrbSize());
+      setIsPhone(window.innerWidth < 640);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -825,18 +833,17 @@ const AriaMode = () => {
       {panels.length === 0 && <SideHudPanel side="right" mode={mode} />}
 
       {/* Center: Cortex cloud — z-50 so it's ALWAYS on top of every HUD
-          element, side panels, and background fx (the user explicitly
-          requested the orb sit on the topmost layer).
-          padding-bottom: shifts the visual centre up — the bottom command
-          bar takes ~100px of screen, so without compensation the orb
-          looks "low".
-          padding-right: small bias to compensate for the wider right-side
-          HUD column (CHRONO + SUBSYSTEMS + NETWORK is denser than the
-          left SYSTEM/NEURAL/CHANNELS column).
+          element, side panels, and background fx.
+          On phone (< 640 px) we centre perfectly (no HUD-column bias).
+          On desktop we shift slightly left to compensate for the wider
+          right-side HUD column.
       */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none"
-        style={{ paddingBottom: "22vh", paddingRight: "16vw" }}
+        style={{
+          paddingBottom: isPhone ? "12vh" : "22vh",
+          paddingRight: isPhone ? "0" : "16vw",
+        }}
       >
         <div className="relative" style={{ width: orbSize, height: orbSize }}>
           <CortexCloud
