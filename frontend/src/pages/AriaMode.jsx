@@ -659,6 +659,28 @@ const AriaMode = () => {
     setMode("thinking");
     clearPanels();
 
+    // EVERY chat command gets its own "activity" rich holo-panel — this
+    // is what makes ARIA feel JARVIS-like: the user always sees a
+    // floating window showing what she's working on, step by step, plus
+    // the streaming answer at the bottom.
+    const activityId = "act_" + Date.now();
+    upsertPanel(activityId, {
+      kind: "activity",
+      title: kind === "email" ? "ENTWURF" : "ANFRAGE",
+      status: "active",
+      data: { question: text, steps: [], answer: "", streaming: true },
+    });
+    const updateActivity = (patch) =>
+      setPanels((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const idx = list.findIndex((p) => p.id === activityId);
+        if (idx === -1) return list;
+        const copy = [...list];
+        const cur = copy[idx];
+        copy[idx] = { ...cur, ...patch, data: { ...(cur.data || {}), ...(patch.data || {}) }, ts: Date.now() };
+        return copy;
+      });
+
     // Initial step skeleton — gets filled in by real backend events
     const initialSteps = (kind === "email" ? [
       { id: "parse",        label: "Verstehe Anfrage",        status: "active" },
@@ -675,6 +697,7 @@ const AriaMode = () => {
       { id: "reason", label: "Denke nach",              status: "pending" },
     ]).map((s) => ({ ...s }));
 
+    updateActivity({ data: { steps: initialSteps } });
     setThinking({ kind, steps: initialSteps, result: null });
 
     let finalText = "";
@@ -689,17 +712,22 @@ const AriaMode = () => {
         if (status === "active" || status === "done") {
           try { playThinkTick(); } catch {}
         }
-        // Update or append step (always preserve the wrapping {kind,steps,result} shape)
+        // Update the shared thinking ledger AND the activity-panel mirror
+        // so the floating holo-window stays perfectly in sync.
+        let nextSteps = null;
         setThinking((prev) => {
           if (!prev || !Array.isArray(prev.steps)) return prev;
           const idx = prev.steps.findIndex((s) => s.id === id);
           if (idx === -1) {
-            return { ...prev, steps: [...prev.steps, { id, label: label || id, status, detail }] };
+            nextSteps = [...prev.steps, { id, label: label || id, status, detail }];
+          } else {
+            const copy = [...prev.steps];
+            copy[idx] = { ...copy[idx], label: label || copy[idx].label, status, detail: detail ?? copy[idx].detail };
+            nextSteps = copy;
           }
-          const next = [...prev.steps];
-          next[idx] = { ...next[idx], label: label || next[idx].label, status, detail: detail ?? next[idx].detail };
-          return { ...prev, steps: next };
+          return { ...prev, steps: nextSteps };
         });
+        if (nextSteps) updateActivity({ data: { steps: nextSteps } });
         // Email draft creation success → user can confirm verbally
         if (id === "body" && status === "done" && kind === "email") {
           isPendingEmailConfirm = true;
@@ -727,10 +755,8 @@ const AriaMode = () => {
         if (typeof text !== "string") return;
         finalText = text;
         setResponse(text);
-        setThinking((prev) => {
-          if (!prev) return prev;
-          return { ...prev, result: { body: text } };
-        });
+        setThinking((prev) => prev ? { ...prev, result: { body: text } } : prev);
+        updateActivity({ data: { answer: text, streaming: true } });
       },
       onResult: (data) => {
         finalText = data?.text || finalText || "";
@@ -738,18 +764,27 @@ const AriaMode = () => {
       onError: (err) => {
         finalText = `Fehler: ${err?.message || "Stream konnte nicht verarbeitet werden."}`;
         try { playErrorSound(); } catch {}
+        updateActivity({ status: "error", data: { answer: finalText, streaming: false } });
       },
       onDone: () => {
-        // mark all pending steps as done
+        // mark all pending steps as done — for both the thinking ledger
+        // and the live activity holo-panel.
+        let finalSteps = null;
         setThinking((prev) => {
           if (!prev || !Array.isArray(prev.steps)) return null;
-          const done = prev.steps.map((s) => ({
+          finalSteps = prev.steps.map((s) => ({
             ...s,
             status: s.status === "pending" || s.status === "active" ? "done" : s.status,
           }));
-          return { ...prev, steps: done, result: { body: finalText } };
+          return { ...prev, steps: finalSteps, result: { body: finalText } };
         });
         setResponse(finalText);
+        updateActivity({
+          status: "done",
+          data: { steps: finalSteps || [], answer: finalText, streaming: false },
+        });
+        // Auto-fade the activity panel after 25 s so the cortex view stays clean
+        setTimeout(() => removePanel(activityId), 25000);
 
         if (isPendingEmailConfirm) {
           setPendingEmail(true);

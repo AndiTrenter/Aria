@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Sun, CloudRain, Cloud, Snowflake, Lightning, Drop, Wind, Thermometer,
          Envelope, ChefHat, Newspaper, MagnifyingGlass, CircleNotch,
-         CheckCircle, Warning, Globe } from "@phosphor-icons/react";
+         CheckCircle, Warning, Globe, Brain } from "@phosphor-icons/react";
 
 /**
  * RichHoloPanel
@@ -23,6 +23,7 @@ const KIND_META = {
   email:   { hue: "38",  icon: <Envelope size={11} weight="bold" />, title: "E-MAIL" },
   recipe:  { hue: "28",  icon: <ChefHat size={11} weight="bold" />, title: "REZEPT" },
   news:    { hue: "45",  icon: <Newspaper size={11} weight="bold" />, title: "NEWS" },
+  activity:{ hue: "180", icon: <Brain size={11} weight="bold" />, title: "ANFRAGE" },
   search:  { hue: "180", icon: <MagnifyingGlass size={11} weight="bold" />, title: "SUCHE" },
 };
 
@@ -45,6 +46,7 @@ export default function RichHoloPanel({ panel, slot, index }) {
   const width = panel.kind === "email" ? 340
               : panel.kind === "news"  ? 320
               : panel.kind === "recipe" ? 320
+              : panel.kind === "activity" ? 360
               : panel.kind === "weather" ? 280 : 260;
 
   return (
@@ -99,6 +101,7 @@ export default function RichHoloPanel({ panel, slot, index }) {
             {panel.kind === "email"   && <EmailBody   data={panel.data} hue={hue} />}
             {panel.kind === "recipe"  && <RecipeBody  data={panel.data} hue={hue} />}
             {panel.kind === "news"    && <NewsBody    data={panel.data} hue={hue} />}
+            {panel.kind === "activity"&& <ActivityBody data={panel.data} hue={hue} />}
             {(!panel.kind || panel.kind === "search") && (
               <FallbackBody panel={panel} hue={hue} />
             )}
@@ -299,6 +302,54 @@ function FallbackBody({ panel, hue }) {
       )}
       {!panel.query && !panel.snippet && (
         <div className="text-[11px] text-cyan-300/60 italic">verarbeite…</div>
+      )}
+    </div>
+  );
+}
+
+/* ─── ACTIVITY: User-Frage + Live-Thinking-Steps + Antwort ─────────── */
+function ActivityBody({ data, hue }) {
+  if (!data) return <SkeletonLines hue={hue} count={3} />;
+  const { question = "", steps = [], answer = "", streaming = false } = data;
+  return (
+    <div className="space-y-2 text-[11px]" style={{ textTransform: "none" }}>
+      {question && (
+        <div className="border-l-2 pl-2 py-0.5 italic text-cyan-200/90"
+             style={{ borderColor: `hsla(${hue},90%,70%,0.7)` }}>
+          „{question}"
+        </div>
+      )}
+
+      {steps.length > 0 && (
+        <ul className="space-y-1 text-cyan-100/90 max-h-28 overflow-y-auto pr-1">
+          {steps.map((s, i) => (
+            <li key={s.id || i} className="flex items-start gap-1.5 text-[10.5px] leading-snug"
+                style={{ animation: `aria-holo-in 320ms ease-out both`, animationDelay: `${i * 60}ms` }}>
+              <span className="mt-[2px] shrink-0">
+                {s.status === "done"  ? <CheckCircle size={11} weight="fill" className="text-emerald-300" />
+                : s.status === "error"? <Warning size={11} weight="fill" className="text-red-300" />
+                : s.status === "active"? <CircleNotch size={11} weight="bold" className="text-cyan-300 animate-spin" />
+                : <span className="inline-block w-[6px] h-[6px] mt-[3px] rounded-full bg-cyan-400/30" />}
+              </span>
+              <span className={s.status === "done" ? "text-cyan-200/70" : "text-cyan-100"}>
+                {s.label}
+                {s.detail && <span className="block text-[9.5px] text-cyan-300/60">{s.detail}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {answer && (
+        <div className="border-t pt-2 mt-1" style={{ borderColor: `hsla(${hue},80%,60%,0.3)` }}>
+          <div className="text-[9px] tracking-widest text-cyan-300/70 mb-1" style={{ textTransform: "uppercase" }}>
+            Antwort
+          </div>
+          <div className="text-cyan-50 leading-snug whitespace-pre-wrap max-h-44 overflow-y-auto pr-1 text-[11px]">
+            {answer}
+            {streaming && <span className="inline-block w-1.5 h-3 ml-0.5 bg-cyan-300 align-middle animate-pulse" />}
+          </div>
+        </div>
       )}
     </div>
   );
