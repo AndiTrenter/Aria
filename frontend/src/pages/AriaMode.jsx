@@ -358,19 +358,14 @@ const AriaMode = () => {
   useEffect(() => () => stopAll(), [stopAll]);
 
   /* ─── Speech: wake-word loop ─────────────────────────────────────────
-       "Hey-Google-style" reliability:
-       1. Bulletproof restart logic — ANY error (network, audio-capture,
-          not-allowed, no-speech, aborted, audio-busy) cycles the recogniser
-          on a short backoff, never giving up.
-       2. Watchdog timer — if onresult hasn't fired in 12 s we tear down
-          the recogniser and restart from scratch (mobile browsers
-          occasionally "freeze" the stream without firing onend).
-       3. maxAlternatives = 5 to catch fuzzy pronunciations of "Aria"
-          (e.g. "Arya", "Area", "Hier ja").
-       4. Phonetic match list (not just substring "aria") — accepts
-          "aria", "arya", "area", "ariia", "harria", "arija", "areya"
-          and a few common German auto-correct outputs.
+       DISABLED: per user request the always-on wake-word listener is
+       turned off — the app now relies exclusively on the push-to-talk
+       neural button. We keep the function and all of its call sites in
+       place (boot flow / after-speaking / after-listening etc.) but make
+       it a no-op that simply parks ARIA in "idle" mode, ready for the
+       next PTT button press. Re-enable by flipping WAKEWORD_ENABLED.
   ─────────────────────────────────────────────────────────────────── */
+  const WAKEWORD_ENABLED = false;
   const wakeWatchdogRef = useRef(null);
   const wakeAttemptRef = useRef(0);
 
@@ -442,6 +437,20 @@ const AriaMode = () => {
   };
 
   const startWakeWord = useCallback(() => {
+    // Wake-word path is intentionally disabled — see WAKEWORD_ENABLED above.
+    // All callers (boot greeting, post-TTS, post-listening, error recovery)
+    // funnel through here, so this single early-return parks ARIA in idle
+    // mode after each interaction. The user starts the next interaction
+    // by holding the push-to-talk neural button under the cortex orb.
+    if (!WAKEWORD_ENABLED) {
+      try { recognitionRef.current?.stop?.(); } catch {}
+      try { recognitionRef.current?.abort?.(); } catch {}
+      recognitionRef.current = null;
+      if (wakeWatchdogRef.current) { clearTimeout(wakeWatchdogRef.current); wakeWatchdogRef.current = null; }
+      setMode("idle");
+      return;
+    }
+
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     if (speakingGuardRef.current) return; // never compete with TTS
@@ -1304,14 +1313,12 @@ const AriaMode = () => {
   };
 
   /* ─── Render ─────────────────────────────────────────────────────── */
-  // JARVIS-style status microcopy. The wake-word label uses a slow pulse
-  // dot prefix elsewhere; the text itself is meant to feel like a ship
-  // captain reading from a HUD.
+  // JARVIS-style status microcopy. Wake-word is disabled — the idle hint
+  // tells the user to use the neural push-to-talk button instead.
   const statusLabel = mode === "listening" ? "ICH HÖRE …"
     : mode === "thinking" ? "ANALYSIERE — EINEN MOMENT"
     : mode === "speaking" ? "ANTWORT IN ÜBERTRAGUNG"
-    : mode === "wakeword" ? '● WACHE — RUFEN SIE "ARIA"'
-    : "BEREIT";
+    : "BEREIT — BUTTON HALTEN ZUM SPRECHEN";
 
   return (
     <div
