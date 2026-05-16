@@ -37,7 +37,7 @@ export const IS_NATIVE = !!(typeof window !== "undefined" && window.Capacitor?.i
 // Hardcoded default for the Android APK: this is the user's own DynDNS that
 // already proxies through to their ARIA backend on Unraid. They don't have to
 // type anything on first launch — the app just connects.
-export const NATIVE_DEFAULT_BACKEND_URL = "https://www.trenter.internet-box.ch";
+export const NATIVE_DEFAULT_BACKEND_URL = "https://trenter.internet-box.ch";
 
 const resolveBackendUrl = () => {
   if (typeof window !== "undefined") {

@@ -135,6 +135,21 @@ const Login = () => {
               <p className="text-[8px] text-gray-700 break-all px-2" style={{ textTransform: "none" }}>
                 {API}
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Server-URL zurücksetzen und neu eingeben?")) {
+                    localStorage.removeItem("aria_server_url");
+                    localStorage.removeItem("aria_token");
+                    localStorage.removeItem("aria_user");
+                    window.location.href = "/mobile-config";
+                  }
+                }}
+                className="text-[9px] text-orange-500/60 underline tracking-wider mt-1"
+                data-testid="login-reset-url-btn"
+              >
+                Server-URL ändern
+              </button>
             </div>
           )}
         </div>
