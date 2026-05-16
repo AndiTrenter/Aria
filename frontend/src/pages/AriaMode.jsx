@@ -336,6 +336,13 @@ const AriaMode = () => {
   }, []);
 
   /* ─── Speech: active dictation after wake-word ───────────────────── */
+  // Listening-window strategy:
+  //  • `continuous = true` keeps the recogniser open even during pauses.
+  //  • Hard-cap of 8 s of silence before we give up. The timer is reset
+  //    every time we get a non-empty interim result (so the user can
+  //    pause-think-talk without being cut off).
+  //  • As soon as a `final` result arrives we accept the utterance and
+  //    stop the recogniser explicitly.
   const startListening = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
@@ -343,8 +350,21 @@ const AriaMode = () => {
 
     const rec = new SR();
     rec.lang = "de-DE";
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = true;
+
+    let silenceTimer = null;
+    let submitted = false;
+    const SILENCE_MS = 8000; // hard ceiling — 8 s without ANY transcript
+
+    const armSilence = () => {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        // User said nothing useful in 8 s → go back to wake-word loop
+        try { rec.stop(); } catch {}
+      }, SILENCE_MS);
+    };
+    armSilence();
 
     rec.onresult = (e) => {
       if (speakingGuardRef.current || Date.now() < muteUntilRef.current) return;
@@ -353,16 +373,36 @@ const AriaMode = () => {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) final += t; else interim += t;
       }
-      setTranscript(final || interim);
-      if (final) handleUserUtterance(final);
+      const visible = (final || interim).trim();
+      if (visible) {
+        setTranscript(visible);
+        // The user is actively talking — reset the silence countdown so a
+        // brief pause mid-sentence doesn't kill the recogniser.
+        armSilence();
+      }
+      if (final && !submitted) {
+        submitted = true;
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        try { rec.stop(); } catch {}
+        handleUserUtterance(final);
+      }
     };
     rec.onerror = (ev) => {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       if (ev.error !== "no-speech" && ev.error !== "aborted") setError(ev.error);
-      setMode("idle");
-      setTimeout(() => startWakeWord(), 800);
+      // On `no-speech` we just go back to wake-word loop instead of bubbling
+      // the error visually — the user simply didn't say anything in time.
+      if (stateRef.current === "listening" && !submitted) {
+        setMode("idle");
+        setTimeout(() => startWakeWord(), 600);
+      }
     };
     rec.onend = () => {
-      if (stateRef.current === "listening") {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      // Only re-arm wake-word if WE weren't already mid-handover (e.g. a
+      // final transcript already triggered handleUserUtterance which sets
+      // the next mode itself).
+      if (stateRef.current === "listening" && !submitted) {
         setMode("idle");
         setTimeout(() => startWakeWord(), 500);
       }
