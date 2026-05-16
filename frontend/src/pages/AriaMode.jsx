@@ -168,8 +168,36 @@ const AriaMode = () => {
   const streamCtrlRef = useRef(null);
   const panelTimeoutsRef = useRef({});
   const bootRef = useRef(false);
+  // True while ARIA is actually speaking (TTS playing). Used to mute the
+  // wake-word / dictation recognisers so the mic doesn't pick up ARIA's
+  // own voice and feed it back as a new command (the "echo loop").
+  const speakingGuardRef = useRef(false);
+  // Timestamp (ms) until which any incoming speech result should be IGNORED
+  // even if recognition somehow still fires (e.g. tail-end of TTS audio
+  // bleeding into mic after stop()). Set to ~600 ms after TTS ends.
+  const muteUntilRef = useRef(0);
 
   useEffect(() => { stateRef.current = mode; }, [mode]);
+
+  // Centralised "ARIA starts speaking" / "ARIA finished speaking" helpers.
+  // Any TTS path should funnel through these so the mic is reliably
+  // silenced during playback and re-armed afterwards.
+  const beginSpeaking = useCallback(() => {
+    speakingGuardRef.current = true;
+    // Hard-stop any recogniser so the mic stream is released for the duration
+    // of TTS. Even if onend fires, the speakingGuard + muteUntil window will
+    // refuse to act on any leftover transcripts.
+    try { recognitionRef.current?.abort?.(); } catch {}
+    try { recognitionRef.current?.stop?.(); } catch {}
+    recognitionRef.current = null;
+  }, []);
+
+  const endSpeaking = useCallback(() => {
+    speakingGuardRef.current = false;
+    // Block any stray late-arriving transcripts for 600 ms (gives the
+    // speaker/mic AGC + room reverb time to settle).
+    muteUntilRef.current = Date.now() + 600;
+  }, []);
 
   /* ─── cortex intensity mapping ───────────────────────────────────── */
   useEffect(() => {
@@ -219,10 +247,12 @@ const AriaMode = () => {
     const text = `Aria online. Willkommen zurück, ${firstName}. Systeme bereit. Wie kann ich helfen?`;
     setResponse(text);
     setMode("speaking");
+    beginSpeaking();
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
+      endSpeaking();
       setMode("idle");
       startWakeWord();
     };
@@ -272,6 +302,10 @@ const AriaMode = () => {
     rec.interimResults = true;
 
     rec.onresult = (e) => {
+      // Hard-mute: while ARIA herself is speaking (or within the brief
+      // post-TTS settle window) any captured audio is, by construction,
+      // her own voice bleeding back into the mic — ignore it.
+      if (speakingGuardRef.current || Date.now() < muteUntilRef.current) return;
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript.toLowerCase();
         if (t.includes("aria") || t.includes("arya")) {
@@ -284,10 +318,14 @@ const AriaMode = () => {
     };
     rec.onerror = (ev) => {
       if (ev.error === "no-speech" || ev.error === "aborted") {
+        // Don't auto-restart while ARIA is speaking — the speaking flow
+        // will call startWakeWord() itself once playback finishes.
+        if (speakingGuardRef.current) return;
         if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), 500);
       }
     };
     rec.onend = () => {
+      if (speakingGuardRef.current) return;
       if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), 300);
     };
 
@@ -309,6 +347,7 @@ const AriaMode = () => {
     rec.interimResults = true;
 
     rec.onresult = (e) => {
+      if (speakingGuardRef.current || Date.now() < muteUntilRef.current) return;
       let final = "", interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
@@ -344,7 +383,7 @@ const AriaMode = () => {
     if (!ready.ok) { toast.error(ready.hint, { duration: 8000 }); return; }
     const perm = await requestMicPermission();
     if (!perm.ok) { toast.error(perm.hint, { duration: 8000 }); return; }
-    if (mode === "speaking") { try { ttsCtrlRef.current?.stop(); } catch {} ; setMode("idle"); return; }
+    if (mode === "speaking") { try { ttsCtrlRef.current?.stop(); } catch {} ; endSpeaking(); setMode("idle"); return; }
     startListening();
   };
 
@@ -357,6 +396,7 @@ const AriaMode = () => {
     setTypedCmd("");
     try { ttsCtrlRef.current?.stop(); } catch {}
     try { recognitionRef.current?.stop(); } catch {}
+    endSpeaking();
     handleUserUtterance(t);
   };
 
@@ -495,8 +535,10 @@ const AriaMode = () => {
         if (finalText) {
           try { playDoneSound(); } catch {}
           setMode("speaking");
+          beginSpeaking();
           ttsCtrlRef.current = speakStreaming(stripMarkdownForTTS(finalText), {
             onEnd: () => {
+              endSpeaking();
               setMode("idle");
               if (isPendingEmailConfirm) {
                 // Listen for "ja versende" / "verwerfen"
@@ -506,6 +548,7 @@ const AriaMode = () => {
               }
             },
             onError: () => {
+              endSpeaking();
               setMode("idle");
               if (isPendingEmailConfirm) startListening(); else startWakeWord();
             },
@@ -602,9 +645,10 @@ const AriaMode = () => {
       setThinking((p) => p && ({ ...p, steps: p.steps.map((s) => ({ ...s, status: "done" })), result: { body: finalText } }));
       setResponse(finalText);
       setMode("speaking");
+      beginSpeaking();
       ttsCtrlRef.current = speakStreaming(finalText, {
-        onEnd: () => { setMode("idle"); startWakeWord(); },
-        onError: () => { setMode("idle"); startWakeWord(); },
+        onEnd: () => { endSpeaking(); setMode("idle"); startWakeWord(); },
+        onError: () => { endSpeaking(); setMode("idle"); startWakeWord(); },
       });
       setTimeout(() => closeThinking(), 1800);
     }, 2600 + demoPanels.length * 320);
@@ -659,9 +703,10 @@ const AriaMode = () => {
       : `Route nach ${destination} wird berechnet.`;
     setResponse(spoken);
     setMode("speaking");
+    beginSpeaking();
     ttsCtrlRef.current = speakStreaming(spoken, {
-      onEnd: () => { setMode("idle"); startWakeWord(); },
-      onError: () => { setMode("idle"); startWakeWord(); },
+      onEnd: () => { endSpeaking(); setMode("idle"); startWakeWord(); },
+      onError: () => { endSpeaking(); setMode("idle"); startWakeWord(); },
     });
   };
 
