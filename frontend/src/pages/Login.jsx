@@ -14,6 +14,60 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [ariaVersion, setAriaVersion] = useState("");
+  const [updateChecking, setUpdateChecking] = useState(false);
+
+  // Manual update check — useful when the in-app banner hasn't kicked in
+  // yet (e.g. user just installed the APK and the 30-min poll didn't run).
+  // On finding a newer release, opens the APK URL via the system browser
+  // which then triggers Android's package installer.
+  const checkForUpdate = async () => {
+    const repo = process.env.REACT_APP_GITHUB_REPO || "AndiTrenter/Aria";
+    setUpdateChecking(true);
+    // Clear any previous dismiss so a newer version will always show up
+    try { localStorage.removeItem("aria_update_skip_tag"); } catch {}
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) throw new Error(`GitHub ${res.status}`);
+      const list = await res.json();
+      let chosen = null, apk = null;
+      for (const rel of (Array.isArray(list) ? list : [])) {
+        const a = (rel?.assets || []).find((x) => /\.apk$/i.test(x.name));
+        if (a) { chosen = rel; apk = a; break; }
+      }
+      if (!chosen || !apk) {
+        toast.info("Noch kein Release mit APK gefunden.");
+        return;
+      }
+      const latestTag = String(chosen.tag_name || "").replace(/^v/i, "");
+      const current = String(APP_VERSION || "0.0.0").replace(/^v/i, "");
+      // Naive semver-ish compare
+      const cmp = (a, b) => {
+        const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+        const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+          if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+        }
+        return 0;
+      };
+      if (cmp(latestTag, current) <= 0) {
+        toast.success(`Du hast bereits die neueste Version (v${current}).`);
+        return;
+      }
+      const go = window.confirm(
+        `Neue Version v${latestTag} verfügbar (aktuell v${current}).\n\nJetzt herunterladen & installieren?`
+      );
+      if (go) {
+        window.open(apk.browser_download_url, "_system");
+      }
+    } catch (e) {
+      toast.error(`Update-Check fehlgeschlagen: ${e.message}`);
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   useEffect(() => {
     axios.get(`${API}/version`).then(r => setAriaVersion(r.data?.display || "")).catch(() => {});
@@ -128,28 +182,45 @@ const Login = () => {
             ARIA {ariaVersion || "..."} · LCARS INTERFACE
           </p>
           {IS_NATIVE && (
-            <div className="text-center mt-2 space-y-0.5">
-              <p className="text-[9px] text-gray-600 tracking-widest" data-testid="login-app-version">
-                APP v{APP_VERSION}
-              </p>
-              <p className="text-[8px] text-gray-700 break-all px-2" style={{ textTransform: "none" }}>
-                {API}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm("Server-URL zurücksetzen und neu eingeben?")) {
-                    localStorage.removeItem("aria_server_url");
-                    localStorage.removeItem("aria_token");
-                    localStorage.removeItem("aria_user");
-                    window.location.href = "/mobile-config";
-                  }
-                }}
-                className="text-[9px] text-orange-500/60 underline tracking-wider mt-1"
-                data-testid="login-reset-url-btn"
+            <div className="mt-4 p-3 rounded border border-orange-500/30 bg-orange-500/5 text-center space-y-2">
+              <p
+                className="text-orange-300 font-bold tracking-widest"
+                style={{ fontSize: "15px", textTransform: "none" }}
+                data-testid="login-app-version"
               >
-                Server-URL ändern
-              </button>
+                APP-VERSION v{APP_VERSION}
+              </p>
+              <p className="text-[10px] text-orange-200/70 break-all px-2" style={{ textTransform: "none" }}>
+                Server: {API}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={checkForUpdate}
+                  disabled={updateChecking}
+                  className="text-[11px] px-3 py-1.5 rounded bg-orange-500/20 text-orange-200 border border-orange-400/40 hover:bg-orange-500/30 disabled:opacity-50"
+                  style={{ textTransform: "none" }}
+                  data-testid="login-check-update-btn"
+                >
+                  {updateChecking ? "Prüfe …" : "🔄  Auf Update prüfen"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Server-URL zurücksetzen und neu eingeben?")) {
+                      localStorage.removeItem("aria_server_url");
+                      localStorage.removeItem("aria_token");
+                      localStorage.removeItem("aria_user");
+                      window.location.href = "/mobile-config";
+                    }
+                  }}
+                  className="text-[10px] text-orange-400/70 underline tracking-wider"
+                  style={{ textTransform: "none" }}
+                  data-testid="login-reset-url-btn"
+                >
+                  Server-URL ändern
+                </button>
+              </div>
             </div>
           )}
         </div>

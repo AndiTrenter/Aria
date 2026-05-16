@@ -58,27 +58,42 @@ export default function UpdateNotifier() {
     let alive = true;
     const check = async () => {
       try {
-        const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+        // Fetch ALL releases (incl. pre-releases) and pick the newest one
+        // by semver that actually has an APK asset. `releases/latest` is
+        // unreliable when only pre-releases exist or when GitHub hasn't
+        // yet finalised the "latest" pointer after a workflow run.
+        const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=20`, {
           headers: { Accept: "application/vnd.github+json" },
         });
         if (!res.ok) return;
-        const data = await res.json();
-        const latestTag = data?.tag_name || data?.name || "";
+        const list = await res.json();
+        if (!Array.isArray(list) || list.length === 0) return;
+        let best = null, bestApk = null;
+        for (const rel of list) {
+          const apkAsset = (rel?.assets || []).find((a) => /\.apk$/i.test(a.name));
+          if (!apkAsset?.browser_download_url) continue;
+          const tag = rel?.tag_name || rel?.name || "";
+          if (!/\d/.test(tag)) continue; // skip "nightly", "latest" etc.
+          if (!best || cmpSemver(tag, best?.tag_name || "") > 0) {
+            best = rel; bestApk = apkAsset;
+          }
+        }
+        if (!best || !bestApk) return;
+        const latestTag = best.tag_name || best.name || "";
         if (cmpSemver(latestTag, APP_VERSION) <= 0) return;
-        const apkAsset = (data?.assets || []).find((a) => /\.apk$/i.test(a.name));
-        if (!apkAsset?.browser_download_url) return;
         if (!alive) return;
-        // Honour per-version dismiss (so a user who tapped Später doesn't
-        // see the same banner every 6 h)
+        // Only honour the dismiss for the EXACT same tag — newer versions
+        // always re-arm the banner so the user can't accidentally block
+        // themselves from all future updates.
         try {
           const skip = localStorage.getItem("aria_update_skip_tag");
           if (skip === latestTag) return;
         } catch {}
         setRelease({
           tag: latestTag,
-          apkUrl: apkAsset.browser_download_url,
-          name: data?.name || latestTag,
-          body: (data?.body || "").slice(0, 600),
+          apkUrl: bestApk.browser_download_url,
+          name: best?.name || latestTag,
+          body: (best?.body || "").slice(0, 600),
         });
       } catch (e) {
         // network blip — silently retry next interval
