@@ -272,12 +272,44 @@ const AriaMode = () => {
     };
   }, []);
 
-  /* ─── Boot greeting (one-time per session, only when this mode opens) ─ */
+  /* ─── Boot greeting (one-time per session, only when this mode opens) ─
+       JARVIS-feel: time-of-day-aware, varied phrasing, calls user by name,
+       occasionally adds a status quip. Never the same line twice in a row.
+  ─────────────────────────────────────────────────────────────────── */
+  const pickBootGreeting = (firstName) => {
+    const h = new Date().getHours();
+    const partOfDay =
+      h < 5 ? "in der späten Nacht" :
+      h < 11 ? "am Morgen" :
+      h < 14 ? "zur Mittagszeit" :
+      h < 18 ? "am Nachmittag" :
+      h < 22 ? "am Abend" : "spät am Abend";
+
+    const greetings = [
+      `Aria online. Willkommen zurück, ${firstName}. Alle Systeme nominal — wie kann ich behilflich sein?`,
+      `Guten ${h < 11 ? "Morgen" : h < 18 ? "Tag" : "Abend"}, ${firstName}. Bereit zu dienen.`,
+      `${firstName}. Schön, Sie wiederzuhören. Die Kerne sind warmgelaufen.`,
+      `Systeme aktiv, ${firstName}. Sagen Sie wann, und ich erledige es.`,
+      `Online und einsatzbereit, Sir. Was darf ich für Sie tun, ${firstName}?`,
+      `${firstName}. Ich war bereits gespannt. Womit kann ich beginnen?`,
+      `A.R.I.A. wieder zur Stelle, ${firstName}. Subsysteme grün, Sensoren ${partOfDay} unauffällig.`,
+      `Willkommen zurück. Ich habe ${partOfDay} alles im Blick behalten — eine Anweisung, ${firstName}?`,
+      `Reaktor stabil, Latenz minimal, Stimmung ausgezeichnet. Was steht an, ${firstName}?`,
+    ];
+    // Avoid repeating the previous boot line within the same browser
+    let last = "";
+    try { last = sessionStorage.getItem("aria_last_boot") || ""; } catch {}
+    const pool = greetings.filter((g) => g !== last);
+    const pick = pool[Math.floor(Math.random() * pool.length)] || greetings[0];
+    try { sessionStorage.setItem("aria_last_boot", pick); } catch {}
+    return pick;
+  };
+
   useEffect(() => {
     if (bootRef.current) return;
     bootRef.current = true;
     const firstName = (user?.name || "").split(" ")[0] || "Commander";
-    const text = `Aria online. Willkommen zurück, ${firstName}. Systeme bereit. Wie kann ich helfen?`;
+    const text = pickBootGreeting(firstName);
     setResponse(text);
     setMode("speaking");
     beginSpeaking();
@@ -315,6 +347,7 @@ const AriaMode = () => {
     try { streamCtrlRef.current?.abort(); } catch {}
     ttsCtrlRef.current = null;
     streamCtrlRef.current = null;
+    if (wakeWatchdogRef.current) { clearTimeout(wakeWatchdogRef.current); wakeWatchdogRef.current = null; }
     thinkingTimersRef.current.forEach((t) => clearTimeout(t));
     thinkingTimersRef.current = [];
     Object.values(panelTimeoutsRef.current).forEach((t) => clearTimeout(t));
@@ -323,48 +356,157 @@ const AriaMode = () => {
 
   useEffect(() => () => stopAll(), [stopAll]);
 
-  /* ─── Speech: wake-word loop ─────────────────────────────────────── */
+  /* ─── Speech: wake-word loop ─────────────────────────────────────────
+       "Hey-Google-style" reliability:
+       1. Bulletproof restart logic — ANY error (network, audio-capture,
+          not-allowed, no-speech, aborted, audio-busy) cycles the recogniser
+          on a short backoff, never giving up.
+       2. Watchdog timer — if onresult hasn't fired in 12 s we tear down
+          the recogniser and restart from scratch (mobile browsers
+          occasionally "freeze" the stream without firing onend).
+       3. maxAlternatives = 5 to catch fuzzy pronunciations of "Aria"
+          (e.g. "Arya", "Area", "Hier ja").
+       4. Phonetic match list (not just substring "aria") — accepts
+          "aria", "arya", "area", "ariia", "harria", "arija", "areya"
+          and a few common German auto-correct outputs.
+  ─────────────────────────────────────────────────────────────────── */
+  const wakeWatchdogRef = useRef(null);
+  const wakeAttemptRef = useRef(0);
+
+  // Short JARVIS-style acknowledgement when the wake word is detected.
+  // Varies each time so the assistant feels less robotic. We speak it
+  // through the SAME TTS pipeline so the existing echo-cancellation
+  // automatically mutes the mic during the ack.
+  const wakeAckPhrases = [
+    "Ja, Sir?",
+    "Zu Diensten.",
+    "Hören.",
+    "Bereit.",
+    "Sir?",
+    "Wie kann ich helfen?",
+    "Ich höre.",
+    "Was darf ich tun?",
+    "Sprechen Sie.",
+  ];
+  const playWakeAck = () => {
+    try {
+      let last = "";
+      try { last = sessionStorage.getItem("aria_last_ack") || ""; } catch {}
+      const pool = wakeAckPhrases.filter((p) => p !== last);
+      const phrase = pool[Math.floor(Math.random() * pool.length)] || wakeAckPhrases[0];
+      try { sessionStorage.setItem("aria_last_ack", phrase); } catch {}
+      beginSpeaking();
+      const ctrl = speakStreaming(phrase, {
+        onEnd: () => { endSpeaking(); },
+        onError: () => { endSpeaking(); },
+      });
+      // Hard safety: never let an ack stuck for more than 1.5 s
+      setTimeout(() => { try { ctrl?.stop?.(); } catch {} endSpeaking(); }, 1500);
+    } catch {}
+  };
+
+  const matchesWakeWord = (raw) => {
+    const t = String(raw || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!t) return false;
+    // Token-level match — catches "aria, mach das" / "ja aria!" / "hey aria"
+    const tokens = t.split(" ");
+    const variants = new Set([
+      "aria", "arya", "area", "ariia", "ariya", "ariyah",
+      "harria", "harja", "harrya",
+      "arja", "arija", "areya",
+      "ahria",
+    ]);
+    for (const w of tokens) if (variants.has(w)) return true;
+    // Substring fallback for languages that mash words together
+    if (/\baria\b|\barya\b|\baria,|\baria\.|\baria!/i.test(raw)) return true;
+    return false;
+  };
+
+  const armWakeWatchdog = () => {
+    if (wakeWatchdogRef.current) clearTimeout(wakeWatchdogRef.current);
+    wakeWatchdogRef.current = setTimeout(() => {
+      // Browser froze the stream — force a hard restart
+      try { recognitionRef.current?.abort?.(); } catch {}
+      try { recognitionRef.current?.stop?.();  } catch {}
+      recognitionRef.current = null;
+      if (stateRef.current === "wakeword" && !speakingGuardRef.current) {
+        startWakeWord();
+      }
+    }, 12000);
+  };
+
   const startWakeWord = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
+    if (speakingGuardRef.current) return; // never compete with TTS
     try { recognitionRef.current?.stop(); } catch {}
 
     const rec = new SR();
     rec.lang = "de-DE";
     rec.continuous = true;
     rec.interimResults = true;
+    try { rec.maxAlternatives = 5; } catch {}
 
     rec.onresult = (e) => {
-      // Hard-mute: while ARIA herself is speaking (or within the brief
-      // post-TTS settle window) any captured audio is, by construction,
-      // her own voice bleeding back into the mic — ignore it.
+      // Hard-mute: ARIA's own voice or post-TTS echo → ignore
       if (speakingGuardRef.current || Date.now() < muteUntilRef.current) return;
+      armWakeWatchdog(); // got data → reset watchdog
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript.toLowerCase();
-        if (t.includes("aria") || t.includes("arya")) {
-          try { rec.stop(); } catch {}
-          try { playWakeSound(); } catch {}
-          startListening();
-          return;
+        const result = e.results[i];
+        // Walk all alternatives the engine gave us (not just the top-1)
+        for (let a = 0; a < result.length; a++) {
+          if (matchesWakeWord(result[a].transcript)) {
+            wakeAttemptRef.current = 0;
+            try { rec.stop(); } catch {}
+            try { rec.abort?.(); } catch {}
+            try { playWakeSound(); } catch {}
+            // JARVIS-style acknowledgement — short, varied, never the same twice
+            playWakeAck();
+            startListening();
+            return;
+          }
         }
       }
     };
+
     rec.onerror = (ev) => {
-      if (ev.error === "no-speech" || ev.error === "aborted") {
-        // Don't auto-restart while ARIA is speaking — the speaking flow
-        // will call startWakeWord() itself once playback finishes.
-        if (speakingGuardRef.current) return;
-        if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), 500);
+      // Don't fight with TTS playback
+      if (speakingGuardRef.current) return;
+      // `not-allowed` / `service-not-allowed` are unrecoverable — surface them
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        setError("mikrofon-zugriff verweigert");
+        return;
       }
+      // Everything else (no-speech, aborted, network, audio-capture, audio-busy)
+      // → exponential-ish backoff restart, capped at 1.5 s
+      wakeAttemptRef.current = Math.min(wakeAttemptRef.current + 1, 5);
+      const delay = Math.min(200 + wakeAttemptRef.current * 250, 1500);
+      if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), delay);
     };
+
     rec.onend = () => {
       if (speakingGuardRef.current) return;
-      if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), 300);
+      // Always restart on natural end. Continuous=true should keep it
+      // open but iOS/Android sometimes auto-close after ~30 s.
+      if (stateRef.current === "wakeword") setTimeout(() => startWakeWord(), 250);
+    };
+
+    rec.onstart = () => {
+      wakeAttemptRef.current = 0;
+      armWakeWatchdog();
     };
 
     recognitionRef.current = rec;
     setMode("wakeword");
-    try { rec.start(); } catch {}
+    try { rec.start(); } catch (e) {
+      // start() throws if a previous instance is still alive — try again
+      setTimeout(() => startWakeWord(), 400);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1022,10 +1164,13 @@ const AriaMode = () => {
   };
 
   /* ─── Render ─────────────────────────────────────────────────────── */
-  const statusLabel = mode === "listening" ? "EMPFANGE ANWEISUNG"
-    : mode === "thinking" ? "VERARBEITE"
-    : mode === "speaking" ? "ANTWORT WIRD ÜBERTRAGEN"
-    : mode === "wakeword" ? 'STANDBY – SAGE "ARIA"'
+  // JARVIS-style status microcopy. The wake-word label uses a slow pulse
+  // dot prefix elsewhere; the text itself is meant to feel like a ship
+  // captain reading from a HUD.
+  const statusLabel = mode === "listening" ? "ICH HÖRE …"
+    : mode === "thinking" ? "ANALYSIERE — EINEN MOMENT"
+    : mode === "speaking" ? "ANTWORT IN ÜBERTRAGUNG"
+    : mode === "wakeword" ? '● WACHE — RUFEN SIE "ARIA"'
     : "BEREIT";
 
   return (
