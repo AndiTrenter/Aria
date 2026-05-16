@@ -178,8 +178,9 @@ const AriaMode = () => {
     const w = window.innerWidth || 1280;
     const h = window.innerHeight || 720;
     if (w < 640) {
-      // Phone: ~60 % of width OR 40 % of height, whichever is smaller
-      return Math.max(200, Math.min(280, Math.floor(Math.min(w * 0.6, h * 0.4))));
+      // Phone: ~50 % of width OR 32 % of height, whichever is smaller —
+      // small enough to leave room for the push-to-talk neural button.
+      return Math.max(160, Math.min(220, Math.floor(Math.min(w * 0.5, h * 0.32))));
     }
     return Math.max(260, Math.min(440, Math.floor(Math.min(w * 0.36, h * 0.46))));
   };
@@ -600,6 +601,110 @@ const AriaMode = () => {
     if (!perm.ok) { toast.error(perm.hint, { duration: 8000 }); return; }
     if (mode === "speaking") { try { ttsCtrlRef.current?.stop(); } catch {} ; endSpeaking(); setMode("idle"); return; }
     startListening();
+  };
+
+  /* ─── Push-to-Talk: hold-to-speak neural button ───────────────────────
+       Far more reliable on phones than wake-word: the user presses the
+       button, the mic opens with NO silence-timeout, they speak, then
+       release the button which submits whatever was heard.
+       Implementation notes:
+         • While held: continuous=true recognition with interim updates
+         • While held: silence timeout is DISABLED (we use real release)
+         • Single shared recogniser instance — same path as startListening
+           but stops on touchend instead of on final result.
+  ─────────────────────────────────────────────────────────────────── */
+  const pttActiveRef = useRef(false);
+  const pttRecRef = useRef(null);
+  const pttTranscriptRef = useRef("");
+
+  const pttBegin = async () => {
+    if (pttActiveRef.current) return;
+    // Block during TTS — first stop ARIA so the user can interrupt by holding
+    if (mode === "speaking") {
+      try { ttsCtrlRef.current?.stop(); } catch {}
+      endSpeaking();
+    }
+    const ready = checkMicReady();
+    if (!ready.ok) { toast.error(ready.hint, { duration: 5000 }); return; }
+    const perm = await requestMicPermission();
+    if (!perm.ok) { toast.error(perm.hint, { duration: 5000 }); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast.error("Spracherkennung nicht verfügbar."); return; }
+
+    // Hard-stop any wake-word listener so the OS mic stream is freed up
+    try { recognitionRef.current?.abort?.(); } catch {}
+    try { recognitionRef.current?.stop?.();  } catch {}
+    if (wakeWatchdogRef.current) { clearTimeout(wakeWatchdogRef.current); wakeWatchdogRef.current = null; }
+    recognitionRef.current = null;
+
+    const rec = new SR();
+    rec.lang = "de-DE";
+    rec.continuous = true;
+    rec.interimResults = true;
+    try { rec.maxAlternatives = 3; } catch {}
+    pttTranscriptRef.current = "";
+
+    rec.onresult = (e) => {
+      let final = "", interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t; else interim += t;
+      }
+      const visible = (final || interim).trim();
+      if (visible) {
+        pttTranscriptRef.current = visible;
+        setTranscript(visible);
+      }
+    };
+    rec.onerror = (ev) => {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        setError("Mikrofon-Zugriff verweigert");
+      }
+    };
+
+    pttActiveRef.current = true;
+    pttRecRef.current = rec;
+    setMode("listening");
+    setTranscript("");
+    setResponse("");
+    setError("");
+    try { playListenSound(); } catch {}
+    try { rec.start(); } catch {
+      // If start() fails because the engine wasn't fully released yet,
+      // retry once after a short pause.
+      setTimeout(() => { try { rec.start(); } catch {} }, 250);
+    }
+  };
+
+  const pttEnd = () => {
+    if (!pttActiveRef.current) return;
+    pttActiveRef.current = false;
+    const rec = pttRecRef.current;
+    pttRecRef.current = null;
+    try { rec?.stop?.(); } catch {}
+    setTimeout(() => { try { rec?.abort?.(); } catch {} }, 200);
+    const captured = (pttTranscriptRef.current || "").trim();
+    pttTranscriptRef.current = "";
+    if (captured.length >= 2) {
+      handleUserUtterance(captured);
+    } else {
+      // No usable speech — back to wake-word idle state
+      setMode("idle");
+      setTimeout(() => startWakeWord(), 500);
+    }
+  };
+
+  // If the user accidentally drags off the button or the touch is cancelled,
+  // we still want to release cleanly so the mic never gets stuck open.
+  const pttCancel = () => {
+    if (!pttActiveRef.current) return;
+    pttActiveRef.current = false;
+    const rec = pttRecRef.current;
+    pttRecRef.current = null;
+    try { rec?.abort?.(); } catch {}
+    pttTranscriptRef.current = "";
+    setMode("idle");
+    setTimeout(() => startWakeWord(), 500);
   };
 
   // Typed command fallback — useful on devices without mic access.
@@ -1288,6 +1393,67 @@ const AriaMode = () => {
             {statusLabel}
           </div>
         </div>
+
+        {/* ── Push-to-Talk Neural Button ──────────────────────────────
+            Hold this orb to talk, release to send. Works rock-solid on
+            phones where the wake-word listener is unreliable due to
+            mobile-browser audio throttling and frequent recogniser drops.
+            Visible on every screen size; on phone it's the primary
+            interaction.
+        ───────────────────────────────────────────────────────────── */}
+        <div
+          className="pointer-events-auto mt-8 select-none"
+          style={{ touchAction: "none" }}
+        >
+          <button
+            type="button"
+            data-testid="aria-ptt-btn"
+            onPointerDown={(e) => { e.preventDefault(); pttBegin(); }}
+            onPointerUp={(e) => { e.preventDefault(); pttEnd(); }}
+            onPointerCancel={() => pttCancel()}
+            onPointerLeave={() => { if (pttActiveRef.current) pttEnd(); }}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label="Halten zum Sprechen"
+            className={`relative grid place-items-center rounded-full transition-transform duration-150 ${
+              pttActiveRef.current || mode === "listening" ? "scale-110" : "active:scale-95"
+            }`}
+            style={{
+              width: isPhone ? 96 : 110,
+              height: isPhone ? 96 : 110,
+              background: pttActiveRef.current || mode === "listening"
+                ? "radial-gradient(circle at 50% 45%, rgba(255,80,30,0.95), rgba(190,30,0,0.7) 60%, rgba(40,0,0,0.95))"
+                : "radial-gradient(circle at 50% 45%, rgba(255,140,40,0.55), rgba(120,30,0,0.55) 60%, rgba(10,5,10,0.95))",
+              boxShadow: pttActiveRef.current || mode === "listening"
+                ? "0 0 60px rgba(255,90,30,0.85), 0 0 120px rgba(255,90,30,0.45), inset 0 0 30px rgba(255,180,90,0.5)"
+                : "0 0 30px rgba(255,90,30,0.4), inset 0 0 20px rgba(255,140,60,0.3)",
+              border: "1.5px solid rgba(255,150,80,0.7)",
+            }}
+          >
+            {/* Inner neural rings */}
+            <span
+              className="absolute inset-2 rounded-full pointer-events-none"
+              style={{
+                border: "1px dashed rgba(255,180,100,0.45)",
+                animation: pttActiveRef.current || mode === "listening" ? "aria-ptt-spin 2.4s linear infinite" : "none",
+              }}
+            />
+            <span
+              className="absolute inset-5 rounded-full pointer-events-none"
+              style={{
+                border: "1px dotted rgba(255,200,140,0.35)",
+                animation: pttActiveRef.current || mode === "listening" ? "aria-ptt-spin 3.8s linear infinite reverse" : "none",
+              }}
+            />
+            <Microphone
+              size={isPhone ? 36 : 44}
+              weight="fill"
+              className={pttActiveRef.current || mode === "listening" ? "text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.9)]" : "text-orange-100"}
+            />
+          </button>
+          <div className="mt-2 text-center text-[10px] tracking-[0.3em] text-orange-200/85" style={{ textTransform: "uppercase" }}>
+            {pttActiveRef.current || mode === "listening" ? "ICH HÖRE …" : "Halten zum Sprechen"}
+          </div>
+        </div>
       </div>
 
       {/* Floating holo-panels (JARVIS-style search windows around the cortex) */}
@@ -1736,6 +1902,10 @@ const HoloPanel = ({ panel, slot, index }) => {
         @keyframes aria-holo-bar {
           0%   { transform: translateX(-100%); }
           100% { transform: translateX(260%); }
+        }
+        @keyframes aria-ptt-spin {
+          0%   { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
         .holo-panel:hover .holo-panel-inner { filter: brightness(1.15); }
       `}</style>

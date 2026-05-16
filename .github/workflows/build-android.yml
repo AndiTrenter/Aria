@@ -116,6 +116,57 @@ jobs:
         working-directory: frontend
         run: npx cap sync android
 
+      - name: Pin debug keystore (deterministic signature across all builds)
+        # IMPORTANT for in-app updates:
+        # Android refuses to install an APK over an existing one if the
+        # signature differs. The default Gradle debug build generates a
+        # NEW random debug.keystore on every CI runner, which gives each
+        # APK a different signature → the user sees "Conflict with existing
+        # package" and has to uninstall manually.
+        # We fix this by creating ONE deterministic keystore (same DN,
+        # same password, same alias every time) and forcing Gradle to use it.
+        run: |
+          mkdir -p ~/.android
+          KS=~/.android/debug.keystore
+          rm -f "$KS"
+          keytool -genkeypair -v \
+            -keystore "$KS" \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=ARIA Debug, OU=ARIA, O=Trenter, L=Zurich, ST=ZH, C=CH"
+          # Mirror it into the project so signingConfig.storeFile can find
+          # it regardless of where Gradle is running.
+          mkdir -p frontend/android/app
+          cp "$KS" frontend/android/app/debug.keystore
+
+      - name: Pin debug signingConfig in app/build.gradle
+        working-directory: frontend/android/app
+        run: |
+          GRADLE=build.gradle
+          if ! grep -q "signingConfigs {" "$GRADLE"; then
+            # Insert a signingConfigs block right after `android {`
+            python3 - <<'PY'
+import re, pathlib
+p = pathlib.Path("build.gradle")
+src = p.read_text()
+inject = """    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+"""
+new = re.sub(r"(android\s*\{\s*\n)", r"\1" + inject, src, count=1)
+p.write_text(new)
+PY
+          fi
+          echo "── build.gradle (head) ──"
+          head -n 40 build.gradle
+
       - name: Build APK (debug)
         if: steps.version.outputs.is_release == 'false'
         working-directory: frontend/android
