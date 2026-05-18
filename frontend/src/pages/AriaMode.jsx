@@ -1351,35 +1351,40 @@ const AriaMode = () => {
       {/* HUD scan-lines + grid */}
       <div className="absolute inset-0 pointer-events-none aria-hud-grid" />
 
-      {/* Animated tech background — floating nodes + network lines + scan
-          bursts.  Sits above the static HUD grid but well below all
-          foreground UI.  Mode-reactive colour. */}
-      <BackgroundFx mode={mode} />
+      {/* Animated tech background — desktop only. On phone it competes for
+          attention with the cortex orb and hurts perf significantly. */}
+      {!isPhone && <BackgroundFx mode={mode} />}
 
-      {/* Holographic temperature watermark — large faint digits behind
-          the action, refreshes every 5min from /api/weather. */}
-      <TemperatureWatermark />
+      {/* Holographic temperature watermark — desktop only (too crowded on phone) */}
+      {!isPhone && <TemperatureWatermark />}
       <div className="absolute inset-0 pointer-events-none aria-scanlines" />
 
-      {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-4 z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(100,220,255,0.9)]" />
+      {/* Top bar — radically shrunken on phone */}
+      <div className={`absolute top-0 left-0 right-0 flex items-center justify-between z-20 ${isPhone ? "px-3 py-2" : "px-6 py-4"}`}>
+        <div className="flex items-center gap-2">
+          <div className={`rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(100,220,255,0.9)] ${isPhone ? "w-1.5 h-1.5" : "w-2 h-2"}`} />
           <div>
-            <div className="text-[22px] font-bold tracking-[0.4em] text-cyan-200" style={{ fontFamily: "Orbitron, sans-serif" }}>
+            <div
+              className={`font-bold text-cyan-200 ${isPhone ? "text-[14px] tracking-[0.25em]" : "text-[22px] tracking-[0.4em]"}`}
+              style={{ fontFamily: "Orbitron, sans-serif" }}
+            >
               A.R.I.A.
             </div>
-            <div className="text-[10px] tracking-[0.3em] text-cyan-400/70 mt-0.5">
-              ADAPTIVE REASONING INTELLIGENCE ASSISTANT
-            </div>
+            {!isPhone && (
+              <div className="text-[10px] tracking-[0.3em] text-cyan-400/70 mt-0.5">
+                ADAPTIVE REASONING INTELLIGENCE ASSISTANT
+              </div>
+            )}
           </div>
         </div>
         <button
           onClick={exitMode}
-          className="px-4 py-2 rounded border border-cyan-400/50 text-cyan-300 hover:bg-cyan-400/10 hover:border-cyan-400 transition text-xs tracking-[0.25em] flex items-center gap-2"
+          className={`rounded border border-cyan-400/50 text-cyan-300 hover:bg-cyan-400/10 hover:border-cyan-400 transition flex items-center gap-1 ${
+            isPhone ? "px-2 py-1 text-[9px] tracking-[0.15em]" : "px-4 py-2 text-xs tracking-[0.25em] gap-2"
+          }`}
           data-testid="aria-exit-btn"
         >
-          <SignOut size={14} weight="bold" /> STANDARD DASHBOARD
+          <SignOut size={isPhone ? 12 : 14} weight="bold" /> {isPhone ? "EXIT" : "STANDARD DASHBOARD"}
         </button>
       </div>
 
@@ -1449,36 +1454,36 @@ const AriaMode = () => {
               pttActiveRef.current || mode === "listening" ? "scale-110" : "active:scale-95"
             }`}
             style={{
-              width: isPhone ? 96 : 110,
-              height: isPhone ? 96 : 110,
+              width: isPhone ? 130 : 110,
+              height: isPhone ? 130 : 110,
               background: pttActiveRef.current || mode === "listening"
                 ? "radial-gradient(circle at 50% 45%, rgba(255,80,30,0.95), rgba(190,30,0,0.7) 60%, rgba(40,0,0,0.95))"
                 : "radial-gradient(circle at 50% 45%, rgba(255,140,40,0.55), rgba(120,30,0,0.55) 60%, rgba(10,5,10,0.95))",
               boxShadow: pttActiveRef.current || mode === "listening"
-                ? "0 0 60px rgba(255,90,30,0.85), 0 0 120px rgba(255,90,30,0.45), inset 0 0 30px rgba(255,180,90,0.5)"
-                : "0 0 30px rgba(255,90,30,0.4), inset 0 0 20px rgba(255,140,60,0.3)",
-              border: "1.5px solid rgba(255,150,80,0.7)",
+                ? "0 0 70px rgba(255,90,30,0.9), 0 0 140px rgba(255,90,30,0.5), inset 0 0 35px rgba(255,180,90,0.6)"
+                : "0 0 36px rgba(255,90,30,0.5), inset 0 0 22px rgba(255,140,60,0.35)",
+              border: "2px solid rgba(255,150,80,0.8)",
             }}
           >
             {/* Inner neural rings */}
             <span
               className="absolute inset-2 rounded-full pointer-events-none"
               style={{
-                border: "1px dashed rgba(255,180,100,0.45)",
+                border: "1px dashed rgba(255,180,100,0.55)",
                 animation: pttActiveRef.current || mode === "listening" ? "aria-ptt-spin 2.4s linear infinite" : "none",
               }}
             />
             <span
               className="absolute inset-5 rounded-full pointer-events-none"
               style={{
-                border: "1px dotted rgba(255,200,140,0.35)",
+                border: "1px dotted rgba(255,200,140,0.45)",
                 animation: pttActiveRef.current || mode === "listening" ? "aria-ptt-spin 3.8s linear infinite reverse" : "none",
               }}
             />
             <Microphone
-              size={isPhone ? 36 : 44}
+              size={isPhone ? 52 : 44}
               weight="fill"
-              className={pttActiveRef.current || mode === "listening" ? "text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.9)]" : "text-orange-100"}
+              className={pttActiveRef.current || mode === "listening" ? "text-white drop-shadow-[0_0_10px_rgba(255,255,255,1)]" : "text-orange-100"}
             />
           </button>
           <div className="mt-2 text-center text-[10px] tracking-[0.3em] text-orange-200/85" style={{ textTransform: "uppercase" }}>
@@ -1498,54 +1503,63 @@ const AriaMode = () => {
       )}
 
       {/* Bottom: transcript + response */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 px-8 pb-6 pointer-events-none">
+      <div className={`absolute bottom-0 left-0 right-0 z-20 pointer-events-none ${isPhone ? "px-3 pb-3" : "px-8 pb-6"}`}>
         <div className="max-w-3xl mx-auto space-y-2">
           {transcript && (
             <div className="text-right pointer-events-auto">
-              <span className="inline-block px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-200 text-sm backdrop-blur">
+              <span className={`inline-block rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-200 backdrop-blur ${isPhone ? "px-2 py-1 text-[11px]" : "px-3 py-1.5 text-sm"}`}>
                 „{transcript}"
               </span>
             </div>
           )}
           {response && (
             <div className="pointer-events-auto">
-              <div className="px-4 py-3 rounded-lg bg-black/50 border border-cyan-400/30 text-cyan-100 text-[15px] leading-relaxed backdrop-blur max-h-[28vh] overflow-y-auto">
+              <div className={`rounded-lg bg-black/50 border border-cyan-400/30 text-cyan-100 backdrop-blur overflow-y-auto ${
+                isPhone
+                  ? "px-3 py-2 text-[12px] leading-snug max-h-[18vh]"
+                  : "px-4 py-3 text-[15px] leading-relaxed max-h-[28vh]"
+              }`}>
                 {stripMarkdownForTTS(response)}
               </div>
             </div>
           )}
           {error && (
-            <div className="pointer-events-auto text-xs text-red-400/80 text-center">
+            <div className={`pointer-events-auto text-red-400/80 text-center ${isPhone ? "text-[10px]" : "text-xs"}`}>
               {error}
             </div>
           )}
         </div>
       </div>
 
-      {/* Bottom-right Mic button + typed fallback */}
-      <form
-        onSubmit={submitTyped}
-        className="absolute bottom-8 right-28 z-30 hidden md:flex items-center"
-      >
-        <input
-          value={typedCmd}
-          onChange={(e) => setTypedCmd(e.target.value)}
-          placeholder='Befehl tippen (z. B. "Route nach Köln")'
-          data-testid="aria-typed-cmd"
-          className="w-[340px] px-3 py-2 rounded-l-full bg-black/70 border border-cyan-400/50 text-cyan-100 placeholder-cyan-500/60 text-sm focus:outline-none focus:border-cyan-300 backdrop-blur"
-        />
-        <button
-          type="submit"
-          className="px-3 py-2 rounded-r-full bg-cyan-500/20 border border-l-0 border-cyan-400/50 text-cyan-200 text-sm hover:bg-cyan-500/30"
+      {/* Bottom-right Mic button + typed fallback — desktop only.
+          On phone, the large neural PTT button under the cortex is the
+          only mic affordance. */}
+      {!isPhone && (
+        <form
+          onSubmit={submitTyped}
+          className="absolute bottom-8 right-28 z-30 hidden md:flex items-center"
         >
-          ↵
-        </button>
-      </form>
+          <input
+            value={typedCmd}
+            onChange={(e) => setTypedCmd(e.target.value)}
+            placeholder='Befehl tippen (z. B. "Route nach Köln")'
+            data-testid="aria-typed-cmd"
+            className="w-[340px] px-3 py-2 rounded-l-full bg-black/70 border border-cyan-400/50 text-cyan-100 placeholder-cyan-500/60 text-sm focus:outline-none focus:border-cyan-300 backdrop-blur"
+          />
+          <button
+            type="submit"
+            className="px-3 py-2 rounded-r-full bg-cyan-500/20 border border-l-0 border-cyan-400/50 text-cyan-200 text-sm hover:bg-cyan-500/30"
+          >
+            ↵
+          </button>
+        </form>
+      )}
 
-      <button
-        onClick={manualMic}
-        data-testid="aria-mic-btn"
-        className={`absolute bottom-8 right-8 z-30 w-16 h-16 rounded-full flex items-center justify-center transition shadow-[0_0_40px_rgba(100,220,255,0.35)] ${
+      {!isPhone && (
+        <button
+          onClick={manualMic}
+          data-testid="aria-mic-btn"
+          className={`absolute bottom-8 right-8 z-30 w-16 h-16 rounded-full flex items-center justify-center transition shadow-[0_0_40px_rgba(100,220,255,0.35)] ${
           mode === "listening" ? "bg-cyan-400 text-black animate-pulse"
           : mode === "speaking" ? "bg-cyan-500/80 text-black"
           : mode === "thinking" ? "bg-yellow-400/80 text-black"
@@ -1556,7 +1570,8 @@ const AriaMode = () => {
         {mode === "speaking" ? <SpeakerHigh size={26} weight="fill" />
          : mode === "thinking" ? <CircleNotch size={26} weight="bold" className="animate-spin" />
          : <Microphone size={26} weight="fill" />}
-      </button>
+        </button>
+      )}
 
       {/* Thinking overlay */}
       {thinking && <ThinkingOverlay data={thinking} onClose={closeThinking} />}
