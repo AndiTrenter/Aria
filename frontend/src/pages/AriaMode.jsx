@@ -173,14 +173,17 @@ const AriaMode = () => {
   //  • On phones (< 640 px) we shrink it more aggressively so it doesn't
   //    crowd the screen and the floating HUD/transcript stays readable.
   //  • On desktop we cap at 440 px so the side-HUD columns fit too.
+  // We also clamp by viewport-min so super-tall phones still fit nicely.
   const computeOrbSize = () => {
-    if (typeof window === "undefined") return 320;
-    const w = window.innerWidth || 1280;
+    if (typeof window === "undefined") return 280;
+    const w = window.innerWidth  || 1280;
     const h = window.innerHeight || 720;
+    const vmin = Math.min(w, h);
     if (w < 640) {
-      // Phone: ~50 % of width OR 32 % of height, whichever is smaller —
-      // small enough to leave room for the push-to-talk neural button.
-      return Math.max(160, Math.min(220, Math.floor(Math.min(w * 0.5, h * 0.32))));
+      // Phone: ~45 % of the smaller viewport dimension, hard-capped 200 px.
+      // Leaves room for the push-to-talk neural button + status text +
+      // bottom transcript bar without overlap.
+      return Math.max(140, Math.min(200, Math.floor(vmin * 0.45)));
     }
     return Math.max(260, Math.min(440, Math.floor(Math.min(w * 0.36, h * 0.46))));
   };
@@ -616,15 +619,20 @@ const AriaMode = () => {
        Far more reliable on phones than wake-word: the user presses the
        button, the mic opens with NO silence-timeout, they speak, then
        release the button which submits whatever was heard.
-       Implementation notes:
-         • While held: continuous=true recognition with interim updates
-         • While held: silence timeout is DISABLED (we use real release)
-         • Single shared recogniser instance — same path as startListening
-           but stops on touchend instead of on final result.
+
+       CRITICAL: On Android/Chrome the SpeechRecognition engine sends its
+       FINAL transcript event AFTER `stop()` is called — sometimes hundreds
+       of ms later. Calling abort() too early throws this final result away
+       and the user sees "nothing happens". We therefore:
+         • Keep interim transcripts as best-so-far in pttTranscriptRef
+         • On release: call stop() and WAIT up to 1.5 s for a final result
+         • If a final arrives, submit that; otherwise submit interim
+         • Hard fallback: after 1.5 s force-submit whatever is in the ref
   ─────────────────────────────────────────────────────────────────── */
   const pttActiveRef = useRef(false);
   const pttRecRef = useRef(null);
   const pttTranscriptRef = useRef("");
+  const pttFinalizeTimerRef = useRef(null);
 
   const pttBegin = async () => {
     if (pttActiveRef.current) return;
@@ -659,16 +667,28 @@ const AriaMode = () => {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) final += t; else interim += t;
       }
-      const visible = (final || interim).trim();
-      if (visible) {
-        pttTranscriptRef.current = visible;
-        setTranscript(visible);
+      // Always keep the best-so-far so even interim text can be submitted
+      // if no final ever arrives (common on poor connections).
+      const best = (final + " " + interim).trim();
+      if (best) {
+        pttTranscriptRef.current = best;
+        setTranscript(best);
+      }
+      // A final result arrived after release → submit immediately
+      if (final && !pttActiveRef.current) {
+        commitPttUtterance();
       }
     };
     rec.onerror = (ev) => {
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         setError("Mikrofon-Zugriff verweigert");
+        pttActiveRef.current = false;
       }
+    };
+    rec.onend = () => {
+      // Engine closed — if we're past the release moment, this is our last
+      // chance to submit whatever we captured.
+      if (!pttActiveRef.current) commitPttUtterance();
     };
 
     pttActiveRef.current = true;
@@ -678,10 +698,28 @@ const AriaMode = () => {
     setResponse("");
     setError("");
     try { playListenSound(); } catch {}
-    try { rec.start(); } catch {
-      // If start() fails because the engine wasn't fully released yet,
-      // retry once after a short pause.
+    try { rec.start(); } catch (err) {
+      // start() throws if a previous instance wasn't fully released yet
       setTimeout(() => { try { rec.start(); } catch {} }, 250);
+    }
+  };
+
+  // Idempotent: only the first call submits the captured text.
+  const commitPttUtterance = () => {
+    if (pttFinalizeTimerRef.current) {
+      clearTimeout(pttFinalizeTimerRef.current);
+      pttFinalizeTimerRef.current = null;
+    }
+    const captured = (pttTranscriptRef.current || "").trim();
+    pttTranscriptRef.current = "";
+    // Tear down rec so the same callbacks can't double-fire
+    const rec = pttRecRef.current;
+    pttRecRef.current = null;
+    try { rec?.abort?.(); } catch {}
+    if (captured.length >= 2) {
+      handleUserUtterance(captured);
+    } else {
+      setMode("idle");
     }
   };
 
@@ -689,18 +727,18 @@ const AriaMode = () => {
     if (!pttActiveRef.current) return;
     pttActiveRef.current = false;
     const rec = pttRecRef.current;
-    pttRecRef.current = null;
+    // 1) Ask the engine to wrap up — this triggers a final result event
+    //    which our onresult / onend will then turn into commitPttUtterance.
     try { rec?.stop?.(); } catch {}
-    setTimeout(() => { try { rec?.abort?.(); } catch {} }, 200);
-    const captured = (pttTranscriptRef.current || "").trim();
-    pttTranscriptRef.current = "";
-    if (captured.length >= 2) {
-      handleUserUtterance(captured);
-    } else {
-      // No usable speech — back to wake-word idle state
-      setMode("idle");
-      setTimeout(() => startWakeWord(), 500);
-    }
+    // 2) Hard fallback: if the engine fails to fire its closing events
+    //    within 1.5 s we force-commit the best-so-far transcript so the
+    //    user never sees a "nothing happens" silent failure again.
+    if (pttFinalizeTimerRef.current) clearTimeout(pttFinalizeTimerRef.current);
+    pttFinalizeTimerRef.current = setTimeout(() => {
+      if (pttRecRef.current === rec || pttRecRef.current === null) {
+        commitPttUtterance();
+      }
+    }, 1500);
   };
 
   // If the user accidentally drags off the button or the touch is cancelled,
@@ -710,10 +748,10 @@ const AriaMode = () => {
     pttActiveRef.current = false;
     const rec = pttRecRef.current;
     pttRecRef.current = null;
+    if (pttFinalizeTimerRef.current) { clearTimeout(pttFinalizeTimerRef.current); pttFinalizeTimerRef.current = null; }
     try { rec?.abort?.(); } catch {}
     pttTranscriptRef.current = "";
     setMode("idle");
-    setTimeout(() => startWakeWord(), 500);
   };
 
   // Typed command fallback — useful on devices without mic access.
@@ -1370,24 +1408,29 @@ const AriaMode = () => {
         </button>
       </div>
 
-      {/* Side panels (decorative HUD) — hidden while search holo-panels are open */}
-      {panels.length === 0 && <SideHudPanel side="left" user={user} mode={mode} />}
-      {panels.length === 0 && <SideHudPanel side="right" mode={mode} />}
+      {/* Side panels (decorative HUD) — hidden on phone (no horizontal room)
+          and also hidden when search holo-panels are open so they don't fight
+          for attention. */}
+      {!isPhone && panels.length === 0 && <SideHudPanel side="left" user={user} mode={mode} />}
+      {!isPhone && panels.length === 0 && <SideHudPanel side="right" mode={mode} />}
 
       {/* Center: Cortex cloud — z-50 so it's ALWAYS on top of every HUD
           element, side panels, and background fx.
-          On phone (< 640 px) we centre perfectly (no HUD-column bias).
+          On phone (< 640 px) we centre perfectly (no HUD-column bias)
+          AND the PTT button is laid out underneath with a small gap.
           On desktop we shift slightly left to compensate for the wider
           right-side HUD column.
       */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none"
         style={{
-          paddingBottom: isPhone ? "12vh" : "22vh",
-          paddingRight: isPhone ? "0" : "16vw",
+          paddingBottom: isPhone ? "20vh" : "22vh",
+          paddingTop:    isPhone ? "6vh"  : "0",
+          paddingRight:  isPhone ? "0"    : "16vw",
+          gap:           isPhone ? "1.2rem" : "2rem",
         }}
       >
-        <div className="relative" style={{ width: orbSize, height: orbSize }}>
+        <div className="relative" style={{ width: orbSize, height: orbSize, flex: "0 0 auto" }}>
           <CortexCloud
             intensity={intensity}
             speaking={mode === "speaking"}
@@ -1395,8 +1438,14 @@ const AriaMode = () => {
             mode={mode}
             size={orbSize}
           />
-          {/* Status ring label */}
-          <div className="absolute bottom-[-10px] left-1/2 -translate-x-1/2 text-[11px] tracking-[0.4em] text-cyan-300/90 font-bold whitespace-nowrap">
+          {/* Status ring label — much smaller on phone so it doesn't bleed over the orb */}
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 font-bold whitespace-nowrap text-cyan-300/90 ${
+              isPhone
+                ? "bottom-[-22px] text-[8px] tracking-[0.2em]"
+                : "bottom-[-10px] text-[11px] tracking-[0.4em]"
+            }`}
+          >
             {statusLabel}
           </div>
         </div>

@@ -18,9 +18,9 @@ const Login = () => {
 
   // Manual update check — useful when the in-app banner hasn't kicked in
   // yet (e.g. user just installed the APK and the 30-min poll didn't run).
-  // On finding a newer release, opens the APK URL via the system browser
-  // which then triggers Android's package installer.
-  const checkForUpdate = async () => {
+  // When `silent=true` we don't toast "you already have the newest version",
+  // only act when an actual update exists. Used by the auto-check on mount.
+  const checkForUpdate = async (silent = false) => {
     const repo = process.env.REACT_APP_GITHUB_REPO || "AndiTrenter/Aria";
     setUpdateChecking(true);
     // Clear any previous dismiss so a newer version will always show up
@@ -37,7 +37,7 @@ const Login = () => {
         if (a) { chosen = rel; apk = a; break; }
       }
       if (!chosen || !apk) {
-        toast.info("Noch kein Release mit APK gefunden.");
+        if (!silent) toast.info("Noch kein Release mit APK gefunden.");
         return;
       }
       const latestTag = String(chosen.tag_name || "").replace(/^v/i, "");
@@ -53,7 +53,7 @@ const Login = () => {
         return 0;
       };
       if (cmp(latestTag, current) <= 0) {
-        toast.success(`Du hast bereits die neueste Version (v${current}).`);
+        if (!silent) toast.success(`Du hast bereits die neueste Version (v${current}).`);
         return;
       }
       const go = window.confirm(
@@ -63,7 +63,7 @@ const Login = () => {
         window.open(apk.browser_download_url, "_system");
       }
     } catch (e) {
-      toast.error(`Update-Check fehlgeschlagen: ${e.message}`);
+      if (!silent) toast.error(`Update-Check fehlgeschlagen: ${e.message}`);
     } finally {
       setUpdateChecking(false);
     }
@@ -71,6 +71,13 @@ const Login = () => {
 
   useEffect(() => {
     axios.get(`${API}/version`).then(r => setAriaVersion(r.data?.display || "")).catch(() => {});
+    // Auto-check for a new APK every time the login screen is shown on
+    // native (Android APK). Far more reliable than the 30-min background
+    // poll and pops up a confirm-dialog right away if a newer release
+    // exists with an APK asset. Harmless on web.
+    if (IS_NATIVE) {
+      const t = setTimeout(() => { checkForUpdate(true); }, 1200);
+    }
     // One-time notice if user landed here because their session expired
     try {
       const params = new URLSearchParams(window.location.search);

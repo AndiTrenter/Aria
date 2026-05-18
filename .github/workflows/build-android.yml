@@ -76,7 +76,12 @@ jobs:
       - name: Build React app
         working-directory: frontend
         env:
+          # Explicitly forward both env vars to the webpack step. The top-level
+          # workflow `env:` block is supposed to inherit, but locally-scoped
+          # `env:` (here) takes precedence and guarantees they're present.
           REACT_APP_APP_VERSION: ${{ steps.version.outputs.version }}
+          REACT_APP_GITHUB_REPO: ${{ github.repository }}
+          REACT_APP_BACKEND_URL: ${{ secrets.PROD_BACKEND_URL }}
           CI: "false"   # let warnings through; webpack treats them as errors on CI by default
           DISABLE_ESLINT_PLUGIN: "true"
         run: yarn build
