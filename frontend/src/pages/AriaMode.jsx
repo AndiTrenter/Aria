@@ -12,6 +12,7 @@ import BackgroundFx from "@/components/BackgroundFx";
 import RichHoloPanel from "@/components/RichHoloPanel";
 import TemperatureWatermark from "@/components/TemperatureWatermark";
 import { checkMicReady, requestMicPermission } from "@/utils/micReady";
+import { nativeListen, ensureSpeechReady } from "@/utils/nativeSpeech";
 import { speakStreaming, stripMarkdownForTTS } from "@/utils/ttsPlayer";
 import { streamAriaChat } from "@/utils/ariaStream";
 import axios from "axios";
@@ -616,23 +617,35 @@ const AriaMode = () => {
   };
 
   /* ─── Push-to-Talk: hold-to-speak neural button ───────────────────────
-       Far more reliable on phones than wake-word: the user presses the
-       button, the mic opens with NO silence-timeout, they speak, then
-       release the button which submits whatever was heard.
-
-       CRITICAL: On Android/Chrome the SpeechRecognition engine sends its
-       FINAL transcript event AFTER `stop()` is called — sometimes hundreds
-       of ms later. Calling abort() too early throws this final result away
-       and the user sees "nothing happens". We therefore:
-         • Keep interim transcripts as best-so-far in pttTranscriptRef
-         • On release: call stop() and WAIT up to 1.5 s for a final result
-         • If a final arrives, submit that; otherwise submit interim
-         • Hard fallback: after 1.5 s force-submit whatever is in the ref
+       Uses the NATIVE Android speech recogniser (via
+       @capacitor-community/speech-recognition) when running inside the
+       Capacitor APK — same engine as Google Assistant, dramatically
+       better accuracy and far-field pickup than the WebView's built-in
+       Web Speech API. On the browser preview we transparently fall back
+       to the Web API.
   ─────────────────────────────────────────────────────────────────── */
   const pttActiveRef = useRef(false);
-  const pttRecRef = useRef(null);
+  const pttCtrlRef = useRef(null);
   const pttTranscriptRef = useRef("");
   const pttFinalizeTimerRef = useRef(null);
+
+  // Idempotent commit — exactly one submission per press, no matter how
+  // many "final" events the engine fires (Android sometimes emits both
+  // a partial-converted-to-final AND a real final).
+  const commitPttUtterance = (textOverride) => {
+    if (pttFinalizeTimerRef.current) {
+      clearTimeout(pttFinalizeTimerRef.current);
+      pttFinalizeTimerRef.current = null;
+    }
+    const captured = String(textOverride ?? pttTranscriptRef.current ?? "").trim();
+    pttTranscriptRef.current = "";
+    pttCtrlRef.current = null;
+    if (captured.length >= 2) {
+      handleUserUtterance(captured);
+    } else {
+      setMode("idle");
+    }
+  };
 
   const pttBegin = async () => {
     if (pttActiveRef.current) return;
@@ -641,12 +654,15 @@ const AriaMode = () => {
       try { ttsCtrlRef.current?.stop(); } catch {}
       endSpeaking();
     }
-    const ready = checkMicReady();
-    if (!ready.ok) { toast.error(ready.hint, { duration: 5000 }); return; }
-    const perm = await requestMicPermission();
-    if (!perm.ok) { toast.error(perm.hint, { duration: 5000 }); return; }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast.error("Spracherkennung nicht verfügbar."); return; }
+    // Make sure the engine is ready and we have permission. On native this
+    // calls the Capacitor plugin; on web it falls through.
+    const ready = await ensureSpeechReady();
+    if (!ready.ok) {
+      const fallback = checkMicReady();
+      if (!fallback.ok) { toast.error(fallback.hint, { duration: 5000 }); return; }
+      const perm = await requestMicPermission();
+      if (!perm.ok) { toast.error(perm.hint, { duration: 5000 }); return; }
+    }
 
     // Hard-stop any wake-word listener so the OS mic stream is freed up
     try { recognitionRef.current?.abort?.(); } catch {}
@@ -654,91 +670,51 @@ const AriaMode = () => {
     if (wakeWatchdogRef.current) { clearTimeout(wakeWatchdogRef.current); wakeWatchdogRef.current = null; }
     recognitionRef.current = null;
 
-    const rec = new SR();
-    rec.lang = "de-DE";
-    rec.continuous = true;
-    rec.interimResults = true;
-    try { rec.maxAlternatives = 3; } catch {}
     pttTranscriptRef.current = "";
-
-    rec.onresult = (e) => {
-      let final = "", interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t; else interim += t;
-      }
-      // Always keep the best-so-far so even interim text can be submitted
-      // if no final ever arrives (common on poor connections).
-      const best = (final + " " + interim).trim();
-      if (best) {
-        pttTranscriptRef.current = best;
-        setTranscript(best);
-      }
-      // A final result arrived after release → submit immediately
-      if (final && !pttActiveRef.current) {
-        commitPttUtterance();
-      }
-    };
-    rec.onerror = (ev) => {
-      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
-        setError("Mikrofon-Zugriff verweigert");
-        pttActiveRef.current = false;
-      }
-    };
-    rec.onend = () => {
-      // Engine closed — if we're past the release moment, this is our last
-      // chance to submit whatever we captured.
-      if (!pttActiveRef.current) commitPttUtterance();
-    };
-
     pttActiveRef.current = true;
-    pttRecRef.current = rec;
     setMode("listening");
     setTranscript("");
     setResponse("");
     setError("");
     try { playListenSound(); } catch {}
-    try { rec.start(); } catch (err) {
-      // start() throws if a previous instance wasn't fully released yet
-      setTimeout(() => { try { rec.start(); } catch {} }, 250);
-    }
-  };
 
-  // Idempotent: only the first call submits the captured text.
-  const commitPttUtterance = () => {
-    if (pttFinalizeTimerRef.current) {
-      clearTimeout(pttFinalizeTimerRef.current);
-      pttFinalizeTimerRef.current = null;
-    }
-    const captured = (pttTranscriptRef.current || "").trim();
-    pttTranscriptRef.current = "";
-    // Tear down rec so the same callbacks can't double-fire
-    const rec = pttRecRef.current;
-    pttRecRef.current = null;
-    try { rec?.abort?.(); } catch {}
-    if (captured.length >= 2) {
-      handleUserUtterance(captured);
-    } else {
-      setMode("idle");
-    }
+    pttCtrlRef.current = nativeListen({
+      lang: "de-DE",
+      maxResults: 3,
+      partialResults: true,
+      onPartial: (text) => {
+        pttTranscriptRef.current = text;
+        setTranscript(text);
+      },
+      onFinal: (text) => {
+        // Engine produced its definitive transcript — submit it.
+        // If the user is still holding the button, this means Android
+        // closed the engine due to silence; we just submit whatever
+        // we got rather than waiting for release.
+        pttActiveRef.current = false;
+        commitPttUtterance(text);
+      },
+      onError: (err) => {
+        const msg = err?.error || err?.message || "speech-recognition-failed";
+        if (msg.includes("not-allowed") || msg.includes("denied")) {
+          setError("Mikrofon-Zugriff verweigert");
+        }
+        // Don't drop the press — still try to submit best-so-far if any
+      },
+    });
   };
 
   const pttEnd = () => {
     if (!pttActiveRef.current) return;
     pttActiveRef.current = false;
-    const rec = pttRecRef.current;
-    // 1) Ask the engine to wrap up — this triggers a final result event
-    //    which our onresult / onend will then turn into commitPttUtterance.
-    try { rec?.stop?.(); } catch {}
-    // 2) Hard fallback: if the engine fails to fire its closing events
-    //    within 1.5 s we force-commit the best-so-far transcript so the
-    //    user never sees a "nothing happens" silent failure again.
+    const ctrl = pttCtrlRef.current;
+    // Ask the engine to wrap up — this triggers a final result event
+    // which onFinal will turn into commitPttUtterance.
+    try { ctrl?.stop?.(); } catch {}
+    // Hard fallback: if the engine fails to fire its closing events
+    // within 1.5 s we force-commit whatever interim we already have.
     if (pttFinalizeTimerRef.current) clearTimeout(pttFinalizeTimerRef.current);
-    pttFinalizeTimerRef.current = setTimeout(() => {
-      if (pttRecRef.current === rec || pttRecRef.current === null) {
-        commitPttUtterance();
-      }
-    }, 1500);
+    pttFinalizeTimerRef.current = setTimeout(() => commitPttUtterance(), 1500);
   };
 
   // If the user accidentally drags off the button or the touch is cancelled,
@@ -746,10 +722,9 @@ const AriaMode = () => {
   const pttCancel = () => {
     if (!pttActiveRef.current) return;
     pttActiveRef.current = false;
-    const rec = pttRecRef.current;
-    pttRecRef.current = null;
     if (pttFinalizeTimerRef.current) { clearTimeout(pttFinalizeTimerRef.current); pttFinalizeTimerRef.current = null; }
-    try { rec?.abort?.(); } catch {}
+    try { pttCtrlRef.current?.cancel?.(); } catch {}
+    pttCtrlRef.current = null;
     pttTranscriptRef.current = "";
     setMode("idle");
   };

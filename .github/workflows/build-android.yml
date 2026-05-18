@@ -96,10 +96,12 @@ jobs:
       - name: Patch AndroidManifest for mic / network permissions
         working-directory: frontend/android/app/src/main
         run: |
-          # The default Capacitor manifest already has INTERNET; we
-          # additionally need RECORD_AUDIO + MODIFY_AUDIO_SETTINGS for
-          # the wake-word listener.
           MANIFEST=AndroidManifest.xml
+          # ── Required runtime permissions ───────────────────────────
+          # RECORD_AUDIO        — Web Speech API + native plugin
+          # MODIFY_AUDIO_SETTINGS — TTS playback ducking
+          # WAKE_LOCK           — keep service alive during recogniser
+          # ACCESS_NETWORK_STATE — backend reachability checks
           for perm in RECORD_AUDIO MODIFY_AUDIO_SETTINGS WAKE_LOCK ACCESS_NETWORK_STATE; do
             if ! grep -q "$perm" "$MANIFEST"; then
               sed -i "s|<uses-permission android:name=\"android.permission.INTERNET\" />|<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.${perm}\" />|" "$MANIFEST"
@@ -109,6 +111,25 @@ jobs:
           if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
             sed -i 's|<application |<application android:usesCleartextTraffic="true" |' "$MANIFEST"
           fi
+          # <queries> block — Android 11+ requires this for the speech
+          # recognition plugin to find the system RecognitionService.
+          # Without it, SpeechRecognition.available() returns false.
+          if ! grep -q "android.speech.RecognitionService" "$MANIFEST"; then
+            awk '
+              /<\/manifest>/ {
+                print "  <queries>"
+                print "    <intent>"
+                print "      <action android:name=\"android.speech.RecognitionService\" />"
+                print "    </intent>"
+                print "    <intent>"
+                print "      <action android:name=\"android.speech.action.RECOGNIZE_SPEECH\" />"
+                print "    </intent>"
+                print "  </queries>"
+              }
+              { print }
+            ' "$MANIFEST" > "$MANIFEST.new"
+            mv "$MANIFEST.new" "$MANIFEST"
+          fi
           # Set versionName / versionCode so each build is distinct
           GRADLE=../../build.gradle
           if [ -f "$GRADLE" ]; then
@@ -116,6 +137,8 @@ jobs:
             sed -i "s|versionName .*|versionName \"${{ steps.version.outputs.version }}\"|" "$GRADLE" || true
             sed -i "s|versionCode .*|versionCode ${VC: -8}|" "$GRADLE" || true
           fi
+          echo "── AndroidManifest.xml ──"
+          cat "$MANIFEST"
 
       - name: Sync Capacitor → Android
         working-directory: frontend
@@ -157,30 +180,43 @@ jobs:
           echo "── generated res/mipmap-* ──"
           ls -la android/app/src/main/res/mipmap-* 2>/dev/null | head -20 || true
 
-      - name: Pin debug keystore (deterministic signature across all builds)
+      - name: Cache debug keystore (deterministic signature across all builds)
         # IMPORTANT for in-app updates:
         # Android refuses to install an APK over an existing one if the
-        # signature differs. The default Gradle debug build generates a
-        # NEW random debug.keystore on every CI runner, which gives each
-        # APK a different signature → the user sees "Conflict with existing
-        # package" and has to uninstall manually.
-        # We fix this by creating ONE deterministic keystore (same DN,
-        # same password, same alias every time) and forcing Gradle to use it.
+        # signature differs. Every `keytool -genkeypair` invocation creates
+        # a NEW cryptographically random key — even with identical DN/passwords —
+        # so generating in CI produces a different signature on every run.
+        # We pin the keystore via GitHub Actions cache: the very first run
+        # generates one; all subsequent runs RESTORE the SAME keystore from
+        # cache, giving every APK an identical signature.
+        id: keystore-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          # Bump the version suffix only when you intentionally want to
+          # invalidate and re-issue keys (forces a one-time uninstall).
+          key: aria-android-debug-keystore-v1
+
+      - name: Generate debug keystore (only if cache missed)
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.android
-          KS=~/.android/debug.keystore
-          rm -f "$KS"
           keytool -genkeypair -v \
-            -keystore "$KS" \
+            -keystore ~/.android/debug.keystore \
             -storepass android \
             -keypass android \
             -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=ARIA Debug, OU=ARIA, O=Trenter, L=Zurich, ST=ZH, C=CH"
-          # Mirror it into the project so signingConfig.storeFile can find
-          # it regardless of where Gradle is running.
+
+      - name: Mirror keystore into project
+        # Some Gradle configurations look for the keystore in the project
+        # directory, others in ~/.android — keep both in sync.
+        run: |
           mkdir -p frontend/android/app
-          cp "$KS" frontend/android/app/debug.keystore
+          cp ~/.android/debug.keystore frontend/android/app/debug.keystore
+          # Print SHA so we can confirm signature consistency across runs.
+          sha256sum ~/.android/debug.keystore || true
 
       - name: Pin debug signingConfig in app/build.gradle
         working-directory: frontend/android/app

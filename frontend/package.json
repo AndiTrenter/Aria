@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor-community/speech-recognition": "7",
     "@capacitor/android": "^7",
     "@capacitor/app": "^7",
     "@capacitor/cli": "^7",
