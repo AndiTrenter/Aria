@@ -69,11 +69,15 @@ export function nativeListen({
   let stopped = false;
   let cancelled = false;
   let partialHandle = null;
+  let resultHandle = null;
+  let listenStateHandle = null;
 
   const finalize = (text) => {
     if (stopped || cancelled) return;
     stopped = true;
     try { partialHandle && partialHandle.remove?.(); } catch {}
+    try { resultHandle && resultHandle.remove?.(); } catch {}
+    try { listenStateHandle && listenStateHandle.remove?.(); } catch {}
     if (!cancelled) onFinal((text ?? bestSoFar).trim());
   };
 
@@ -93,6 +97,40 @@ export function nativeListen({
         }
       );
 
+      // Some plugin versions ALSO emit a "result" event for the final.
+      // Subscribe defensively — if it fires, finalize immediately.
+      try {
+        resultHandle = await SpeechRecognition.addListener?.(
+          "result",
+          (data) => {
+            const arr = data?.matches || data?.value || [];
+            const txt = Array.isArray(arr) ? (arr[0] || "") : String(arr || "");
+            if (txt) {
+              bestSoFar = txt;
+              finalize(txt);
+            }
+          }
+        );
+      } catch {}
+
+      // listeningState transitions to "false" when the engine actually
+      // stops — second-best signal for "we're done, deliver result".
+      try {
+        listenStateHandle = await SpeechRecognition.addListener?.(
+          "listeningState",
+          (data) => {
+            if (data?.status === false || data?.listening === false) {
+              // Engine closed; if start() hasn't resolved within 800ms,
+              // submit our best-so-far so the UI never freezes.
+              setTimeout(() => finalize(bestSoFar), 800);
+            }
+          }
+        );
+      } catch {}
+
+      // popup must be FALSE for partialResults to work on Android per the
+      // plugin docs. We also pass an empty prompt to suppress the
+      // built-in system dialog.
       const res = await SpeechRecognition.start({
         language: lang,
         maxResults,
@@ -108,6 +146,7 @@ export function nativeListen({
       const finalText = Array.isArray(arr) && arr.length > 0 ? arr[0] : bestSoFar;
       finalize(finalText);
     } catch (e) {
+      try { console.error("[nativeSpeech] start() threw:", e); } catch {}
       if (!cancelled) {
         try { onError(e); } catch {}
         finalize(bestSoFar);
@@ -126,6 +165,8 @@ export function nativeListen({
     cancel: async () => {
       cancelled = true;
       try { partialHandle && partialHandle.remove?.(); } catch {}
+      try { resultHandle && resultHandle.remove?.(); } catch {}
+      try { listenStateHandle && listenStateHandle.remove?.(); } catch {}
       try { await SpeechRecognition.stop(); } catch {}
     },
     isNative: true,

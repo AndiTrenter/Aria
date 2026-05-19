@@ -643,7 +643,10 @@ const AriaMode = () => {
     if (captured.length >= 2) {
       handleUserUtterance(captured);
     } else {
+      // Show visible feedback so the user knows the press registered but
+      // no usable speech was captured — far better than the silent "idle".
       setMode("idle");
+      toast.error("Ich habe dich nicht verstanden — bitte etwas näher ans Mikrofon und nochmal halten.", { duration: 4000 });
     }
   };
 
@@ -658,6 +661,7 @@ const AriaMode = () => {
     // calls the Capacitor plugin; on web it falls through.
     const ready = await ensureSpeechReady();
     if (!ready.ok) {
+      // Try the Web-API style permission as a fallback (covers browser preview)
       const fallback = checkMicReady();
       if (!fallback.ok) { toast.error(fallback.hint, { duration: 5000 }); return; }
       const perm = await requestMicPermission();
@@ -688,18 +692,25 @@ const AriaMode = () => {
       },
       onFinal: (text) => {
         // Engine produced its definitive transcript — submit it.
-        // If the user is still holding the button, this means Android
-        // closed the engine due to silence; we just submit whatever
-        // we got rather than waiting for release.
         pttActiveRef.current = false;
         commitPttUtterance(text);
       },
       onError: (err) => {
-        const msg = err?.error || err?.message || "speech-recognition-failed";
-        if (msg.includes("not-allowed") || msg.includes("denied")) {
+        // Make recognition errors LOUDLY visible — silent failures here
+        // were what produced the "ARIA reagiert nicht" experience.
+        const msg = err?.error || err?.message || err?.code || String(err) || "unbekannter Fehler";
+        // Console-log so chrome://inspect users can see the raw error too
+        try { console.error("[ARIA] Speech recognition error:", err); } catch {}
+        if (/not-allowed|denied|permission/i.test(msg)) {
           setError("Mikrofon-Zugriff verweigert");
+          toast.error("Mikrofon-Berechtigung fehlt. Öffne die App-Einstellungen → Berechtigungen.", { duration: 6000 });
+        } else if (/no-match|no.?speech|nothing/i.test(msg)) {
+          toast.warning("Ich habe nichts gehört — bitte näher ans Mikrofon.", { duration: 3500 });
+        } else if (/network|server/i.test(msg)) {
+          toast.error("Spracherkennung benötigt Internet (Google-Dienste).", { duration: 5000 });
+        } else {
+          toast.error(`Spracherkennung fehlgeschlagen: ${msg}`, { duration: 5000 });
         }
-        // Don't drop the press — still try to submit best-so-far if any
       },
     });
   };
