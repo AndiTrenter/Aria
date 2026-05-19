@@ -1359,8 +1359,23 @@ const AriaMode = () => {
       {!isPhone && <TemperatureWatermark />}
       <div className="absolute inset-0 pointer-events-none aria-scanlines" />
 
-      {/* Top bar — radically shrunken on phone */}
-      <div className={`absolute top-0 left-0 right-0 flex items-center justify-between z-20 ${isPhone ? "px-3 py-2" : "px-6 py-4"}`}>
+      {/* Top bar — radically shrunken on phone; respects the Android
+          status-bar inset so the title isn't hidden behind the system
+          clock / notification icons. */}
+      <div
+        className={`absolute top-0 left-0 right-0 flex items-center justify-between z-20 ${isPhone ? "px-3 py-2" : "px-6 py-4"}`}
+        style={{
+          paddingTop: isPhone
+            ? "calc(env(safe-area-inset-top, 0px) + 8px)"
+            : undefined,
+          paddingLeft: isPhone
+            ? "calc(env(safe-area-inset-left, 0px) + 12px)"
+            : undefined,
+          paddingRight: isPhone
+            ? "calc(env(safe-area-inset-right, 0px) + 12px)"
+            : undefined,
+        }}
+      >
         <div className="flex items-center gap-2">
           <div className={`rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(100,220,255,0.9)] ${isPhone ? "w-1.5 h-1.5" : "w-2 h-2"}`} />
           <div>

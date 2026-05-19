@@ -58,6 +58,19 @@ export default function CortexCloud({
     stateRef.current = { intensity, speaking, listening, mode };
   }, [intensity, speaking, listening, mode]);
 
+  // Re-size the WebGL canvas whenever the prop changes (e.g. user
+  // rotates the device, or our viewport listener computes a new orbSize).
+  // We don't tear down the whole scene — just push new dimensions into
+  // the existing renderer/camera and force one frame.
+  useEffect(() => {
+    const mount = mountRef.current;
+    const renderer = mount && mount._ariaRenderer;
+    if (!renderer) return;
+    renderer.setSize(size, size, true);
+    renderer.domElement.style.width  = `${size}px`;
+    renderer.domElement.style.height = `${size}px`;
+  }, [size]);
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -69,10 +82,23 @@ export default function CortexCloud({
       powerPreference: "high-performance",
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(size, size, false);
+    // updateStyle = TRUE so the canvas gets matching CSS width/height —
+    // otherwise it falls back to the HTML default (~300x150) which makes
+    // it look enormous on phones where the mount container is small.
+    renderer.setSize(size, size, true);
+    // Belt & braces: explicit CSS pin so the canvas can NEVER exceed the
+    // intended size regardless of internal Three.js state.
+    renderer.domElement.style.width = `${size}px`;
+    renderer.domElement.style.height = `${size}px`;
+    renderer.domElement.style.maxWidth = "100%";
+    renderer.domElement.style.maxHeight = "100%";
+    renderer.domElement.style.display = "block";
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
+
+    /* ─── Expose renderer so the resize-effect below can rescale ───── */
+    mount._ariaRenderer = renderer;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
@@ -500,13 +526,16 @@ export default function CortexCloud({
       style={{
         width: size,
         height: size,
+        minWidth: size,
+        minHeight: size,
+        maxWidth: size,
+        maxHeight: size,
+        overflow: "hidden",        // hard-clip — canvas can NEVER spill out
         display: "block",
         position: "relative",
+        flex: "0 0 auto",
         // No mask — the canvas background is fully transparent (clearColor
         // alpha=0), so only the rendered geometry produces visible pixels.
-        // Adding a radial mask was creating a visible circular fade-edge
-        // that the user perceived as a "rectangle hiding the orb".  The
-        // wireframes naturally have nothing in the corners.
       }}
     />
   );
