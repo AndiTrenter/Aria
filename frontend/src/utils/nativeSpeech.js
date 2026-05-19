@@ -110,18 +110,15 @@ function androidListen({ lang, onFinal, onError }) {
         }
       }
 
-      // Always clear any lingering session before starting fresh — Android's
-      // SpeechRecognizer is a single-instance service and rejects start()
-      // with various error codes if it thinks one is still alive.
-      try { await SpeechRecognition.stop(); } catch {}
-      await new Promise((r) => setTimeout(r, 120));
-
       let res;
       try {
+        // First attempt: NO pre-cleanup. Calling stop() on a fresh engine
+        // can leave it in an unhealthy state on some Android builds and
+        // breaks the very next start() — exactly the regression the user
+        // hit after the previous "always-stop-first" fix.
         res = await startOnce();
       } catch (e1) {
-        // Most likely RECOGNIZER_BUSY (Android error code 8) or a leftover
-        // session — give it one more cleanup pass and retry.
+        // RECOGNIZER_BUSY / leftover session — clean up and retry once.
         try { console.warn("[androidListen] first start failed, retrying", e1); } catch {}
         try { await SpeechRecognition.stop(); } catch {}
         await new Promise((r) => setTimeout(r, 350));
