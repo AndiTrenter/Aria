@@ -84,6 +84,19 @@ function androidListen({ lang, onFinal, onError }) {
     onFinal((text || "").trim());
   };
 
+  // Attempt start(); if the recogniser is in a stale "busy" state from a
+  // prior invocation, stop it and retry once. Without this the SECOND
+  // tap of the PTT button always fails with error 0 / RECOGNIZER_BUSY.
+  const startOnce = async () => {
+    return SpeechRecognition.start({
+      language: lang,
+      maxResults: 3,
+      prompt: "",
+      partialResults: false,
+      popup: true,
+    });
+  };
+
   (async () => {
     try {
       // Make sure we have permission
@@ -97,17 +110,24 @@ function androidListen({ lang, onFinal, onError }) {
         }
       }
 
-      // popup:true → Google shows its own "Listening" UI; start() resolves
-      // when the user is done speaking with the array of recognised matches.
-      // This is the BULLETPROOF path — no need to mess with addListener()
-      // events that some Android variants drop on the floor.
-      const res = await SpeechRecognition.start({
-        language: lang,
-        maxResults: 3,
-        prompt: "",
-        partialResults: false,
-        popup: true,
-      });
+      // Always clear any lingering session before starting fresh — Android's
+      // SpeechRecognizer is a single-instance service and rejects start()
+      // with various error codes if it thinks one is still alive.
+      try { await SpeechRecognition.stop(); } catch {}
+      await new Promise((r) => setTimeout(r, 120));
+
+      let res;
+      try {
+        res = await startOnce();
+      } catch (e1) {
+        // Most likely RECOGNIZER_BUSY (Android error code 8) or a leftover
+        // session — give it one more cleanup pass and retry.
+        try { console.warn("[androidListen] first start failed, retrying", e1); } catch {}
+        try { await SpeechRecognition.stop(); } catch {}
+        await new Promise((r) => setTimeout(r, 350));
+        res = await startOnce();
+      }
+
       const arr = res?.matches || [];
       const text = Array.isArray(arr) && arr.length > 0 ? arr[0] : "";
       deliver(text);
