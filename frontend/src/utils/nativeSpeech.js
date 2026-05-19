@@ -43,9 +43,19 @@ export async function ensureSpeechReady() {
 }
 
 /**
- * Hold-to-speak controller. Always uses Web Speech API regardless of
- * platform — it works in WebView and never silently drops events the
- * way the native plugin's listeners do.
+ * Hold-to-speak (or tap-to-speak on Android) controller.
+ *
+ * ▸ Native Android (Capacitor APK):
+ *     Uses the @capacitor-community/speech-recognition plugin in
+ *     `popup: true` mode. Google's own speech UI overlay shows up,
+ *     the user speaks naturally (no need to hold the button — just
+ *     tap), and we receive a clean final transcript back. This is the
+ *     SAME engine and UX as Google Assistant: rock-solid recognition,
+ *     no need for partialResults listeners that don't fire reliably
+ *     across Android variants.
+ *
+ * ▸ Browser / web preview:
+ *     Falls back to Web Speech API with classic hold-to-talk semantics.
  */
 export function nativeListen({
   lang = "de-DE",
@@ -54,7 +64,72 @@ export function nativeListen({
   onFinal = () => {},
   onError = () => {},
 } = {}) {
+  if (isNative()) return androidListen({ lang, onPartial, onFinal, onError });
   return webListen({ lang, partialResults, onPartial, onFinal, onError });
+}
+
+/* ───────────── Native Android (popup mode) ─────────────────────────
+ * Uses Google's built-in speech recognition activity. The OS handles
+ * audio capture, partial-result feedback (its own overlay), and final
+ * transcript delivery. Far more reliable than rolling our own.
+ * ──────────────────────────────────────────────────────────────── */
+
+function androidListen({ lang, onFinal, onError }) {
+  let cancelled = false;
+  let delivered = false;
+
+  const deliver = (text) => {
+    if (delivered || cancelled) return;
+    delivered = true;
+    onFinal((text || "").trim());
+  };
+
+  (async () => {
+    try {
+      // Make sure we have permission
+      const perm = await SpeechRecognition.checkPermissions();
+      if (perm.speechRecognition !== "granted") {
+        const granted = await SpeechRecognition.requestPermissions();
+        if (granted.speechRecognition !== "granted") {
+          onError({ error: "not-allowed", message: "permission denied" });
+          deliver("");
+          return;
+        }
+      }
+
+      // popup:true → Google shows its own "Listening" UI; start() resolves
+      // when the user is done speaking with the array of recognised matches.
+      // This is the BULLETPROOF path — no need to mess with addListener()
+      // events that some Android variants drop on the floor.
+      const res = await SpeechRecognition.start({
+        language: lang,
+        maxResults: 3,
+        prompt: "",
+        partialResults: false,
+        popup: true,
+      });
+      const arr = res?.matches || [];
+      const text = Array.isArray(arr) && arr.length > 0 ? arr[0] : "";
+      deliver(text);
+    } catch (e) {
+      try { console.error("[androidListen] start() threw:", e); } catch {}
+      onError(e);
+      deliver("");
+    }
+  })();
+
+  return {
+    stop: () => {
+      // popup mode handles its own stop/done — calling stop() here just
+      // closes the dialog if the user wants to abort early.
+      try { SpeechRecognition.stop(); } catch {}
+    },
+    cancel: () => {
+      cancelled = true;
+      try { SpeechRecognition.stop(); } catch {}
+    },
+    isNative: true,
+  };
 }
 
 /* ───────────── Web Speech API ──────────────────────────────────────

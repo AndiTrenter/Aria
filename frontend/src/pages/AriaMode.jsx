@@ -1339,10 +1339,12 @@ const AriaMode = () => {
   /* ─── Render ─────────────────────────────────────────────────────── */
   // JARVIS-style status microcopy. Wake-word is disabled — the idle hint
   // tells the user to use the neural push-to-talk button instead.
+  // JARVIS-style status microcopy. Native uses tap-to-talk (Google's
+  // overlay handles the conversation), browser uses hold-to-talk.
   const statusLabel = mode === "listening" ? "ICH HÖRE …"
     : mode === "thinking" ? "ANALYSIERE — EINEN MOMENT"
     : mode === "speaking" ? "ANTWORT IN ÜBERTRAGUNG"
-    : "BEREIT — BUTTON HALTEN ZUM SPRECHEN";
+    : isPhone ? "BEREIT — BUTTON TIPPEN" : "BEREIT — BUTTON HALTEN ZUM SPRECHEN";
 
   return (
     <div
@@ -1473,7 +1475,10 @@ const AriaMode = () => {
             onPointerDown={(e) => { e.preventDefault(); pttBegin(); }}
             onPointerUp={(e) => { e.preventDefault(); pttEnd(); }}
             onPointerCancel={() => pttCancel()}
-            onPointerLeave={() => { if (pttActiveRef.current) pttEnd(); }}
+            /* No onPointerLeave: on touchscreens a brief sub-pixel slide
+               fires it spuriously, killing the recognition before the user
+               has finished speaking. We rely on pointerUp / pointerCancel
+               + the safety finalize-timer in pttEnd instead. */
             onContextMenu={(e) => e.preventDefault()}
             aria-label="Halten zum Sprechen"
             className={`relative grid place-items-center rounded-full transition-transform duration-150 ${
@@ -1513,7 +1518,7 @@ const AriaMode = () => {
             />
           </button>
           <div className="mt-2 text-center text-[10px] tracking-[0.3em] text-orange-200/85" style={{ textTransform: "uppercase" }}>
-            {pttActiveRef.current || mode === "listening" ? "ICH HÖRE …" : "Halten zum Sprechen"}
+            {pttActiveRef.current || mode === "listening" ? "ICH HÖRE …" : (isPhone ? "Tippen zum Sprechen" : "Halten zum Sprechen")}
           </div>
         </div>
       </div>
