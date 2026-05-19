@@ -131,20 +131,20 @@ export function nativeListen({
       // popup must be FALSE for partialResults to work on Android per the
       // plugin docs. We also pass an empty prompt to suppress the
       // built-in system dialog.
-      const res = await SpeechRecognition.start({
+      //
+      // IMPORTANT (Android quirk): with popup=false, `start()` resolves
+      // IMMEDIATELY — not when speech recognition is done. The real
+      // results arrive via the `partialResults` + `result` + `listeningState`
+      // listeners we attached above. We therefore IGNORE the start()
+      // return value here and let the listeners (or our 1.2 s safety
+      // timeout on stop()) drive `finalize()`.
+      await SpeechRecognition.start({
         language: lang,
         maxResults,
         prompt: "",
         partialResults,
         popup: false,
       });
-
-      // The plugin's start() promise resolves with the FINAL result
-      // (after the engine finishes). On Android this fires when the
-      // user is silent for a moment OR when stop() is called.
-      const arr = res?.matches || [];
-      const finalText = Array.isArray(arr) && arr.length > 0 ? arr[0] : bestSoFar;
-      finalize(finalText);
     } catch (e) {
       try { console.error("[nativeSpeech] start() threw:", e); } catch {}
       if (!cancelled) {
