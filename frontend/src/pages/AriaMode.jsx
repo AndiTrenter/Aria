@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth, API } from "@/App";
+import { useAuth, API, IS_NATIVE } from "@/App";
 import { toast } from "sonner";
 import {
   Microphone, X, MapTrifold, EnvelopeSimple,
@@ -717,21 +717,28 @@ const AriaMode = () => {
 
   const pttEnd = () => {
     if (!pttActiveRef.current) return;
+    // On native Android we use Google's full-screen "Listening" overlay
+    // (popup mode). The overlay handles its own done/cancel — calling stop()
+    // here on pointer-up would CLOSE Google's overlay BEFORE the user has
+    // even started speaking. Skip the manual stop on native; rely on the
+    // overlay's natural close which our androidListen() awaits via start().
+    if (IS_NATIVE) {
+      // Don't reset pttActiveRef.current here either — onFinal will do that
+      // when the overlay returns the final transcript.
+      return;
+    }
     pttActiveRef.current = false;
     const ctrl = pttCtrlRef.current;
-    // Ask the engine to wrap up — this triggers a final result event
-    // which onFinal will turn into commitPttUtterance.
+    // Browser hold-to-talk path: wrap up the web speech recogniser
     try { ctrl?.stop?.(); } catch {}
-    // Hard fallback: if the engine fails to fire its closing events
-    // within 1.5 s we force-commit whatever interim we already have.
     if (pttFinalizeTimerRef.current) clearTimeout(pttFinalizeTimerRef.current);
     pttFinalizeTimerRef.current = setTimeout(() => commitPttUtterance(), 1500);
   };
 
-  // If the user accidentally drags off the button or the touch is cancelled,
-  // we still want to release cleanly so the mic never gets stuck open.
   const pttCancel = () => {
     if (!pttActiveRef.current) return;
+    // Same reasoning as pttEnd — native overlay manages its own lifecycle.
+    if (IS_NATIVE) return;
     pttActiveRef.current = false;
     if (pttFinalizeTimerRef.current) { clearTimeout(pttFinalizeTimerRef.current); pttFinalizeTimerRef.current = null; }
     try { pttCtrlRef.current?.cancel?.(); } catch {}
